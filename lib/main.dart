@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 // Android 13 API Level
 const int _android13ApiLevel = 33;
@@ -16,34 +18,196 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  // Default to system theme
   ThemeMode _themeMode = ThemeMode.system;
 
   void _toggleTheme() {
     setState(() {
-      _themeMode = _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
+      _themeMode =
+          _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final baseLightColorScheme = ColorScheme.fromSeed(
+      seedColor: Colors.deepPurple,
+      brightness: Brightness.light,
+    );
+    final baseDarkColorScheme = ColorScheme.fromSeed(
+      seedColor: Colors.deepPurple,
+      brightness: Brightness.dark,
+    );
+
+    final baseTextTheme = GoogleFonts.manropeTextTheme(Theme.of(context).textTheme);
+
+    final lightTextTheme = baseTextTheme.copyWith(
+      displayLarge: baseTextTheme.displayLarge?.copyWith(color: baseLightColorScheme.onSurface),
+      displayMedium: baseTextTheme.displayMedium?.copyWith(color: baseLightColorScheme.onSurface),
+      displaySmall: baseTextTheme.displaySmall?.copyWith(color: baseLightColorScheme.onSurface),
+      headlineLarge: baseTextTheme.headlineLarge?.copyWith(color: baseLightColorScheme.onSurface),
+      headlineMedium: baseTextTheme.headlineMedium?.copyWith(color: baseLightColorScheme.onSurface),
+      headlineSmall: baseTextTheme.headlineSmall?.copyWith(color: baseLightColorScheme.onSurface),
+      titleLarge: baseTextTheme.titleLarge?.copyWith(color: baseLightColorScheme.onSurface),
+      titleMedium: baseTextTheme.titleMedium?.copyWith(color: baseLightColorScheme.onSurface),
+      titleSmall: baseTextTheme.titleSmall?.copyWith(color: baseLightColorScheme.onSurface),
+      bodyLarge: baseTextTheme.bodyLarge?.copyWith(color: baseLightColorScheme.onSurface),
+      bodyMedium: baseTextTheme.bodyMedium?.copyWith(color: baseLightColorScheme.onSurface),
+      bodySmall: baseTextTheme.bodySmall?.copyWith(color: baseLightColorScheme.onSurfaceVariant),
+      labelLarge: baseTextTheme.labelLarge?.copyWith(color: baseLightColorScheme.onPrimaryContainer, fontWeight: FontWeight.w500),
+      labelMedium: baseTextTheme.labelMedium?.copyWith(color: baseLightColorScheme.onSurfaceVariant),
+      labelSmall: baseTextTheme.labelSmall?.copyWith(color: baseLightColorScheme.onSurfaceVariant),
+    ).apply(
+      bodyColor: baseLightColorScheme.onSurface,
+      displayColor: baseLightColorScheme.onSurface,
+    );
+
+    final darkTextTheme = baseTextTheme.copyWith(
+      displayLarge: baseTextTheme.displayLarge?.copyWith(color: baseDarkColorScheme.onSurface),
+      displayMedium: baseTextTheme.displayMedium?.copyWith(color: baseDarkColorScheme.onSurface),
+      displaySmall: baseTextTheme.displaySmall?.copyWith(color: baseDarkColorScheme.onSurface),
+      headlineLarge: baseTextTheme.headlineLarge?.copyWith(color: baseDarkColorScheme.onSurface),
+      headlineMedium: baseTextTheme.headlineMedium?.copyWith(color: baseDarkColorScheme.onSurface),
+      headlineSmall: baseTextTheme.headlineSmall?.copyWith(color: baseDarkColorScheme.onSurface),
+      titleLarge: baseTextTheme.titleLarge?.copyWith(color: baseDarkColorScheme.onSurface),
+      titleMedium: baseTextTheme.titleMedium?.copyWith(color: baseDarkColorScheme.onSurface),
+      titleSmall: baseTextTheme.titleSmall?.copyWith(color: baseDarkColorScheme.onSurface),
+      bodyLarge: baseTextTheme.bodyLarge?.copyWith(color: baseDarkColorScheme.onSurface),
+      bodyMedium: baseTextTheme.bodyMedium?.copyWith(color: baseDarkColorScheme.onSurface),
+      bodySmall: baseTextTheme.bodySmall?.copyWith(color: baseDarkColorScheme.onSurfaceVariant),
+      labelLarge: baseTextTheme.labelLarge?.copyWith(color: baseDarkColorScheme.onPrimaryContainer, fontWeight: FontWeight.w500),
+      labelMedium: baseTextTheme.labelMedium?.copyWith(color: baseDarkColorScheme.onSurfaceVariant),
+      labelSmall: baseTextTheme.labelSmall?.copyWith(color: baseDarkColorScheme.onSurfaceVariant),
+    ).apply(
+      bodyColor: baseDarkColorScheme.onSurface,
+      displayColor: baseDarkColorScheme.onSurface,
+    );
+
     return MaterialApp(
       title: 'Lyric Listener',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: baseLightColorScheme,
         useMaterial3: true,
         brightness: Brightness.light,
+        textTheme: lightTextTheme,
+        cardTheme: CardThemeData(
+          elevation: 1,
+          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: baseLightColorScheme.outlineVariant.withOpacity(0.5))
+          ),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            textStyle: lightTextTheme.labelLarge,
+          ),
+        ),
+         appBarTheme: AppBarTheme(
+          backgroundColor: baseLightColorScheme.surfaceContainerHighest,
+          elevation: 0,
+          titleTextStyle: lightTextTheme.titleLarge?.copyWith(color: baseLightColorScheme.onSurface),
+          iconTheme: IconThemeData(color: baseLightColorScheme.onSurfaceVariant),
+        ),
+        dividerTheme: DividerThemeData(
+          space: 1,
+          thickness: 0.5,
+          color: baseLightColorScheme.outlineVariant,
+        ),
+        listTileTheme: ListTileThemeData(
+          iconColor: baseLightColorScheme.onSurfaceVariant,
+          titleTextStyle: lightTextTheme.titleSmall,
+          subtitleTextStyle: lightTextTheme.bodySmall,
+          minVerticalPadding: 12,
+          dense: false,
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: baseLightColorScheme.outline),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: baseLightColorScheme.outline),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: baseLightColorScheme.primary, width: 2),
+          ),
+          filled: true,
+          fillColor: baseLightColorScheme.surfaceContainerHighest,
+        ),
+        snackBarTheme: SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          backgroundColor: baseLightColorScheme.inverseSurface,
+          contentTextStyle: lightTextTheme.bodyMedium?.copyWith(color: baseLightColorScheme.onInverseSurface),
+        ),
       ),
       darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.deepPurple,
-          brightness: Brightness.dark,
-        ),
+        colorScheme: baseDarkColorScheme,
         useMaterial3: true,
         brightness: Brightness.dark,
+        textTheme: darkTextTheme,
+        cardTheme: CardThemeData(
+          elevation: 1,
+          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+             side: BorderSide(color: baseDarkColorScheme.outlineVariant.withOpacity(0.5))
+          ),
+        ),
+         elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            textStyle: darkTextTheme.labelLarge,
+          ),
+        ),
+        appBarTheme: AppBarTheme(
+          backgroundColor: baseDarkColorScheme.surfaceContainerHighest,
+          elevation: 0,
+          titleTextStyle: darkTextTheme.titleLarge?.copyWith(color: baseDarkColorScheme.onSurface),
+          iconTheme: IconThemeData(color: baseDarkColorScheme.onSurfaceVariant),
+        ),
+        dividerTheme: DividerThemeData(
+          space: 1,
+          thickness: 0.5,
+          color: baseDarkColorScheme.outlineVariant,
+        ),
+         listTileTheme: ListTileThemeData(
+          iconColor: baseDarkColorScheme.onSurfaceVariant,
+          titleTextStyle: darkTextTheme.titleSmall,
+          subtitleTextStyle: darkTextTheme.bodySmall,
+          minVerticalPadding: 12,
+          dense: false,
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: baseDarkColorScheme.outline),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: baseDarkColorScheme.outline),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: baseDarkColorScheme.primary, width: 2),
+          ),
+          filled: true,
+          fillColor: baseDarkColorScheme.surfaceContainerHighest,
+        ),
+        snackBarTheme: SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          backgroundColor: baseDarkColorScheme.inverseSurface,
+          contentTextStyle: darkTextTheme.bodyMedium?.copyWith(color: baseDarkColorScheme.onInverseSurface),
+        ),
       ),
-      themeMode: _themeMode, // Use the state variable for themeMode
-      home: HomeScreen(toggleTheme: _toggleTheme), // Pass the toggle function to HomeScreen
+      themeMode: _themeMode,
+      home: HomeScreen(toggleTheme: _toggleTheme),
     );
   }
 }
@@ -59,193 +223,250 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   static const platform = MethodChannel('com.example.myapp/permissions');
-  int? _androidSdkInt; // To store the Android SDK version
-  bool _isLoadingAndroidVersion = true;
+  int? _androidSdkInt;
+  bool _isLoadingAppStatus = true; // Single flag to control the main loading screen
 
   bool _isNotificationAccessGranted = false;
   bool _canDrawOverlays = false;
   bool _isPostNotificationsGranted = false;
-  bool _isLoadingPermissions = true;
+  bool _isBatteryOptimizationDisabled = false;
   bool _isServiceRunning = false;
-  bool _canStartService = false; // Add state to control service start button
+  bool _canStartService = false;
 
   @override
   void initState() {
     super.initState();
+    print("HomeScreen initState: Called");
     WidgetsBinding.instance.addObserver(this);
-    _getAndroidVersion();
-    _checkPermissionsStatus();
-     _checkServiceStatus(); // Initial service status check
+    _loadInitialData();
+  }
+
+  Future<void> _loadInitialData() async {
+    print("HomeScreen _loadInitialData: Starting");
+    if (mounted && !_isLoadingAppStatus) { // If already loading, don't restart
+      setState(() {
+        _isLoadingAppStatus = true;
+      });
+    } else if (!mounted && !_isLoadingAppStatus) { // For initial call from initState
+       _isLoadingAppStatus = true; // No need for setState here
+    }
+
+
+    try {
+      // Fetch Android version first
+      await _getAndroidVersion();
+
+      // Then fetch permissions, which might depend on the Android version
+      // Ensure mounted check before proceeding if _getAndroidVersion could take time
+      if (mounted) {
+        await _checkPermissionsStatus();
+      }
+
+      // Finally, check service status
+      if (mounted) {
+        await _checkServiceStatus();
+      }
+    } catch (e, s) {
+      print("HomeScreen _loadInitialData: Error during loading sequence: $e\n$s");
+      // Handle error, perhaps show an error message or set default states
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingAppStatus = false; // THIS IS THE KEY: Always set to false in finally
+        });
+        print("HomeScreen _loadInitialData: Finally block executed. _isLoadingAppStatus: $_isLoadingAppStatus");
+      }
+    }
   }
 
   @override
   void dispose() {
+    print("HomeScreen dispose: Called");
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    print("HomeScreen didChangeAppLifecycleState: $state");
     if (state == AppLifecycleState.resumed) {
-      _checkPermissionsStatus();
-       _checkServiceStatus();
+      if (!_isLoadingAppStatus) { // Only reload if not already in a loading cycle
+        _loadInitialData();
+      }
     }
   }
 
   Future<void> _getAndroidVersion() async {
+    if (!mounted) return;
+    print("HomeScreen _getAndroidVersion: Starting");
     try {
       final int? version = await platform.invokeMethod('getAndroidVersion');
       if (mounted) {
-        setState(() {
-          _androidSdkInt = version;
-          _isLoadingAndroidVersion = false;
-        });
+        print("HomeScreen _getAndroidVersion: Received version: $version");
+        // No setState here for _isLoadingAppStatus; _loadInitialData handles it.
+        // Only update the specific data.
+        _androidSdkInt = version;
       }
     } on PlatformException catch (e) {
-      print('Failed to get Android version: ${e.message}');
+      print('HomeScreen _getAndroidVersion: Failed - ${e.message}');
       if (mounted) {
-        setState(() {
-          _isLoadingAndroidVersion = false;
-        });
+        _androidSdkInt = null;
       }
     }
+    // Ensure that even on error, the flow in _loadInitialData continues.
+    // The _isLoadingAppStatus flag is managed by _loadInitialData's finally block.
   }
 
   Future<void> _checkPermissionsStatus() async {
     if (!mounted) return;
-    setState(() {
-      _isLoadingPermissions = true;
-    });
+    print("HomeScreen _checkPermissionsStatus: Starting");
+
+    bool tempNotificationAccess = false;
+    bool tempCanDrawOverlays = false;
+    bool tempPostNotifications = (_androidSdkInt != null && _androidSdkInt! < _android13ApiLevel); // Default true if pre-Tiramisu
+    bool tempBatteryOptDisabled = false;
+
     try {
-      final bool notificationAccess = await platform.invokeMethod('isNotificationAccessGranted');
-      final bool canDrawOverlays = await platform.invokeMethod('canDrawOverlays');
-      bool postNotificationsGranted = true; // Assume true for older Android
-      if (_androidSdkInt != null && _androidSdkInt! >= _android13ApiLevel) {
-         postNotificationsGranted = await platform.invokeMethod('isPostNotificationsGranted');
+      // If _androidSdkInt is still null here, it means _getAndroidVersion likely failed or hasn't completed.
+      // We proceed with defaults or skip checks that depend on it.
+      if (_androidSdkInt == null) {
+          print("HomeScreen _checkPermissionsStatus: Android SDK version unknown for permission checks.");
       }
 
-      if (mounted) {
-        setState(() {
-          _isNotificationAccessGranted = notificationAccess;
-          _canDrawOverlays = canDrawOverlays;
-          _isPostNotificationsGranted = postNotificationsGranted;
-          _isLoadingPermissions = false;
-          // Determine if service can be started based on permissions
-          _canStartService = _isNotificationAccessGranted && _canDrawOverlays && _isPostNotificationsGranted;
-        });
-         _checkServiceStatus(); // Update service status icon after checking permissions
+      final results = await Future.wait([
+        platform.invokeMethod('isNotificationAccessGranted').catchError((e) { print("Error isNotificationAccessGranted: $e"); return false; }),
+        platform.invokeMethod('canDrawOverlays').catchError((e) { print("Error canDrawOverlays: $e"); return false; }),
+        (_androidSdkInt != null && _androidSdkInt! >= _android13ApiLevel)
+            ? platform.invokeMethod('isPostNotificationsGranted').catchError((e) { print("Error isPostNotificationsGranted: $e"); return false; })
+            : Future.value(tempPostNotifications), // Use pre-calculated default
+        platform.invokeMethod('isIgnoringBatteryOptimizations').catchError((e) { print("Error isIgnoringBatteryOptimizations: $e"); return false; }),
+      ]);
+
+      tempNotificationAccess = results[0] as bool;
+      tempCanDrawOverlays = results[1] as bool;
+      tempPostNotifications = results[2] as bool;
+      tempBatteryOptDisabled = results[3] as bool;
+
+    } on PlatformException catch (e) {
+      print('HomeScreen _checkPermissionsStatus: PlatformException - ${e.message}');
+      // Defaults are already set
+    } catch (e) {
+      print('HomeScreen _checkPermissionsStatus: General Exception - $e');
+      // Defaults are already set
+    }
+
+    if (mounted) {
+      // Only call setState once after all values are determined
+      setState(() {
+        _isNotificationAccessGranted = tempNotificationAccess;
+        _canDrawOverlays = tempCanDrawOverlays;
+        _isPostNotificationsGranted = tempPostNotifications;
+        _isBatteryOptimizationDisabled = tempBatteryOptDisabled;
+        _canStartService =
+            _isNotificationAccessGranted && _canDrawOverlays && _isPostNotificationsGranted;
+      });
+      print("Permissions updated: NA: $_isNotificationAccessGranted, DO: $_canDrawOverlays, PN: $_isPostNotificationsGranted, BO: $_isBatteryOptimizationDisabled");
+    }
+  }
+
+  Future<void> _checkServiceStatus() async {
+    if (!mounted) return;
+    print("HomeScreen _checkServiceStatus: Starting");
+    bool tempIsServiceRunning = false;
+    try {
+      final bool? isRunning = await platform.invokeMethod<bool>('isLyricServiceRunning');
+      if (isRunning != null) {
+        tempIsServiceRunning = isRunning;
       }
     } on PlatformException catch (e) {
-      print('Failed to check permissions: ${e.message}');
-      if (mounted) {
+      print('HomeScreen _checkServiceStatus: Failed - ${e.message}');
+    } catch (e) {
+      print('HomeScreen _checkServiceStatus: General Error - $e');
+    }
+    if(mounted){
         setState(() {
-          _isLoadingPermissions = false;
+            _isServiceRunning = tempIsServiceRunning;
         });
+        print("Service status updated: Running: $_isServiceRunning");
+    }
+  }
+
+  Future<void> _handlePermissionRequest(Future<dynamic> Function() requestFunction, {String? operationName}) async {
+    String opName = operationName ?? "Operation";
+    print("HomeScreen _handlePermissionRequest: Starting $opName");
+    try {
+      await requestFunction();
+      print("HomeScreen _handlePermissionRequest: $opName request sent. App will refresh on resume via _loadInitialData.");
+    } on PlatformException catch (e) {
+      print('HomeScreen _handlePermissionRequest: Failed during $opName - ${e.message}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$opName request failed: ${e.message ?? "Unknown error"}')),
+        );
       }
     }
   }
 
-   Future<void> _checkServiceStatus() async {
-       if (!mounted) return;
-       try {
-         final bool isRunning = await platform.invokeMethod('isLyricServiceRunning');
-         if (mounted) {
-           setState(() {
-             _isServiceRunning = isRunning;
-           });
-         }
-       } on PlatformException catch (e) {
-         print('Failed to check service status: ${e.message}');
-          if (mounted) {
-           setState(() {
-             _isServiceRunning = false;
-           });
-         }
-       }
-     }
-
-   Future<void> _startLyricService() async {
-      try {
-        await platform.invokeMethod('startLyricService');
-         _checkServiceStatus();
-      } on PlatformException catch (e) {
-        print('Failed to start lyric service: ${e.message}');
-         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to start lyric service: ${e.message}')),
-          );
-        }
-         if (mounted) {
-          setState(() {
-            _isServiceRunning = false;
-          });
-        }
-      }
-   }
-
-  Future<void> _requestNotificationAccess() async {
+  Future<void> _startLyricService() async {
+    print("HomeScreen _startLyricService: Attempting to start.");
     try {
-      await platform.invokeMethod('requestNotificationAccess');
+      await platform.invokeMethod('startLyricService');
+      if(mounted) await _checkServiceStatus();
     } on PlatformException catch (e) {
-      print('Failed to open notification settings: ${e.message}');
+      print('HomeScreen _startLyricService: Failed - ${e.message}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to open notification settings: ${e.message}')),
+          SnackBar(content: Text('Failed to start service: ${e.message ?? "Unknown error"}')),
         );
+        if(mounted) setState(() { _isServiceRunning = false; });
       }
     }
+  }
+
+  Future<void> _requestNotificationAccess() async {
+    await _handlePermissionRequest(() => platform.invokeMethod('requestNotificationAccess'), operationName: "Notification Access");
   }
 
   Future<void> _requestOverlayPermission() async {
-    try {
-      await platform.invokeMethod('requestOverlayPermission');
-    } on PlatformException catch (e) {
-      print('Failed to open overlay settings: ${e.message}');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to open overlay settings: ${e.message}')),
-        );
-      }
-    }
+    await _handlePermissionRequest(() => platform.invokeMethod('requestOverlayPermission'), operationName: "Overlay Permission");
   }
 
-   Future<void> _requestPostNotificationsPermission() async {
-     try {
-       await platform.invokeMethod('requestPostNotifications');
-     } on PlatformException catch (e) {
-       print('Failed to request post notifications permission: ${e.message}');
-        if (mounted) {
-         ScaffoldMessenger.of(context).showSnackBar(
-           SnackBar(content: Text('Failed to request notification permission: ${e.message}')),
-         );
-       }
-     }
-   }
+  Future<void> _requestPostNotificationsPermission() async {
+     await _handlePermissionRequest(() => platform.invokeMethod('requestPostNotifications'), operationName: "Post Notifications Permission");
+  }
 
-  Widget _buildPermissionStatusIcon(bool isGranted) {
-    if (_isLoadingPermissions) {
-      return const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2));
-    }
+  Future<void> _requestDisableBatteryOptimization() async {
+    await _handlePermissionRequest(() => platform.invokeMethod('requestDisableBatteryOptimization'), operationName: "Battery Optimization");
+    // Status will be updated on resume by _loadInitialData
+  }
+
+
+  Widget _buildPermissionStatusIcon(bool isGranted, {bool optional = false}) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Icon(
-      isGranted ? Icons.check_circle : Icons.warning,
-      color: isGranted ? Colors.green : Colors.amber,
-      size: 20,
+      isGranted ? Icons.check_circle_outline_rounded : (optional ? Icons.info_outline_rounded : Icons.error_outline_rounded),
+      color: isGranted
+          ? Colors.green.shade600
+          : (optional ? colorScheme.tertiary : colorScheme.error),
+      size: 24,
     );
   }
 
-   Widget _buildRestrictedSettingsNote() {
-    if (_androidSdkInt != null && _androidSdkInt! >= _android13ApiLevel && !_isNotificationAccessGranted) {
+  Widget _buildRestrictedSettingsNote() {
+    // No need to check _isLoadingAppStatus here as this widget is only built when not loading
+    if (_androidSdkInt != null &&
+        _androidSdkInt! >= _android13ApiLevel &&
+        !_isNotificationAccessGranted) {
       return Padding(
-        padding: const EdgeInsets.only(top: 10.0, bottom: 5.0),
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
         child: Text(
           'Note: On Android 13+, for apps not installed from an app store, '
           'you might need to manually "Allow restricted settings" for this app in its App Info page '
           'before Notification Access can be granted.',
-          style: TextStyle(
-            fontSize: 13,
-            fontStyle: FontStyle.italic,
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-          ),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontStyle: FontStyle.italic,
+              ),
           textAlign: TextAlign.center,
         ),
       );
@@ -254,163 +475,254 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildServiceStatusRow() {
-     if (_isLoadingPermissions || _isLoadingAndroidVersion) {
-       return const SizedBox.shrink();
-     }
+    // This widget is only built when _isLoadingAppStatus is false.
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
-     return Padding(
-       padding: const EdgeInsets.only(top: 20.0),
-       child: Row(
-         mainAxisAlignment: MainAxisAlignment.center,
-         children: [
-           Text(
-             'Lyric Service Status:',
-             style: TextStyle(
-               fontSize: 16,
-               fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.onSurface,
-             ),
-           ),
-           const SizedBox(width: 8),
-           Icon(
-             _isServiceRunning ? Icons.check_circle : Icons.info,
-             color: _isServiceRunning ? Colors.green : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-             size: 20,
-           ),
-            const SizedBox(width: 4),
-             if (!_isServiceRunning)
-              Expanded(
-                child: Text(
-                  _canStartService ? '(Ready to start)' : '(Awaiting permissions)',
-                   style: TextStyle(
-                    fontSize: 14,
-                     fontStyle: FontStyle.italic,
-                     color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                   ),
-                   overflow: TextOverflow.ellipsis,
-                 ),
-              ),
-         ],
-       ),
-     );
-   }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            'Lyric Service:',
+            style: textTheme.titleMedium,
+          ),
+          const SizedBox(width: 8),
+          Icon(
+            _isServiceRunning ? Icons.rocket_launch_rounded : Icons.rocket_outlined,
+            color: _isServiceRunning
+                ? Colors.green.shade600
+                : colorScheme.onSurface.withOpacity(0.6),
+            size: 22,
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              _isServiceRunning
+                  ? 'Active'
+                  : (_canStartService ? '(Ready to Launch)' : '(Awaiting Permissions)'),
+              style: textTheme.bodyMedium?.copyWith(
+                    fontStyle: FontStyle.italic,
+                    color: _isServiceRunning
+                        ? Colors.green.shade600
+                        : colorScheme.onSurface.withOpacity(0.7),
+                  ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPermissionRequestTile({
+    required String title,
+    required String subtitle,
+    required bool isGranted,
+    required VoidCallback onPressed,
+    bool optional = false,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Card(
+      child: ListTile(
+        leading: _buildPermissionStatusIcon(isGranted, optional: optional),
+        title: Text(title),
+        subtitle: Text(subtitle),
+        trailing: ElevatedButton(
+          onPressed: isGranted ? null : onPressed,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: isGranted ? colorScheme.surfaceContainerHighest : colorScheme.primaryContainer,
+            foregroundColor: isGranted ? colorScheme.onSurfaceVariant : colorScheme.onPrimaryContainer,
+            elevation: isGranted ? 0 : 1,
+          ),
+          child: Text(isGranted ? 'Granted' : 'Grant'),
+        ),
+        onTap: isGranted ? null : onPressed,
+      ),
+    );
+  }
 
 
   @override
   Widget build(BuildContext context) {
+    print("HomeScreen build: Called. _isLoadingAppStatus: $_isLoadingAppStatus");
     final colorScheme = Theme.of(context).colorScheme;
-    final theme = Theme.of(context);
+    final textTheme = Theme.of(context).textTheme;
+
+    Widget screenContent;
+
+    if (_isLoadingAppStatus) { // Single loading flag check
+      screenContent = const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 20),
+              Text("Loading app status..."),
+            ],
+          ),
+        ),
+      );
+    } else {
+      screenContent = SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: <Widget>[
+                Icon(Icons.music_note_rounded, size: 60, color: colorScheme.secondary),
+                const SizedBox(height: 16),
+                Text(
+                  'Welcome!',
+                  style: textTheme.headlineSmall?.copyWith(
+                      color: colorScheme.primary, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Get ready for a purr-fectly synced lyric experience!',
+                  style: textTheme.titleMedium
+                      ?.copyWith(color: colorScheme.onSurfaceVariant),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Flexible(
+                      child: SvgPicture.asset(
+                        'assets/images/cat-left.svg',
+                        height: 70,
+                        colorFilter: ColorFilter.mode(
+                            colorScheme.primary.withOpacity(0.8), BlendMode.srcIn),
+                      ),
+                    ),
+                    Flexible(
+                      child: SvgPicture.asset(
+                        'assets/images/cat-right.svg',
+                        height: 70,
+                        colorFilter: ColorFilter.mode(
+                            colorScheme.primary.withOpacity(0.8), BlendMode.srcIn),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                Divider(height: 32),
+                Text(
+                  'Required Permissions',
+                  style: textTheme.titleLarge?.copyWith(color: colorScheme.secondary),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                 Text(
+                  'These are needed for the app to function correctly.',
+                  style: textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                // Conditionally show Post Notifications tile only if SDK version is known and Tiramisu+
+                if (_androidSdkInt != null && _androidSdkInt! >= _android13ApiLevel)
+                  _buildPermissionRequestTile(
+                    title: 'Post Notifications (Android 13+)',
+                    subtitle: 'Allows the app to show its persistent notification.',
+                    isGranted: _isPostNotificationsGranted,
+                    onPressed: _requestPostNotificationsPermission,
+                  ),
+                _buildPermissionRequestTile(
+                  title: 'Notification Access',
+                  subtitle: 'Lets the app read music player notifications.',
+                  isGranted: _isNotificationAccessGranted,
+                  onPressed: _requestNotificationAccess,
+                ),
+                _buildRestrictedSettingsNote(),
+                _buildPermissionRequestTile(
+                  title: 'Display Over Other Apps',
+                  subtitle: 'Enables showing lyrics on top of other apps.',
+                  isGranted: _canDrawOverlays,
+                  onPressed: _requestOverlayPermission,
+                ),
+                const SizedBox(height: 20),
+                Divider(height: 32),
+                Text(
+                  'Optional Settings',
+                  style: textTheme.titleLarge?.copyWith(color: colorScheme.secondary),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                _buildPermissionRequestTile(
+                  title: 'Disable Battery Optimization',
+                  subtitle: 'Helps the service run reliably in the background (Recommended).',
+                  isGranted: _isBatteryOptimizationDisabled,
+                  onPressed: _requestDisableBatteryOptimization,
+                  optional: true,
+                ),
+                _buildServiceStatusRow(),
+                const SizedBox(height: 20),
+                ElevatedButton.icon(
+                  icon: Icon(_isServiceRunning ? Icons.stop_circle_outlined : Icons.play_circle_outline_rounded),
+                  label: Text(_isServiceRunning ? 'Service is Active' : 'Launch Lyric Service'),
+                  onPressed: (_canStartService && !_isServiceRunning ? _startLyricService : null),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _isServiceRunning
+                        ? colorScheme.tertiaryContainer
+                        : colorScheme.primary,
+                    foregroundColor: _isServiceRunning
+                        ? colorScheme.onTertiaryContainer
+                        : colorScheme.onPrimary,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  ).copyWith(
+                     elevation: MaterialStateProperty.all( _canStartService && !_isServiceRunning ? 2 : 0),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainer,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.3))
+                  ),
+                  child: Text(
+                    'Once permissions are granted and the service is launched, you can close this screen. The lyric service will continue running in the background.',
+                    style: textTheme.bodySmall,
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+          );
+    }
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: colorScheme.inversePrimary,
-        title: const Text('Lyric Listener'),
+        title: Row(
+          children: [
+            Icon(Icons.lyrics_outlined, color: colorScheme.primary),
+            const SizedBox(width: 8),
+            Text('Lyric Listener', style: textTheme.titleLarge),
+          ],
+        ),
         actions: [
           IconButton(
             icon: Icon(
-              theme.brightness == Brightness.dark ? Icons.wb_sunny : Icons.nightlight_round,
+              Theme.of(context).brightness == Brightness.dark
+                  ? Icons.light_mode_outlined
+                  : Icons.dark_mode_outlined,
             ),
             onPressed: widget.toggleTheme,
             tooltip: 'Toggle Theme',
           ),
         ],
       ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: <Widget>[
-                Icon(Icons.music_note, size: 80, color: colorScheme.primary),
-                const SizedBox(height: 20),
-                Text(
-                  'Welcome to Lyric Listener!',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurface,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'This app needs permissions to listen for music notifications and display lyrics over other apps.',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: colorScheme.onSurface.withOpacity(0.8),
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 30),
-                 if (_androidSdkInt == null || _androidSdkInt! >= _android13ApiLevel)
-                 Padding(
-                   padding: const EdgeInsets.only(bottom: 10.0),
-                   child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        ElevatedButton(
-                          onPressed: _requestPostNotificationsPermission,
-                          child: const Text('Grant Notification Permission (Runtime)'),
-                        ),
-                        const SizedBox(width: 8),
-                        _buildPermissionStatusIcon(_isPostNotificationsGranted),
-                      ],
-                    ),
-                 ),
-                Row(
-                   mainAxisAlignment: MainAxisAlignment.center,
-                   children: [
-                     ElevatedButton(
-                       onPressed: _requestNotificationAccess,
-                       child: const Text('Grant Notification Access'),
-                     ),
-                     const SizedBox(width: 8),
-                     _buildPermissionStatusIcon(_isNotificationAccessGranted),
-                   ],
-                 ),
-                if (_isLoadingAndroidVersion)
-                  const Padding(
-                    padding: EdgeInsets.all(8.0),
-                    child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
-                  )
-                else
-                  _buildRestrictedSettingsNote(),
-                const SizedBox(height: 10),
-                 Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                       ElevatedButton(
-                        onPressed: _requestOverlayPermission,
-                        child: const Text('Grant Display Over Other Apps Permission'),
-                      ),
-                      const SizedBox(width: 8),
-                      _buildPermissionStatusIcon(_canDrawOverlays),
-                    ],
-                  ),
-
-                _buildServiceStatusRow(),
-
-                const SizedBox(height: 20),
-                ElevatedButton(
-                   onPressed: _canStartService && !_isServiceRunning ? _startLyricService : null,
-                   child: Text(_isServiceRunning ? 'Lyric Service Running' : 'Start Lyric Service'),
-                ),
-
-                const SizedBox(height: 20),
-                Text(
-                  'After granting permissions and starting the service, you can leave the app. It will run in the background.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontStyle: FontStyle.italic,
-                    color: colorScheme.onSurface.withOpacity(0.7),
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
+      body: SafeArea(
+        child: Center(
+          child: screenContent,
         ),
       ),
     );
