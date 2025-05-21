@@ -8,7 +8,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.myapp"
+    namespace = "dev.optimus.lyricslistener"
     compileSdk = 35
     ndkVersion = "27.0.12077973"
 
@@ -22,7 +22,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.myapp"
+        applicationId = "dev.optimus.lyricslistener"
         minSdk = 29
 
         val flutterVersionCode = System.getenv("FLUTTER_BUILD_NUMBER")?.toIntOrNull() ?: 1

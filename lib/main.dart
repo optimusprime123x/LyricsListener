@@ -111,7 +111,7 @@ class _MyAppState extends State<MyApp> {
           iconTheme: IconThemeData(color: baseLightColorScheme.onSurfaceVariant),
         ),
         dividerTheme: DividerThemeData(
-          space: 1,
+          space: 1, // This is default space, height in Divider widget overrides this for total space.
           thickness: 0.5,
           color: baseLightColorScheme.outlineVariant,
         ),
@@ -222,7 +222,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
-  static const platform = MethodChannel('com.example.myapp/permissions');
+  static const platform = MethodChannel('dev.optimus.lyricslistener/permissions');
   int? _androidSdkInt;
   bool _isLoadingAppStatus = true; // Single flag to control the main loading screen
 
@@ -243,36 +243,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _loadInitialData() async {
     print("HomeScreen _loadInitialData: Starting");
-    if (mounted && !_isLoadingAppStatus) { // If already loading, don't restart
+    if (mounted && !_isLoadingAppStatus) { 
       setState(() {
         _isLoadingAppStatus = true;
       });
-    } else if (!mounted && !_isLoadingAppStatus) { // For initial call from initState
-       _isLoadingAppStatus = true; // No need for setState here
+    } else if (!mounted && !_isLoadingAppStatus) { 
+       _isLoadingAppStatus = true; 
     }
 
 
     try {
-      // Fetch Android version first
       await _getAndroidVersion();
-
-      // Then fetch permissions, which might depend on the Android version
-      // Ensure mounted check before proceeding if _getAndroidVersion could take time
       if (mounted) {
         await _checkPermissionsStatus();
       }
-
-      // Finally, check service status
       if (mounted) {
         await _checkServiceStatus();
       }
     } catch (e, s) {
       print("HomeScreen _loadInitialData: Error during loading sequence: $e\n$s");
-      // Handle error, perhaps show an error message or set default states
     } finally {
       if (mounted) {
         setState(() {
-          _isLoadingAppStatus = false; // THIS IS THE KEY: Always set to false in finally
+          _isLoadingAppStatus = false; 
         });
         print("HomeScreen _loadInitialData: Finally block executed. _isLoadingAppStatus: $_isLoadingAppStatus");
       }
@@ -291,7 +284,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.didChangeAppLifecycleState(state);
     print("HomeScreen didChangeAppLifecycleState: $state");
     if (state == AppLifecycleState.resumed) {
-      if (!_isLoadingAppStatus) { // Only reload if not already in a loading cycle
+      if (!_isLoadingAppStatus) { 
         _loadInitialData();
       }
     }
@@ -304,8 +297,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final int? version = await platform.invokeMethod('getAndroidVersion');
       if (mounted) {
         print("HomeScreen _getAndroidVersion: Received version: $version");
-        // No setState here for _isLoadingAppStatus; _loadInitialData handles it.
-        // Only update the specific data.
         _androidSdkInt = version;
       }
     } on PlatformException catch (e) {
@@ -314,8 +305,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _androidSdkInt = null;
       }
     }
-    // Ensure that even on error, the flow in _loadInitialData continues.
-    // The _isLoadingAppStatus flag is managed by _loadInitialData's finally block.
   }
 
   Future<void> _checkPermissionsStatus() async {
@@ -324,12 +313,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     bool tempNotificationAccess = false;
     bool tempCanDrawOverlays = false;
-    bool tempPostNotifications = (_androidSdkInt != null && _androidSdkInt! < _android13ApiLevel); // Default true if pre-Tiramisu
+    bool tempPostNotifications = (_androidSdkInt != null && _androidSdkInt! < _android13ApiLevel); 
     bool tempBatteryOptDisabled = false;
 
     try {
-      // If _androidSdkInt is still null here, it means _getAndroidVersion likely failed or hasn't completed.
-      // We proceed with defaults or skip checks that depend on it.
       if (_androidSdkInt == null) {
           print("HomeScreen _checkPermissionsStatus: Android SDK version unknown for permission checks.");
       }
@@ -339,7 +326,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         platform.invokeMethod('canDrawOverlays').catchError((e) { print("Error canDrawOverlays: $e"); return false; }),
         (_androidSdkInt != null && _androidSdkInt! >= _android13ApiLevel)
             ? platform.invokeMethod('isPostNotificationsGranted').catchError((e) { print("Error isPostNotificationsGranted: $e"); return false; })
-            : Future.value(tempPostNotifications), // Use pre-calculated default
+            : Future.value(tempPostNotifications), 
         platform.invokeMethod('isIgnoringBatteryOptimizations').catchError((e) { print("Error isIgnoringBatteryOptimizations: $e"); return false; }),
       ]);
 
@@ -350,14 +337,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     } on PlatformException catch (e) {
       print('HomeScreen _checkPermissionsStatus: PlatformException - ${e.message}');
-      // Defaults are already set
     } catch (e) {
       print('HomeScreen _checkPermissionsStatus: General Exception - $e');
-      // Defaults are already set
     }
 
     if (mounted) {
-      // Only call setState once after all values are determined
       setState(() {
         _isNotificationAccessGranted = tempNotificationAccess;
         _canDrawOverlays = tempCanDrawOverlays;
@@ -438,7 +422,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _requestDisableBatteryOptimization() async {
     await _handlePermissionRequest(() => platform.invokeMethod('requestDisableBatteryOptimization'), operationName: "Battery Optimization");
-    // Status will be updated on resume by _loadInitialData
   }
 
 
@@ -454,7 +437,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildRestrictedSettingsNote() {
-    // No need to check _isLoadingAppStatus here as this widget is only built when not loading
     if (_androidSdkInt != null &&
         _androidSdkInt! >= _android13ApiLevel &&
         !_isNotificationAccessGranted) {
@@ -475,7 +457,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildServiceStatusRow() {
-    // This widget is only built when _isLoadingAppStatus is false.
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
@@ -552,7 +533,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     Widget screenContent;
 
-    if (_isLoadingAppStatus) { // Single loading flag check
+    if (_isLoadingAppStatus) { 
       screenContent = const Center(
         child: Padding(
           padding: EdgeInsets.all(32.0),
@@ -568,64 +549,65 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
     } else {
       screenContent = SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), // Adjusted vertical padding slightly
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center, // Ensures children like Row are centered
               children: <Widget>[
+                const SizedBox(height: 16), // Initial padding from AppBar
                 Icon(Icons.music_note_rounded, size: 60, color: colorScheme.secondary),
                 const SizedBox(height: 16),
                 Text(
-                  'Welcome!',
+                  'Welcome to Lyric Listener!',
                   style: textTheme.headlineSmall?.copyWith(
                       color: colorScheme.primary, fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  'Get ready for a purr-fectly synced lyric experience!',
-                  style: textTheme.titleMedium
-                      ?.copyWith(color: colorScheme.onSurfaceVariant),
-                  textAlign: TextAlign.center,
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                  child: Text(
+                    'Get ready for a purr-fectly synced lyric experience with your favorite tunes!',
+                    style: textTheme.titleMedium
+                        ?.copyWith(color: colorScheme.onSurfaceVariant),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
                 const SizedBox(height: 24),
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Flexible(
-                      child: SvgPicture.asset(
-                        'assets/images/cat-left.svg',
-                        height: 70,
-                        colorFilter: ColorFilter.mode(
-                            colorScheme.primary.withOpacity(0.8), BlendMode.srcIn),
-                      ),
+                    SvgPicture.asset(
+                      'assets/images/cat-left.svg', // Ensure this asset exists
+                      height: 80,
+                      colorFilter: ColorFilter.mode(
+                          colorScheme.primary.withOpacity(0.9), BlendMode.srcIn),
                     ),
-                    Flexible(
-                      child: SvgPicture.asset(
-                        'assets/images/cat-right.svg',
-                        height: 70,
-                        colorFilter: ColorFilter.mode(
-                            colorScheme.primary.withOpacity(0.8), BlendMode.srcIn),
-                      ),
+                    const SizedBox(width: 32), 
+                    SvgPicture.asset(
+                      'assets/images/bird-right.svg', // Ensure this asset exists
+                      height: 80,
+                      colorFilter: ColorFilter.mode(
+                          colorScheme.primary.withOpacity(0.9), BlendMode.srcIn),
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
-                Divider(height: 32),
+                const SizedBox(height: 32),
+                Divider(height: 32, indent: 16, endIndent: 16),
                 Text(
                   'Required Permissions',
-                  style: textTheme.titleLarge?.copyWith(color: colorScheme.secondary),
+                  style: textTheme.titleLarge?.copyWith(color: colorScheme.secondary, fontWeight: FontWeight.w600),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 8),
-                 Text(
-                  'These are needed for the app to function correctly.',
-                  style: textTheme.bodySmall,
-                  textAlign: TextAlign.center,
-                ),
+                const SizedBox(height: 4),
+                 Padding(
+                   padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                   child: Text(
+                    'These are needed for the app to function correctly.',
+                    style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+                    textAlign: TextAlign.center,
+                                   ),
+                 ),
                 const SizedBox(height: 16),
-                // Conditionally show Post Notifications tile only if SDK version is known and Tiramisu+
                 if (_androidSdkInt != null && _androidSdkInt! >= _android13ApiLevel)
                   _buildPermissionRequestTile(
                     title: 'Post Notifications (Android 13+)',
@@ -647,13 +629,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   onPressed: _requestOverlayPermission,
                 ),
                 const SizedBox(height: 20),
-                Divider(height: 32),
+                Divider(height: 32, indent: 16, endIndent: 16),
                 Text(
                   'Optional Settings',
-                  style: textTheme.titleLarge?.copyWith(color: colorScheme.secondary),
+                  style: textTheme.titleLarge?.copyWith(color: colorScheme.secondary, fontWeight: FontWeight.w600),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
+                 Padding(
+                   padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                   child: Text(
+                    'Enhance your experience with these settings.', // Added subtitle
+                    style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+                    textAlign: TextAlign.center,
+                                   ),
+                 ),
+                const SizedBox(height: 16),
                 _buildPermissionRequestTile(
                   title: 'Disable Battery Optimization',
                   subtitle: 'Helps the service run reliably in the background (Recommended).',
@@ -670,10 +661,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _isServiceRunning
                         ? colorScheme.tertiaryContainer
-                        : colorScheme.primary,
+                        : (_canStartService ? colorScheme.primary : colorScheme.surfaceContainerHighest), // Adjusted for disabled state
                     foregroundColor: _isServiceRunning
                         ? colorScheme.onTertiaryContainer
-                        : colorScheme.onPrimary,
+                        : (_canStartService ? colorScheme.onPrimary : colorScheme.onSurfaceVariant.withOpacity(0.5)), // Adjusted for disabled state
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                   ).copyWith(
                      elevation: MaterialStateProperty.all( _canStartService && !_isServiceRunning ? 2 : 0),
@@ -693,7 +684,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     textAlign: TextAlign.center,
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 20), // Final padding at the bottom
               ],
             ),
           );
@@ -705,7 +696,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           children: [
             Icon(Icons.lyrics_outlined, color: colorScheme.primary),
             const SizedBox(width: 8),
-            Text('Lyric Listener', style: textTheme.titleLarge),
+            Text('Lyric Listener'), // Style will be picked from AppBarTheme
           ],
         ),
         actions: [
@@ -721,7 +712,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ],
       ),
       body: SafeArea(
-        child: Center(
+        child: Center( // Center the SingleChildScrollView if its content is narrower than the screen
           child: screenContent,
         ),
       ),

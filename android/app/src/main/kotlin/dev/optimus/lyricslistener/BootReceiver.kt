@@ -1,4 +1,4 @@
-package com.example.myapp
+package dev.optimus.lyricslistener
 
 import android.content.BroadcastReceiver
 import android.content.Context

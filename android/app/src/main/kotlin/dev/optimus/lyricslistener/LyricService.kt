@@ -1,4 +1,4 @@
-package com.example.myapp
+package dev.optimus.lyricslistener
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -36,6 +36,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.*
+import dev.optimus.lyricslistener.R
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
@@ -75,6 +76,7 @@ class LyricService : NotificationListenerService() {
 
     private var isLyricsExpanded = false
     private val COLLAPSED_LYRICS_MAX_HEIGHT_DP = 100
+    private lateinit var notificationManager: NotificationManager
     private val EXPANDED_LYRICS_MAX_HEIGHT_DP = 300
 
     @Serializable
@@ -122,14 +124,15 @@ class LyricService : NotificationListenerService() {
     }
 
     companion object {
-        const val ACTION_SHOW_LYRICS = "com.example.myapp.ACTION_SHOW_LYRICS"
-        const val ACTION_HIDE_LYRICS = "com.example.myapp.ACTION_HIDE_LYRICS"
+        const val ACTION_SHOW_LYRICS = "dev.optimus.lyricslistener.ACTION_SHOW_LYRICS"
+        const val ACTION_HIDE_LYRICS = "dev.optimus.lyricslistener.ACTION_HIDE_LYRICS"
         private const val LYRIC_API_BASE_URL = "https://lrclib.net/api/search"
     }
 
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Service onCreate() called.")
+        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createPersistentNotification("Waiting for song..."))
         isLyricsExpanded = false
@@ -519,10 +522,8 @@ class LyricService : NotificationListenerService() {
                 PendingIntent.FLAG_UPDATE_CURRENT
             }
             val contentPendingIntent: PendingIntent = PendingIntent.getActivity(this, 0, permIntent, pendingIntentFlags)
-            
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
             val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-                .setContentTitle(getString(R.string.app_name))
                 .setContentText("Overlay permission needed for lyrics.")
                 .setSmallIcon(R.drawable.ic_notification_icon)
                 .setContentIntent(contentPendingIntent)

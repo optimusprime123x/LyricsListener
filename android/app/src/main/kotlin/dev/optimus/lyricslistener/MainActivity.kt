@@ -1,4 +1,4 @@
-package com.example.myapp // Make sure this matches your actual package name
+package dev.optimus.lyricslistener 
 
 import android.app.ActivityManager
 import android.content.ComponentName
@@ -18,7 +18,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
-    private val CHANNEL = "com.example.myapp/permissions"
+    private val CHANNEL = "dev.optimus.lyricslistener/permissions"
     private val POST_NOTIFICATIONS_REQUEST_CODE = 101 // Define request code
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
