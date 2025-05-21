@@ -1,4 +1,5 @@
 # Lyric Listener
+
 ## Android app to display beautiful, synced lyrics for your currently playing music.
 
 <img src="https://github.com/user-attachments/assets/745ad5e3-70d2-4504-b189-c13f5eaef1bb" alt="icon" width="256" height="256"/>
