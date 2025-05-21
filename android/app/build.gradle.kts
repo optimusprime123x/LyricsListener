@@ -3,7 +3,7 @@
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.1.0"
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.1.0" // Ensure this matches your Kotlin version or is compatible
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -45,7 +45,7 @@ android {
         debug {
             ndk {
                 abiFilters.clear()
-                abiFilters.addAll(listOf("arm64-v8a"))
+                abiFilters.addAll(listOf("arm64-v8a")) // Consider if you need other ABIs for debug too
             }
             signingConfig = signingConfigs.getByName("debug")
             packagingOptions {
@@ -55,10 +55,9 @@ android {
                 }
             }
         }
-    } // Corrected: buildType block closed here. flutter block was moved out.
-} // android block correctly closed here
+    }
+}
 
-// flutter block moved to be a top-level configuration, outside the android block
 flutter {
     source = "../.."
 }
@@ -68,8 +67,9 @@ dependencies {
     implementation("androidx.media:media:1.7.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+    implementation("androidx.palette:palette-ktx:1.0.0") // <-- ADDED THIS LINE
 
-    // SLF4J API for logging
+    // SLF4J API for logging (if you use it directly, otherwise Ktor might bundle its own logger needs)
     implementation("org.slf4j:slf4j-api:2.0.7") // Or the latest version
 
     // Ktor - Define version once and use it for all Ktor modules

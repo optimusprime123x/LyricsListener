@@ -2,18 +2,18 @@
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/lyricsOverlayContainer"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="#D0000000"
+    android:background="#CC000000"
     android:padding="8dp"
-    android:elevation="12dp"
-    android:id="@+id/lyricsOverlayContainer">
+    android:elevation="12dp">
 
     <TextView
         android:id="@+id/songInfoTextView"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:textColor="#FFFFFF"
+        android:textColor="@android:color/white"
         android:textSize="16sp"
         android:textStyle="bold"
         android:layout_marginStart="8dp"
@@ -23,7 +23,11 @@
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toStartOf="@id/expandCollapseButton"
-        tools:text="Song Title - Artist Name" />
+        tools:text="Song Title - Artist Name"
+        android:shadowColor="#AA000000"
+        android:shadowDx="1"
+        android:shadowDy="1"
+        android:shadowRadius="2"/>
 
     <ImageButton
         android:id="@+id/expandCollapseButton"
