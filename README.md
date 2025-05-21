@@ -1,16 +1,20 @@
-# myapp
+# Lyric Listener
+## Android app to display beautiful, synced lyrics for your currently playing music.
 
-A new Flutter project.
+<img src="https://github.com/user-attachments/assets/745ad5e3-70d2-4504-b189-c13f5eaef1bb" alt="icon" width="256" height="256"/>
 
-## Getting Started
+### Features
+- Synchronized (and plain) Lyrics Overlay: See synced lyrics for currently playing media, displayed over your music app. (Spotify, apple music, poweramp, and others supported. Youtube might cause issues due to search issues)
+- Modern UI: Material 3 design, light & dark themes, and smooth animations for a delightful experience.
+- Background Service: Lyrics overlay persists as you navigate between apps.
+- Permissions Helper: Guided UI for requesting all required Android permissions. (see below)
 
-This project is a starting point for a Flutter application.
+ ### Permissions Explained
+Notification Access: Needed to detect currently playing track and fetch correct lyrics.
+Overlay Permission: Allows the app to display lyrics on top of other apps.
+Post Notifications: Required for persistent notifications.
+Disable Battery Optimization: Optional, but recommended for uninterrupted background lyric service.
 
-A few resources to get you started if this is your first Flutter project:
+### Known Issues 
+- Switching between two music-player apps - seek the currrent song a bit ahead to fix.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
