@@ -667,7 +667,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         : (_canStartService ? colorScheme.onPrimary : colorScheme.onSurfaceVariant.withOpacity(0.5)), // Adjusted for disabled state
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                   ).copyWith(
-                     elevation: MaterialStateProperty.all( _canStartService && !_isServiceRunning ? 2 : 0),
+                     elevation: WidgetStateProperty.all( _canStartService && !_isServiceRunning ? 2 : 0),
                   ),
                 ),
                 const SizedBox(height: 24),
