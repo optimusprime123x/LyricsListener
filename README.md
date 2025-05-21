@@ -10,10 +10,10 @@
 - Permissions Helper: Guided UI for requesting all required Android permissions. (see below)
 
  ### Permissions Explained
-Notification Access: Needed to detect currently playing track and fetch correct lyrics.
-Overlay Permission: Allows the app to display lyrics on top of other apps.
-Post Notifications: Required for persistent notifications.
-Disable Battery Optimization: Optional, but recommended for uninterrupted background lyric service.
+- Notification Access: Needed to detect currently playing track and fetch correct lyrics.
+- Overlay Permission: Allows the app to display lyrics on top of other apps.
+- Post Notifications: Required for persistent notifications.
+- Disable Battery Optimization: Optional, but recommended for uninterrupted background lyric service.
 
 ### Known Issues 
 - Switching between two music-player apps - seek the currrent song a bit ahead to fix.
