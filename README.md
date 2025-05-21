@@ -17,4 +17,7 @@
 
 ### Known Issues 
 - Switching between two music-player apps - seek the currrent song a bit ahead to fix.
+- YouTube support might be limited due to search issues.
+
+
 
