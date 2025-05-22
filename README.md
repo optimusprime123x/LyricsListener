@@ -17,13 +17,13 @@
 - Disable Battery Optimization: Optional, but recommended for uninterrupted background lyric service.
 
 ### Known Issues 
-- Switching between two music-player apps - seek the currrent song a bit ahead to fix.
+~~- Switching between two music-player apps - seek the currrent song a bit ahead to fix.~~ (fixed) 
 - YouTube support might be limited due to search issues.
 
-### Usage and Installation
-- Go to Releases
-- Install the apk
+### 📲 Usage and Installation
+- [Download the latest APK from Releases](https://github.com/Optimuspime123/LyricsListener/releases/latest)
+- Install the APK
 - Grant necessary permissions
-- Play music from your favourite apps.
+- Play music from your favourite apps
 
 
