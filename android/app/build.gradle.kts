@@ -24,13 +24,9 @@ android {
     defaultConfig {
         applicationId = "dev.optimus.lyricslistener"
         minSdk = 29
-
-        val flutterVersionCode = System.getenv("FLUTTER_BUILD_NUMBER")?.toIntOrNull() ?: 1
-        val flutterVersionName = System.getenv("FLUTTER_BUILD_NAME") ?: "1.0.0"
         targetSdk = 34
-
-        versionCode = flutterVersionCode
-        versionName = flutterVersionName
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
 
         ndk {
             abiFilters.clear()

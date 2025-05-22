@@ -98,7 +98,7 @@ class LyricService : NotificationListenerService() {
     )
 
     sealed class LyricsData {
-        abstract val durationMs: Long // Common property for all lyrics data types
+        abstract val durationMs: Long
 
         data class Plain(val title: String, val artist: String?, val lyrics: String, override val durationMs: Long) : LyricsData()
         data class Synced(val title: String, val artist: String?, val lines: List<TimedLyricLine>, override val durationMs: Long) : LyricsData()
@@ -106,7 +106,7 @@ class LyricService : NotificationListenerService() {
         data class MismatchInfo(
             val title: String?,
             val artist: String?,
-            val originalLyricsData: LyricsData? // Store the actual lyrics data if found during retry
+            val originalLyricsData: LyricsData?
         ) : LyricsData() {
             override val durationMs: Long
                 get() = originalLyricsData?.durationMs ?: 0L
@@ -174,100 +174,139 @@ class LyricService : NotificationListenerService() {
         Log.d(TAG, "Notification Listener connected. Requesting active notifications.")
         Handler(Looper.getMainLooper()).postDelayed({
              try {
-                val activeNotifications = activeNotifications
-                Log.d(TAG, "Found ${activeNotifications?.size ?: 0} active notifications on connect.")
-                activeNotifications?.firstOrNull { sbn ->
-                    sbn.notification.extras.containsKey(Notification.EXTRA_MEDIA_SESSION) &&
-                    activeMediaController(sbn.notification.extras.getParcelable<MediaSession.Token>(Notification.EXTRA_MEDIA_SESSION)!!)
-                        ?.playbackState?.state == PlaybackState.STATE_PLAYING
-                }?.let { sbn ->
-                    Log.d(TAG, "Processing active media notification from ${sbn.packageName} on connect.")
-                    onNotificationPosted(sbn)
+                val activeNotifications = this.activeNotifications ?: return@postDelayed
+                Log.d(TAG, "Found ${activeNotifications.size} active notifications on connect.")
+
+                val playingNotifications = activeNotifications.mapNotNull { sbn ->
+                    val token = sbn.notification.extras.getParcelable<MediaSession.Token>(Notification.EXTRA_MEDIA_SESSION)
+                    if (token != null) {
+                        try {
+                            val controller = MediaController(applicationContext, token)
+                            if (controller.playbackState?.state == PlaybackState.STATE_PLAYING) {
+                                sbn
+                            } else {
+                                null
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Error checking playback state for token on connect: $token", e)
+                            null
+                        }
+                    } else {
+                        null
+                    }
                 }
+
+                val mostRecentPlayingSbn = playingNotifications.maxByOrNull {
+                    it.notification.`when`.takeIf { w -> w > 0 } ?: it.postTime
+                }
+
+                mostRecentPlayingSbn?.let { sbn ->
+                    Log.d(TAG, "Processing most recent active media notification from ${sbn.packageName} (postTime: ${sbn.postTime}, when: ${sbn.notification.`when`}) on connect.")
+                    onNotificationPosted(sbn)
+                } ?: Log.d(TAG, "No actively playing media notifications found on connect, or couldn't determine state.")
+
             } catch (e: SecurityException) {
-                Log.e(TAG, "SecurityException getting active notifications: ${e.message}")
+                Log.e(TAG, "SecurityException getting active notifications on connect: ${e.message}")
             } catch (e: Exception) {
-                Log.e(TAG, "Exception getting active notifications: ${e.message}")
+                Log.e(TAG, "Exception getting active notifications on connect: ${e.message}")
             }
         }, 1000)
-    }
-
-    private fun activeMediaController(token: MediaSession.Token): MediaController? {
-        return try { MediaController(applicationContext, token) } catch (e: Exception) { null }
     }
 
 
     private fun setupMediaController(token: MediaSession.Token) {
         if (currentMediaSessionToken == token && activeMediaController != null) {
-            Log.d(TAG, "MediaController already set up for this token.")
+            Log.d(TAG, "MediaController already set up for this token ($token). Forcing metadata/playback state update.")
              activeMediaController?.playbackState?.let { mediaControllerCallback?.onPlaybackStateChanged(it) }
              activeMediaController?.metadata?.let { mediaControllerCallback?.onMetadataChanged(it) }
             return
         }
+
+        Log.i(TAG, "Setting up new MediaController for token: $token. Previous token was: $currentMediaSessionToken")
         cleanupMediaController()
+
         try {
-            activeMediaController = MediaController(applicationContext, token)
+            val newController = MediaController(applicationContext, token)
+            activeMediaController = newController
             currentMediaSessionToken = token
+
             mediaControllerCallback = object : MediaController.Callback() {
                 override fun onPlaybackStateChanged(state: PlaybackState?) {
                     super.onPlaybackStateChanged(state)
-                    val oldState = currentPlaybackState?.state
-                    currentPlaybackState = state
-                    Log.d(TAG, "onPlaybackStateChanged: ${stateToString(state)}, Pos: ${state?.position}, Speed: ${state?.playbackSpeed}")
+                    if (newController.sessionToken != currentMediaSessionToken) {
+                        Log.w(TAG, "onPlaybackStateChanged for a stale session (${newController.sessionToken}). Current is $currentMediaSessionToken. Ignoring.")
+                        return
+                    }
+                    val oldState = this@LyricService.currentPlaybackState?.state
+                    this@LyricService.currentPlaybackState = state
+                    Log.d(TAG, "onPlaybackStateChanged (for $currentMediaSessionToken): ${stateToString(state)}, Pos: ${state?.position}, Speed: ${state?.playbackSpeed}")
 
                     if (currentLyricsData is LyricsData.Synced) {
                         if (state?.state == PlaybackState.STATE_PLAYING) {
-                            if (oldState != PlaybackState.STATE_PLAYING) {
-                                startOrUpdateLyricsHighlighting()
-                            }
-                            if (lyricsHighlightingJob == null || lyricsHighlightingJob?.isCompleted == true) {
+                            if (oldState != PlaybackState.STATE_PLAYING || lyricsHighlightingJob == null || lyricsHighlightingJob?.isCompleted == true) {
                                 startOrUpdateLyricsHighlighting()
                             }
                         } else {
                             lyricsHighlightingJob?.cancel()
-                            Log.d(TAG, "Playback not active, cancelling highlighting job.")
+                            Log.d(TAG, "Playback not active for $currentMediaSessionToken, cancelling highlighting job.")
                         }
                     }
                 }
 
                 override fun onMetadataChanged(metadata: MediaMetadata?) {
                     super.onMetadataChanged(metadata)
-                    Log.d(TAG, "onMetadataChanged: Title: ${metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)}")
-                    processMediaMetadata(metadata, activeMediaController?.playbackState, "Callback: MetadataChanged")
+                    if (newController.sessionToken != currentMediaSessionToken) {
+                        Log.w(TAG, "onMetadataChanged for a stale session (${newController.sessionToken}). Current is $currentMediaSessionToken. Ignoring.")
+                        return
+                    }
+                    Log.d(TAG, "onMetadataChanged (for $currentMediaSessionToken): Title: ${metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)}")
+                    processMediaMetadata(metadata, newController.playbackState, "Callback: MetadataChanged for $currentMediaSessionToken")
                 }
 
                 override fun onSessionDestroyed() {
                     super.onSessionDestroyed()
-                    Log.d(TAG, "MediaSession Destroyed for token $currentMediaSessionToken. Cleaning up.")
-                    clearSongContextAndHideLyrics()
+                    if (newController.sessionToken == currentMediaSessionToken) {
+                        Log.i(TAG, "MediaSession Destroyed for active token $currentMediaSessionToken. Cleaning up.")
+                        clearSongContextAndHideLyrics()
+                    } else {
+                        Log.w(TAG, "MediaSession Destroyed for a stale token ${newController.sessionToken}. Current is $currentMediaSessionToken. Ignoring full clear.")
+                    }
                 }
             }
-            activeMediaController?.registerCallback(mediaControllerCallback!!, Handler(Looper.getMainLooper()))
-            Log.d(TAG, "MediaController registered for token: $token from package ${activeMediaController?.packageName}")
+            newController.registerCallback(mediaControllerCallback!!, Handler(Looper.getMainLooper()))
+            Log.d(TAG, "MediaController registered for token: $token from package ${newController.packageName}")
 
-            processMediaMetadata(activeMediaController?.metadata, activeMediaController?.playbackState, "Initial Setup for ${activeMediaController?.packageName}")
-            activeMediaController?.playbackState?.let { mediaControllerCallback?.onPlaybackStateChanged(it) }
-
+            processMediaMetadata(newController.metadata, newController.playbackState, "Initial Setup for $token (${newController.packageName})")
+            newController.playbackState?.let { mediaControllerCallback?.onPlaybackStateChanged(it) }
 
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up MediaController for $token: ${e.message}", e)
-            cleanupMediaController()
+            if (currentMediaSessionToken == token) {
+                clearSongContextAndHideLyrics()
+            }
         }
     }
 
     private fun processMediaMetadata(metadata: MediaMetadata?, playbackState: PlaybackState?, source: String) {
+        if (activeMediaController?.sessionToken != currentMediaSessionToken && metadata != null) {
+            Log.w(TAG, "processMediaMetadata called with metadata for a non-active session. Current: $currentMediaSessionToken, Source MC Token: ${activeMediaController?.sessionToken}. Bailing.")
+            return
+        }
+
         val newTitle = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
         val newArtist = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)
             ?: metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
         val newDuration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
 
-        Log.d(TAG, "Processing Meta ($source): Title='$newTitle', Artist='$newArtist', Duration='${newDuration}ms', PlaybackState: ${stateToString(playbackState)}")
+        Log.d(TAG, "Processing Meta ($source for $currentMediaSessionToken): Title='$newTitle', Artist='$newArtist', Duration='${newDuration}ms', PlaybackState: ${stateToString(playbackState)}")
 
-        if (newTitle.isNullOrBlank()) {
-            Log.d(TAG, "Media metadata ($source) missing title or title is blank. Not processing as new song.")
+        if (newTitle.isNullOrBlank() && metadata != null) {
+            Log.d(TAG, "Media metadata ($source for $currentMediaSessionToken) missing title. Not processing as new song.")
             if (lastDetectedSongTitle != null) {
-                 Log.d(TAG, "Title became null/blank, previously was '$lastDetectedSongTitle'. Clearing context.")
-                 clearSongContextAndHideLyrics()
+                 Log.d(TAG, "Title became null/blank for $currentMediaSessionToken, previously was '$lastDetectedSongTitle'. Clearing context if no other valid session.")
+                 if (activeMediaController?.sessionToken == currentMediaSessionToken || currentMediaSessionToken == null) {
+                     clearSongContextAndHideLyrics()
+                 }
             }
             return
         }
@@ -276,23 +315,31 @@ class LyricService : NotificationListenerService() {
             lastDetectedSongTitle = newTitle
             lastDetectedSongArtist = newArtist
             currentSongDurationMs = if (newDuration > 0) newDuration else (currentLyricsData?.durationMs ?: 0L)
+            this.currentPlaybackState = playbackState
 
-            currentPlaybackState = playbackState
-            val songInfoForDisplay = newArtist?.takeIf { it.isNotBlank() }?.let { "$newTitle by $it" } ?: newTitle
-            Log.d(TAG, "New song detected ($source): $songInfoForDisplay")
+            val songInfoForDisplay = newArtist?.takeIf { it.isNotBlank() }?.let { "$newTitle by $it" } ?: newTitle ?: "Unknown Song"
+            Log.i(TAG, "New song detected ($source for $currentMediaSessionToken): $songInfoForDisplay")
 
             updatePersistentNotification("Lyrics for: $songInfoForDisplay")
 
-            val loadingData = LyricsData.Info(newTitle, newArtist, "Loading lyrics...", currentSongDurationMs)
-            currentLyricsData = loadingData
-            if (lyricsView != null) {
-                showLyricsWindow(loadingData)
+            if (newTitle != null) {
+                val loadingData = LyricsData.Info(newTitle, newArtist, "Loading lyrics...", currentSongDurationMs)
+                currentLyricsData = loadingData
+                if (lyricsView != null) {
+                    showLyricsWindow(loadingData) // Update existing view with "Loading..."
+                }
+                fetchAndDisplayLyrics(newTitle, newArtist ?: "", currentSongDurationMs)
+            } else {
+                 Log.w(TAG, "New song detected but title is null. Cannot fetch lyrics.")
+                 currentLyricsData = LyricsData.Info(null, newArtist, "Song title not available.", currentSongDurationMs)
+                 if (lyricsView != null) {
+                    showLyricsWindow(currentLyricsData!!)
+                 }
             }
-            fetchAndDisplayLyrics(newTitle, newArtist ?: "", currentSongDurationMs)
         } else {
             if (newDuration > 0 && newDuration != currentSongDurationMs) {
                 currentSongDurationMs = newDuration
-                Log.d(TAG,"Duration updated for '$newTitle' to $newDuration ms")
+                Log.d(TAG,"Duration updated for '$newTitle' ($currentMediaSessionToken) to $newDuration ms")
                 currentLyricsData = when(val cd = currentLyricsData) {
                     is LyricsData.Synced -> cd.copy(durationMs = newDuration)
                     is LyricsData.Plain -> cd.copy(durationMs = newDuration)
@@ -306,71 +353,103 @@ class LyricService : NotificationListenerService() {
                     })
                     null -> null
                 }
-                if (lyricsView != null && currentLyricsData != null) {
+                 if (lyricsView != null && currentLyricsData != null) {
                     showLyricsWindow(currentLyricsData!!)
                 }
             }
-            currentPlaybackState = playbackState
+            this.currentPlaybackState = playbackState
 
-            if (lyricsView != null && currentLyricsData is LyricsData.Synced && playbackState?.state == PlaybackState.STATE_PLAYING) {
+            if (lyricsView != null && currentLyricsData is LyricsData.Synced &&
+                playbackState?.state == PlaybackState.STATE_PLAYING &&
+                activeMediaController?.sessionToken == currentMediaSessionToken) {
                  startOrUpdateLyricsHighlighting()
             }
-            Log.d(TAG, "Song is the same ($source): '$newTitle'. Playback state: ${stateToString(playbackState)}")
+            Log.d(TAG, "Song is the same ($source for $currentMediaSessionToken): '$newTitle'. Playback state: ${stateToString(playbackState)}")
         }
     }
 
     private fun cleanupMediaController() {
-        Log.d(TAG, "Cleaning up MediaController.")
+        val tokenBeingCleaned = activeMediaController?.sessionToken ?: currentMediaSessionToken
+        Log.d(TAG, "Cleaning up MediaController. Token to be cleaned (approx): $tokenBeingCleaned.")
+
         lyricsHighlightingJob?.cancel()
-        try {
-            activeMediaController?.unregisterCallback(mediaControllerCallback ?: return)
-        } catch (e: IllegalArgumentException) {
-            Log.w(TAG, "MediaController callback already unregistered or never registered: ${e.message}")
-        } catch (e: Exception) {
-            Log.w(TAG, "Exception unregistering MediaController callback: ${e.message}")
+        lyricsHighlightingJob = null
+
+        activeMediaController?.let { controller ->
+            mediaControllerCallback?.let { cb ->
+                try {
+                    controller.unregisterCallback(cb)
+                    Log.d(TAG, "Unregistered callback from controller for token (approx): $tokenBeingCleaned")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Exception unregistering MediaController callback for $tokenBeingCleaned: ${e.message}")
+                }
+            }
         }
         activeMediaController = null
         mediaControllerCallback = null
-        currentMediaSessionToken = null
+        currentPlaybackState = null
+        Log.d(TAG, "MediaController cleanup finished for token (approx): $tokenBeingCleaned. ActiveMC is now null.")
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         super.onNotificationPosted(sbn)
         val notification = sbn.notification ?: return
-        val extras = notification.extras ?: return // Ensure extras is not null
-        val token = extras.getParcelable<MediaSession.Token>(Notification.EXTRA_MEDIA_SESSION)
+        val extras = notification.extras ?: return
+        val tokenFromSbn = extras.getParcelable<MediaSession.Token>(Notification.EXTRA_MEDIA_SESSION)
 
-        if (token != null) {
-            if (activeMediaController == null || currentMediaSessionToken != token ) {
-                 Log.d(TAG, "MediaSession.Token detected from ${sbn.packageName}. Current token: $currentMediaSessionToken, New token: $token. Setting up MediaController.")
-                 setupMediaController(token)
-            } else {
-                // Same token, notification might have updated before MediaMetadata
+        if (tokenFromSbn != null) {
+            if (activeMediaController == null || tokenFromSbn != currentMediaSessionToken) {
+                var newTempController: MediaController? = null
+                var newPlaybackState: PlaybackState? = null
+                try {
+                    newTempController = MediaController(applicationContext, tokenFromSbn)
+                    newPlaybackState = newTempController.playbackState
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error creating temp controller for $tokenFromSbn from ${sbn.packageName}: ${e.message}")
+                    if (this.currentPlaybackState?.state == PlaybackState.STATE_PLAYING) { // Check service's tracked state
+                        Log.w(TAG, "Could not get state for $tokenFromSbn, current session is playing. Not switching.")
+                        return
+                    }
+                }
+
+                val newPlaybackStateInt = newPlaybackState?.state
+                val currentActivePlaybackStateInt = this.currentPlaybackState?.state
+
+                val shouldSwitch = (newPlaybackStateInt == PlaybackState.STATE_PLAYING) ||
+                                   (newPlaybackStateInt != PlaybackState.STATE_PLAYING &&
+                                    (currentActivePlaybackStateInt == null || currentActivePlaybackStateInt != PlaybackState.STATE_PLAYING))
+
+                if (shouldSwitch) {
+                    Log.i(TAG, "Switching session. Old: $currentMediaSessionToken, New: $tokenFromSbn (pkg: ${sbn.packageName}). NewState: ${stateToString(newPlaybackState)}")
+                    setupMediaController(tokenFromSbn)
+                } else {
+                    Log.d(TAG, "Not switching. New session $tokenFromSbn (pkg: ${sbn.packageName}) state ${stateToString(newPlaybackState)}, Current session $currentMediaSessionToken state ${stateToString(this.currentPlaybackState)}.")
+                }
+
+            } else { // tokenFromSbn == currentMediaSessionToken
                 val notifTitle = extras.getString(Notification.EXTRA_TITLE)
-                // CORRECTED: Use valid keys like EXTRA_SUB_TEXT or EXTRA_TEXT for artist from notification as a heuristic
                 val notifArtist: String? = extras.getString(Notification.EXTRA_SUB_TEXT) ?: extras.getString(Notification.EXTRA_TEXT)
-
-                val mediaControllerArtist = activeMediaController?.metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)
+                val mcTitle = activeMediaController?.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
+                val mcArtist = activeMediaController?.metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)
                     ?: activeMediaController?.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
 
-                if ( (notifTitle != null && notifTitle != lastDetectedSongTitle) ||
-                     (notifArtist != null && notifArtist.isNotBlank() && notifArtist != lastDetectedSongArtist) ) {
-
-                     // Check if MediaController metadata is still showing the OLD song
-                     if (activeMediaController?.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) == lastDetectedSongTitle &&
-                         (lastDetectedSongArtist == null || mediaControllerArtist == lastDetectedSongArtist) ) {
-                         Log.w(TAG, "Notification title/artist ('$notifTitle'/'$notifArtist') differs from last detected ('$lastDetectedSongTitle'/'$lastDetectedSongArtist'), but MediaController metadata still shows old. Forcing re-evaluation with controller's current metadata.")
-                         processMediaMetadata(activeMediaController?.metadata, activeMediaController?.playbackState, "NotificationUpdateTrigger (Content Discrepancy)")
-                     } else {
-                          Log.d(TAG, "Notification posted for active session from ${sbn.packageName}. Notification content changed but MediaController already updated or no lastDetectedArtist. Notif: '$notifTitle', MC Title: '${activeMediaController?.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)}', MC Artist: '$mediaControllerArtist'")
-                     }
+                if ((notifTitle != null && notifTitle != mcTitle) ||
+                    (notifArtist != null && notifArtist.isNotBlank() && notifArtist != mcArtist)) {
+                    Log.w(TAG, "Notification for $currentMediaSessionToken (pkg: ${sbn.packageName}) has different text ('$notifTitle'/'$notifArtist') than MC ('$mcTitle'/'$mcArtist'). Re-processing MC metadata.")
+                    processMediaMetadata(activeMediaController?.metadata, activeMediaController?.playbackState, "NotificationUpdateTrigger (Text Discrepancy for $currentMediaSessionToken)")
                 } else {
-                    Log.d(TAG, "Notification posted for already active session from ${sbn.packageName}. Token: $token. No significant change in notification content vs last detected.")
+                    Log.d(TAG, "Notification for active session $currentMediaSessionToken (pkg: ${sbn.packageName}). Text matches or no change. State: ${stateToString(activeMediaController?.playbackState)}")
+                    activeMediaController?.playbackState?.let {
+                        if (it.state != this.currentPlaybackState?.state || it.position != this.currentPlaybackState?.position) { // Also check position for seeking
+                            Log.d(TAG, "Playback state in notification potentially differs from internal. Updating via MC callback.")
+                            mediaControllerCallback?.onPlaybackStateChanged(it)
+                        }
+                    }
                 }
             }
         } else {
             if (activeMediaController != null && sbn.packageName == activeMediaController!!.packageName) {
-                Log.d(TAG, "Notification from active player ${sbn.packageName} without media token. Might be transient. Current song: $lastDetectedSongTitle")
+                Log.d(TAG, "Notification from active player ${sbn.packageName} without media token. Current song: $lastDetectedSongTitle")
             }
         }
     }
@@ -383,52 +462,61 @@ class LyricService : NotificationListenerService() {
         Log.d(TAG, "Notification removed: pkg=${sbn.packageName}, title='${removedTitle}', token=$removedToken. Current token=$currentMediaSessionToken")
 
         if (removedToken != null && removedToken == currentMediaSessionToken) {
-            Log.d(TAG, "Notification for active MediaSession removed (pkg: ${sbn.packageName}). Session might be ending.")
-        } else if (removedTitle != null && removedTitle == lastDetectedSongTitle &&
-                   (activeMediaController == null || sbn.packageName == activeMediaController?.packageName) ) {
-             Log.d(TAG, "Notification for '$lastDetectedSongTitle' (pkg: ${sbn.packageName}) removed. This might indicate song stop.")
-            if (activeMediaController == null || (currentPlaybackState?.state != PlaybackState.STATE_PLAYING && currentPlaybackState?.state != PlaybackState.STATE_BUFFERING) ) {
-                 Log.d(TAG, "Notification removed and playback not active/buffering or controller gone. Clearing context.")
-                 clearSongContextAndHideLyrics()
-            } else {
-                Log.d(TAG, "Notification removed, but playback is still active/buffering or controller exists. Lyrics context maintained for now.")
+            Log.d(TAG, "Notification for active MediaSession ($currentMediaSessionToken, pkg: ${sbn.packageName}) removed.")
+            if (currentPlaybackState?.state != PlaybackState.STATE_PLAYING &&
+                currentPlaybackState?.state != PlaybackState.STATE_BUFFERING) {
+                Log.d(TAG, "Notification for $currentMediaSessionToken removed and playback not active/buffering. Consider this a potential stop.")
             }
         }
     }
 
     private fun clearSongContextAndHideLyrics() {
-        Log.d(TAG, "Clearing song context and hiding lyrics.")
+        Log.i(TAG, "Clearing song context. Was for token: $currentMediaSessionToken, Title: $lastDetectedSongTitle")
+        val tokenBeingCleared = currentMediaSessionToken
+
         lastDetectedSongTitle = null
         lastDetectedSongArtist = null
         currentSongDurationMs = 0L
         currentLyricsData = null
-        if (activeMediaController != null) {
+
+        if (activeMediaController != null && activeMediaController?.sessionToken == tokenBeingCleared) {
              cleanupMediaController()
         }
+        currentMediaSessionToken = null
+
         updatePersistentNotification("Waiting for song...")
         hideLyricsWindow()
+        Log.i(TAG, "Song context cleared. No active session.")
     }
+
 
     private fun fetchAndDisplayLyrics(title: String, artist: String, durationFromMediaMs: Long) {
         lyricsHighlightingJob?.cancel()
+        val fetchForToken = currentMediaSessionToken
+        val fetchForTitle = title
+        val fetchForArtist = artist
+
         serviceScope.launch(Dispatchers.IO) {
+            if (fetchForToken != currentMediaSessionToken || fetchForTitle != lastDetectedSongTitle || fetchForArtist != (lastDetectedSongArtist ?: "")) {
+                Log.d(TAG, "fetchAndDisplayLyrics: Context changed before fetch could start for '$fetchForTitle'. Current is '$lastDetectedSongTitle' for token $currentMediaSessionToken. Aborting.")
+                return@launch
+            }
+            Log.d(TAG, "Fetching lyrics for '$fetchForTitle' by '$fetchForArtist' (Token: $fetchForToken, Media Duration: ${durationFromMediaMs}ms)")
+
             var fetchedLyricsData: LyricsData? = null
             try {
                 var potentialMismatch = false
-                val initialQuery = if (artist.isNotBlank()) "$title $artist" else title
+                val initialQuery = if (fetchForArtist.isNotBlank()) "$fetchForTitle $fetchForArtist" else fetchForTitle
                 var results = searchLyrics(initialQuery)
 
-                if (results.isNullOrEmpty() && artist.length > 10) {
-                    Log.d(TAG, "Initial lyrics search failed for '$title' by '$artist'. Retrying with artist truncated.")
-                    val retryQuery1 = "$title ${artist.take(10)}"
-                    results = searchLyrics(retryQuery1)
+                if (results.isNullOrEmpty() && fetchForArtist.length > 10) {
+                    Log.d(TAG, "Initial lyrics search failed for '$fetchForTitle'. Retrying with artist truncated.")
+                    results = searchLyrics("$fetchForTitle ${fetchForArtist.take(10)}")
                     if (!results.isNullOrEmpty()) potentialMismatch = true
                 }
-
-                if (results.isNullOrEmpty() && title.isNotBlank()) {
-                    Log.d(TAG, "Retry 1 failed for '$title'. Retrying with just track name.")
-                    val retryQuery2 = title
-                    results = searchLyrics(retryQuery2)
+                if (results.isNullOrEmpty() && fetchForTitle.isNotBlank()) {
+                    Log.d(TAG, "Retry 1 failed for '$fetchForTitle'. Retrying with just track name.")
+                    results = searchLyrics(fetchForTitle)
                     if (!results.isNullOrEmpty()) potentialMismatch = true
                 }
 
@@ -441,53 +529,48 @@ class LyricService : NotificationListenerService() {
                     val lyricsApiDurationMs = (lyricResult.duration * 1000).toLong()
                     val finalDurationMs = if (durationFromMediaMs > 0) durationFromMediaMs else lyricsApiDurationMs
                     val plainLyricsText = lyricResult.plainLyrics ?: ""
-
-                    var actualContentData: LyricsData? = null
+                    var actualContentData: LyricsData
 
                     if (lyricResult.instrumental) {
-                        actualContentData = LyricsData.Info(title, artist.ifEmpty { null }, "This is an instrumental song, let the music flow... 🎵", finalDurationMs)
+                        actualContentData = LyricsData.Info(fetchForTitle, fetchForArtist.ifEmpty { null }, "This is an instrumental song... 🎵", finalDurationMs)
                     } else {
                         var parsedSyncedData: LyricsData.Synced? = null
                         if (!lyricResult.syncedLyrics.isNullOrBlank()) {
                             try {
                                 val timedLines = parseSyncedLyrics(lyricResult.syncedLyrics)
                                 if (timedLines.isNotEmpty()) {
-                                    Log.d(TAG, "Successfully parsed ${timedLines.size} synced lyric lines for '$title'.")
-                                    parsedSyncedData = LyricsData.Synced(title, artist.ifEmpty { null }, timedLines, finalDurationMs)
+                                    parsedSyncedData = LyricsData.Synced(fetchForTitle, fetchForArtist.ifEmpty { null }, timedLines, finalDurationMs)
                                 }
-                            } catch (e: Exception) {
-                                Log.w(TAG, "Error parsing synced lyrics for '$title', will try plain if available.", e)
-                            }
+                            } catch (e: Exception) { Log.w(TAG, "Error parsing synced lyrics for '$fetchForTitle'", e) }
                         }
-
-                        if (parsedSyncedData != null) {
-                            actualContentData = parsedSyncedData
-                        } else if (plainLyricsText.isNotBlank()) {
-                            actualContentData = LyricsData.Plain(title, artist.ifEmpty { null }, plainLyricsText, finalDurationMs)
+                        actualContentData = parsedSyncedData ?: if (plainLyricsText.isNotBlank()) {
+                            LyricsData.Plain(fetchForTitle, fetchForArtist.ifEmpty { null }, plainLyricsText, finalDurationMs)
                         } else {
-                            actualContentData = LyricsData.Info(title, artist.ifEmpty { null }, "Lyrics not found (empty content).", finalDurationMs)
+                            LyricsData.Info(fetchForTitle, fetchForArtist.ifEmpty { null }, "Lyrics not found (empty content).", finalDurationMs)
                         }
                     }
-
                     fetchedLyricsData = if (potentialMismatch && actualContentData !is LyricsData.Info &&
-                                             (lyricResult.trackName.lowercase().trim() != title.lowercase().trim() ||
-                                              lyricResult.artistName.lowercase().trim() != artist.lowercase().trim() ) ) {
-                        Log.d(TAG, "Potential mismatch detected: API ('${lyricResult.trackName}/${lyricResult.artistName}') vs Query ('$title/$artist')")
-                        LyricsData.MismatchInfo(title, artist.ifEmpty { null }, actualContentData)
+                                             (lyricResult.trackName.lowercase().trim() != fetchForTitle.lowercase().trim() ||
+                                              lyricResult.artistName.lowercase().trim() != fetchForArtist.lowercase().trim() ) ) {
+                        Log.d(TAG, "Potential mismatch: API ('${lyricResult.trackName}/${lyricResult.artistName}') vs Query ('$fetchForTitle/$fetchForArtist')")
+                        LyricsData.MismatchInfo(fetchForTitle, fetchForArtist.ifEmpty { null }, actualContentData)
                     } else {
                         actualContentData
                     }
-
                 } else {
-                    Log.d(TAG, "No suitable lyric result found for '$title' after retries.")
-                    fetchedLyricsData = LyricsData.Info(title, artist.ifEmpty { null }, "Lyrics not found.", durationFromMediaMs.takeIf { it > 0 } ?: 0L)
+                    fetchedLyricsData = LyricsData.Info(fetchForTitle, fetchForArtist.ifEmpty { null }, "Lyrics not found.", durationFromMediaMs.takeIf { it > 0 } ?: 0L)
+                }
+
+                if (fetchForToken != currentMediaSessionToken || fetchForTitle != lastDetectedSongTitle || fetchForArtist != (lastDetectedSongArtist ?: "")) {
+                    Log.d(TAG, "Context changed during lyrics fetch for '$fetchForTitle'. Current is '$lastDetectedSongTitle' for token $currentMediaSessionToken. Discarding fetched lyrics.")
+                    return@launch
                 }
 
                 currentLyricsData = fetchedLyricsData
 
-                if (currentSongDurationMs <= 0 && fetchedLyricsData != null && fetchedLyricsData.durationMs > 0) {
-                    currentSongDurationMs = fetchedLyricsData.durationMs
-                    currentLyricsData = when (val cd = currentLyricsData) {
+                if (currentLyricsData != null && currentSongDurationMs <= 0 && currentLyricsData!!.durationMs > 0) {
+                    currentSongDurationMs = currentLyricsData!!.durationMs
+                    currentLyricsData = when (val cd = currentLyricsData!!) {
                         is LyricsData.Synced -> cd.copy(durationMs = currentSongDurationMs)
                         is LyricsData.Plain -> cd.copy(durationMs = currentSongDurationMs)
                         is LyricsData.Info -> cd.copy(durationMs = currentSongDurationMs)
@@ -495,26 +578,29 @@ class LyricService : NotificationListenerService() {
                             is LyricsData.Synced -> old.copy(durationMs = currentSongDurationMs)
                             is LyricsData.Plain -> old.copy(durationMs = currentSongDurationMs)
                             is LyricsData.Info -> old.copy(durationMs = currentSongDurationMs)
-                            else -> old
+                            is LyricsData.MismatchInfo -> old
+                            null -> null
                         })
-                        null -> null
                     }
                 }
 
             } catch (e: Exception) {
-                Log.e(TAG, "Exception while fetching or processing lyrics for '$title'", e)
-                currentLyricsData = LyricsData.Info(title, artist.ifEmpty { null }, "Could not load lyrics: ${e.localizedMessage}.", durationFromMediaMs.takeIf { it > 0 } ?: 0L)
+                Log.e(TAG, "Exception fetching/processing lyrics for '$fetchForTitle'", e)
+                if (fetchForToken == currentMediaSessionToken && fetchForTitle == lastDetectedSongTitle) {
+                    currentLyricsData = LyricsData.Info(fetchForTitle, fetchForArtist.ifEmpty { null }, "Could not load lyrics.", durationFromMediaMs.takeIf { it > 0 } ?: 0L)
+                }
             }
 
             withContext(Dispatchers.Main) {
-                if (lastDetectedSongTitle == title && lastDetectedSongArtist == (artist.ifEmpty { null })) {
+                if (fetchForToken == currentMediaSessionToken && fetchForTitle == lastDetectedSongTitle && fetchForArtist == (lastDetectedSongArtist ?: "")) {
                     currentLyricsData?.let { showLyricsWindow(it) }
                     if (currentLyricsData is LyricsData.Synced &&
-                        activeMediaController?.playbackState?.state == PlaybackState.STATE_PLAYING) {
+                        activeMediaController?.playbackState?.state == PlaybackState.STATE_PLAYING &&
+                        activeMediaController?.sessionToken == currentMediaSessionToken) {
                         startOrUpdateLyricsHighlighting()
                     }
                 } else {
-                    Log.d(TAG, "Song changed while fetching lyrics for '$title'. Discarding fetched lyrics.")
+                    Log.d(TAG, "Song changed before lyrics for '$fetchForTitle' (token $fetchForToken) could be displayed. Current: '$lastDetectedSongTitle' (token $currentMediaSessionToken).")
                 }
             }
         }
@@ -525,17 +611,10 @@ class LyricService : NotificationListenerService() {
         val encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8.toString())
         val url = "$LYRIC_API_BASE_URL?q=$encodedQuery"
         Log.d(TAG, "Fetching lyrics from: $url (Query: '$query')")
-
         return try {
-            val response: HttpResponse = httpClient.get(url)
-            if (response.status == HttpStatusCode.OK) {
-                response.body<List<LyricResult>>().also { Log.d(TAG, "Search for '$query' returned ${it.size} results.") }
-            } else {
-                Log.e(TAG, "Lyrics search for '$query' failed with status: ${response.status}")
-                null
-            }
+            httpClient.get(url).body<List<LyricResult>>().also { Log.d(TAG, "Search for '$query' returned ${it.size} results.") }
         } catch (e: Exception) {
-            Log.e(TAG, "Exception during lyrics search for '$query'", e)
+            Log.e(TAG, "Lyrics search exception for '$query': ${e.message}")
             null
         }
     }
@@ -543,10 +622,27 @@ class LyricService : NotificationListenerService() {
     private fun Int.dpToPx(): Int = (this * resources.displayMetrics.density).toInt()
 
     private fun showLyricsWindow(data: LyricsData) {
+        val dataTitle = when(data) {
+            is LyricsData.Plain -> data.title
+            is LyricsData.Synced -> data.title
+            is LyricsData.Info -> data.title
+            is LyricsData.MismatchInfo -> data.title
+        }
+        val dataArtist = when(data) {
+            is LyricsData.Plain -> data.artist
+            is LyricsData.Synced -> data.artist
+            is LyricsData.Info -> data.artist
+            is LyricsData.MismatchInfo -> data.artist
+        }
+
+        if (dataTitle != lastDetectedSongTitle || dataArtist != lastDetectedSongArtist) {
+             Log.w(TAG, "showLyricsWindow called for '$dataTitle'/'$dataArtist', but current song is '$lastDetectedSongTitle'/'$lastDetectedSongArtist'. Aborting show.")
+             return
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             Log.w(TAG, "Cannot show lyrics window: Overlay permission not granted.")
             updatePersistentNotification("Tap to grant Overlay Permission")
-            // ... (permission handling code remains the same)
             val permIntent = Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
@@ -568,18 +664,20 @@ class LyricService : NotificationListenerService() {
         }
 
         Handler(Looper.getMainLooper()).post {
+            if (dataTitle != lastDetectedSongTitle || dataArtist != lastDetectedSongArtist) {
+                 Log.w(TAG, "showLyricsWindow (MainThread): Context changed. Expected '$dataTitle', current '$lastDetectedSongTitle'. Aborting UI update.")
+                 return@post
+            }
+
             val songDisplayTitle = when (data) {
                 is LyricsData.Synced -> data.artist?.let { "${data.title} - $it" } ?: data.title
                 is LyricsData.Plain -> data.artist?.let { "${data.title} - $it" } ?: data.title
                 is LyricsData.Info -> data.title?.let { base -> data.artist?.let { "$base - $it" } ?: base } ?: data.message
-                is LyricsData.MismatchInfo -> {
-                    val songId = data.title?.let { t -> data.artist?.let { a -> "$t - $a" } ?: t } ?: "song"
-                    "Potential mismatch for $songId"
-                }
+                is LyricsData.MismatchInfo -> data.title?.let { t -> data.artist?.let { a -> "Mismatch? $t - $a" } ?: "Mismatch? $t"} ?: "Potential song mismatch"
             }
 
             if (lyricsView == null) {
-                Log.d(TAG, "Inflating lyrics_overlay layout.")
+                Log.d(TAG, "Inflating lyrics_overlay for '$songDisplayTitle'.")
                 windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
                 val inflater = getSystemService(Context.LAYOUT_INFLATER_SERVICE) as LayoutInflater
                 try {
@@ -619,7 +717,7 @@ class LyricService : NotificationListenerService() {
 
                 try {
                     windowManager?.addView(lyricsView, params)
-                    Log.d(TAG, "Lyrics window added.")
+                    Log.d(TAG, "Lyrics window added for '$songDisplayTitle'.")
                 } catch (e: Exception) {
                     Log.e(TAG, "Error adding lyrics view to WindowManager: ${e.message}", e)
                     lyricsView = null
@@ -628,40 +726,58 @@ class LyricService : NotificationListenerService() {
             }
 
             // --- Dynamic Theming Logic ---
-            val defaultBackgroundColor = Color.parseColor("#CC000000") // 80% opaque black
-            lyricsView?.setBackgroundColor(defaultBackgroundColor)
-            songInfoTextView?.setTextColor(Color.WHITE)
-            songInfoTextView?.setShadowLayer(2f, 1f, 1f, Color.parseColor("#AA000000"))
-            expandCollapseButton?.setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN)
-            lyricsView?.findViewById<ImageButton>(R.id.closeButton)?.setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN)
+            var finalBackgroundColor = Color.parseColor("#CC000000") // 80% opaque black
+            var finalTextColor = Color.WHITE
+            var finalIconColor = Color.WHITE
+            var shadowColor = Color.parseColor("#AA000000") // Shadow for light text on dark bg
 
-            activeMediaController?.metadata?.let { metadata ->
-                val albumArtBitmap = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
-                    ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
-                albumArtBitmap?.let { bitmap ->
-                    Palette.from(bitmap).generate { palette ->
-                        val swatch = palette?.darkMutedSwatch ?: palette?.dominantSwatch
-                        swatch?.rgb?.let { colorInt ->
-                            val themedBackgroundColor = (colorInt and 0x00FFFFFF) or (0xCC000000.toInt())
-                            lyricsView?.setBackgroundColor(themedBackgroundColor)
-                            Log.d(TAG, "Applied themed background: #${Integer.toHexString(themedBackgroundColor)}")
+            if (activeMediaController?.sessionToken == currentMediaSessionToken) {
+                activeMediaController?.metadata?.let { metadata ->
+                    val albumArtBitmap = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+                        ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
+                    albumArtBitmap?.let { bitmap ->
+                        Palette.from(bitmap).generate { palette ->
+                            palette?.let { p ->
+                                val bgSwatch = p.darkVibrantSwatch ?: p.dominantSwatch
+                                bgSwatch?.rgb?.let { colorInt ->
+                                    finalBackgroundColor = (colorInt and 0x00FFFFFF) or (0xCC000000.toInt()) // 80% opaque
+                                    Log.d(TAG, "Palette BG: #${Integer.toHexString(finalBackgroundColor)}")
 
-                            val isDarkBg = ColorUtils.calculateLuminance(colorInt) < 0.45
-                            val primaryTextColor = if (isDarkBg) Color.WHITE else Color.BLACK
-                            val iconColor = if (isDarkBg) Color.WHITE else Color.DKGRAY
+                                    val isDarkBg = ColorUtils.calculateLuminance(finalBackgroundColor) < 0.4
+                                    if (isDarkBg) {
+                                        finalTextColor = p.lightMutedSwatch?.rgb ?: p.lightVibrantSwatch?.rgb ?: Color.WHITE
+                                        finalIconColor = Color.WHITE
+                                        shadowColor = Color.parseColor("#AA000000") // Dark shadow for light text
+                                    } else {
+                                        finalTextColor = p.darkMutedSwatch?.rgb ?: p.darkVibrantSwatch?.rgb ?: Color.BLACK
+                                        finalIconColor = Color.DKGRAY
+                                        shadowColor = Color.parseColor("#AA888888") // Lighter shadow for dark text
+                                    }
+                                    Log.d(TAG, "Palette Text: #${Integer.toHexString(finalTextColor)}, Icon: #${Integer.toHexString(finalIconColor)}")
+                                } ?: Log.d(TAG, "No suitable background swatch from Palette.")
+                            } ?: Log.d(TAG, "Palette generation failed.")
+                            // Apply colors after palette finishes, outside this inner lambda if it's async
+                            lyricsView?.setBackgroundColor(finalBackgroundColor)
+                            songInfoTextView?.setTextColor(finalTextColor)
+                            songInfoTextView?.setShadowLayer(2f, 1f, 1f, shadowColor)
+                            expandCollapseButton?.setColorFilter(finalIconColor, PorterDuff.Mode.SRC_IN)
+                            lyricsView?.findViewById<ImageButton>(R.id.closeButton)?.setColorFilter(finalIconColor, PorterDuff.Mode.SRC_IN)
+                        }
+                        // Return from post {} handler, palette is async. Colors applied in palette's onGenerated.
+                        // To handle this correctly, we should apply defaults, then update if palette succeeds.
+                        // The current structure applies defaults, then palette attempts to override.
+                    } ?: Log.d(TAG, "No album art bitmap for Palette. Using defaults.")
+                } ?: Log.d(TAG, "No MediaController metadata for Palette. Using defaults.")
+            } else {
+                 Log.d(TAG, "MediaController token mismatch or null. Using default theme for overlay.")
+            }
 
-                            songInfoTextView?.setTextColor(primaryTextColor)
-                            if (primaryTextColor == Color.WHITE) {
-                                songInfoTextView?.setShadowLayer(2f, 1f, 1f, Color.parseColor("#AA000000"))
-                            } else {
-                                songInfoTextView?.setShadowLayer(2f, 1f, 1f, Color.parseColor("#AA888888"))
-                            }
-                            expandCollapseButton?.setColorFilter(iconColor, PorterDuff.Mode.SRC_IN)
-                            lyricsView?.findViewById<ImageButton>(R.id.closeButton)?.setColorFilter(iconColor, PorterDuff.Mode.SRC_IN)
-                        } ?: Log.d(TAG, "Palette did not yield a suitable swatch. Default theme remains.")
-                    }
-                } ?: Log.d(TAG, "No album art bitmap for Palette. Default theme remains.")
-            } ?: Log.d(TAG, "No MediaController metadata for Palette. Default theme remains.")
+            // Apply defaults immediately, Palette will update them if successful
+            lyricsView?.setBackgroundColor(finalBackgroundColor)
+            songInfoTextView?.setTextColor(finalTextColor)
+            songInfoTextView?.setShadowLayer(2f, 1f, 1f, shadowColor)
+            expandCollapseButton?.setColorFilter(finalIconColor, PorterDuff.Mode.SRC_IN)
+            lyricsView?.findViewById<ImageButton>(R.id.closeButton)?.setColorFilter(finalIconColor, PorterDuff.Mode.SRC_IN)
             // --- End Dynamic Theming Logic ---
 
 
@@ -670,69 +786,39 @@ class LyricService : NotificationListenerService() {
 
             var displayedLyricsData: LyricsData
             var mismatchMessage: String? = null
-
             when (data) {
-                is LyricsData.Synced, is LyricsData.Plain -> {
-                    displayedLyricsData = data
-                }
+                is LyricsData.Synced, is LyricsData.Plain -> displayedLyricsData = data
                 is LyricsData.Info -> {
                     displayedLyricsData = data
-                    if (data.durationMs > 0 && currentSongDurationMs <=0) currentSongDurationMs = data.durationMs
+                    if (data.durationMs > 0 && currentSongDurationMs <= 0) currentSongDurationMs = data.durationMs
                 }
                 is LyricsData.MismatchInfo -> {
                     mismatchMessage = "Potential song mismatch."
                     val effectiveDuration = data.originalLyricsData?.durationMs ?: 0L
                     displayedLyricsData = data.originalLyricsData ?: LyricsData.Info(
-                        data.title,
-                        data.artist,
-                        "Lyrics details unavailable for '${data.title ?: "this song"}' (possible mismatch).",
-                        effectiveDuration
-                    )
+                        data.title, data.artist, "Lyrics details unavailable (mismatch).", effectiveDuration)
                     if (displayedLyricsData is LyricsData.Info && displayedLyricsData.message.contains("Loading", ignoreCase = true)) {
-                         displayedLyricsData = LyricsData.Info(
-                            data.title,
-                            data.artist,
-                            "Fetched data for '${data.title ?: "this song"}' seems to be a mismatch. Displaying info.",
-                            (displayedLyricsData as LyricsData.Info).durationMs
-                        )
+                         displayedLyricsData = LyricsData.Info(data.title, data.artist, "Fetched data seems to be a mismatch.", (displayedLyricsData as LyricsData.Info).durationMs)
                     }
                 }
             }
 
-            val finalMessageForInfo = if (mismatchMessage != null && displayedLyricsData is LyricsData.Info) {
-                 "$mismatchMessage\n${displayedLyricsData.message}"
-            } else if (displayedLyricsData is LyricsData.Info) {
-                displayedLyricsData.message
-            } else {
-                ""
-            }
+            val finalMessageForInfo = if (mismatchMessage != null && displayedLyricsData is LyricsData.Info) "$mismatchMessage\n${displayedLyricsData.message}"
+                                      else if (displayedLyricsData is LyricsData.Info) displayedLyricsData.message
+                                      else ""
 
             when(displayedLyricsData) {
-                is LyricsData.Synced -> {
-                    lyricsAdapter?.updateLyrics(displayedLyricsData.lines, true)
-                    lyricsRecyclerView?.isVisible = true
-                }
-                is LyricsData.Plain -> {
-                    val plainAsTimedLines = displayedLyricsData.lyrics.lines().mapIndexed { idx, txt -> TimedLyricLine(idx.toLong(), txt) }
-                    lyricsAdapter?.updateLyrics(plainAsTimedLines, false)
-                    lyricsRecyclerView?.isVisible = true
-                }
-                is LyricsData.Info -> {
-                    lyricsAdapter?.updateLyrics(listOf(TimedLyricLine(0, finalMessageForInfo)), false)
-                    lyricsRecyclerView?.isVisible = true
-                }
-                is LyricsData.MismatchInfo -> {
-                    Log.e(TAG, "Unexpected MismatchInfo in display logic; should have been unwrapped.")
-                    val fallbackMsg = displayedLyricsData.title?.let { t ->
-                        displayedLyricsData.artist?.let { a -> "Mismatch for $t - $a" } ?: "Mismatch for $t"
-                    } ?: "Potential song mismatch."
-                    lyricsAdapter?.updateLyrics(listOf(TimedLyricLine(0, fallbackMsg)), false)
-                    lyricsRecyclerView?.isVisible = true
-                }
+                is LyricsData.Synced -> lyricsAdapter?.updateLyrics(displayedLyricsData.lines, true)
+                is LyricsData.Plain -> lyricsAdapter?.updateLyrics(displayedLyricsData.lyrics.lines().mapIndexed { i, t -> TimedLyricLine(i.toLong(), t) }, false)
+                is LyricsData.Info -> lyricsAdapter?.updateLyrics(listOf(TimedLyricLine(0, finalMessageForInfo)), false)
+                is LyricsData.MismatchInfo -> { /* Already unwrapped */ }
             }
+            lyricsRecyclerView?.isVisible = true
 
             applyLyricsExpansionState()
-            if (displayedLyricsData is LyricsData.Synced && activeMediaController?.playbackState?.state == PlaybackState.STATE_PLAYING) {
+            if (displayedLyricsData is LyricsData.Synced &&
+                activeMediaController?.playbackState?.state == PlaybackState.STATE_PLAYING &&
+                activeMediaController?.sessionToken == currentMediaSessionToken) {
                 startOrUpdateLyricsHighlighting()
             }
         }
@@ -758,103 +844,87 @@ class LyricService : NotificationListenerService() {
 
    private fun startOrUpdateLyricsHighlighting() {
         lyricsHighlightingJob?.cancel()
-        val currentData = currentLyricsData
-        val currentSessionController = activeMediaController
+        val dataForHighlighting = this.currentLyricsData
+        val controllerForHighlighting = this.activeMediaController
+        val tokenForHighlighting = this.currentMediaSessionToken
 
-        if (currentSessionController == null || currentData !is LyricsData.Synced || currentData.lines.isEmpty()) {
-            Log.d(TAG, "Not starting highlighter: No MediaController, not Synced lyrics, or no lyric lines. MC: ${currentSessionController != null}, Data type: ${currentData?.javaClass?.simpleName}")
+        if (controllerForHighlighting == null || controllerForHighlighting.sessionToken != tokenForHighlighting ||
+            dataForHighlighting !is LyricsData.Synced || dataForHighlighting.lines.isEmpty()) {
+            Log.d(TAG, "Not starting highlighter: Conditions not met. MC: ${controllerForHighlighting != null}, Token Match: ${controllerForHighlighting?.sessionToken == tokenForHighlighting}, Data: ${dataForHighlighting?.javaClass?.simpleName}, Lines: ${ (dataForHighlighting as? LyricsData.Synced)?.lines?.size}")
+            return
+        }
+        if (dataForHighlighting.title != lastDetectedSongTitle || dataForHighlighting.artist != lastDetectedSongArtist) {
+            Log.w(TAG, "Highlighting attempted for '${dataForHighlighting.title}' but current song context is '$lastDetectedSongTitle'. Aborting.")
             return
         }
 
-        val lines = currentData.lines
-        val songTotalDuration = if (currentData.durationMs > 0) currentData.durationMs else currentSongDurationMs
+        val lines = dataForHighlighting.lines
+        val songTotalDuration = if (dataForHighlighting.durationMs > 0) dataForHighlighting.durationMs else currentSongDurationMs
 
         lyricsHighlightingJob = serviceScope.launch(Dispatchers.Main) {
-            Log.d(TAG, "LyricsHighlightingJob: Started for '${currentData.title}'. Lines: ${lines.size}")
+            Log.d(TAG, "LyricsHighlightingJob: Started for '${dataForHighlighting.title}' (Token: $tokenForHighlighting). Lines: ${lines.size}")
             var lastHighlightedIndex = -1
 
             while (isActive) {
-                val state = currentSessionController.playbackState
+                if (activeMediaController == null || activeMediaController!!.sessionToken != tokenForHighlighting) {
+                    Log.w(TAG, "Highlighting: MediaController changed or became null during highlighting for $tokenForHighlighting. Stopping job.")
+                    break
+                }
+                val state = activeMediaController!!.playbackState
                 if (state == null || state.state != PlaybackState.STATE_PLAYING) {
-                    Log.d(TAG, "Highlighting: Playback not active (State: ${stateToString(state)}). Pausing highlight job loop.")
-                    lyricsAdapter?.setHighlight(-1)
-                    lastHighlightedIndex = -1
-                    delay(HIGHLIGHT_UPDATE_INTERVAL_MS * 2)
-                    continue
+                    Log.d(TAG, "Highlighting ($tokenForHighlighting): Playback not active (State: ${stateToString(state)}). Pausing loop.")
+                    lyricsAdapter?.setHighlight(-1); lastHighlightedIndex = -1
+                    delay(HIGHLIGHT_UPDATE_INTERVAL_MS * 2); continue
                 }
 
                 var currentPositionMs = state.position
                 val speed = if (state.playbackSpeed > 0f) state.playbackSpeed else 1.0f
-
                 if (state.lastPositionUpdateTime > 0) {
-                    val elapsedRealtimeSinceUpdate = SystemClock.elapsedRealtime() - state.lastPositionUpdateTime
-                    currentPositionMs += (elapsedRealtimeSinceUpdate * speed).toLong()
+                    currentPositionMs += ((SystemClock.elapsedRealtime() - state.lastPositionUpdateTime) * speed).toLong()
                 }
 
                 var currentLineIndex = -1
-                for (i in lines.indices.reversed()) {
-                    if (lines[i].timestamp <= currentPositionMs) {
-                        currentLineIndex = i
-                        break
-                    }
-                }
+                for (i in lines.indices.reversed()) { if (lines[i].timestamp <= currentPositionMs) { currentLineIndex = i; break } }
 
                 if (currentLineIndex != lastHighlightedIndex) {
-                    Log.v(TAG, "Highlighting: Pos ${currentPositionMs}ms. Line $currentLineIndex: '${lines.getOrNull(currentLineIndex)?.text?.take(30)}...'")
-                    lyricsAdapter?.setHighlight(currentLineIndex)
-                    lastHighlightedIndex = currentLineIndex
-
+                    Log.v(TAG, "Highlighting ($tokenForHighlighting): Pos ${currentPositionMs}ms. Line $currentLineIndex: '${lines.getOrNull(currentLineIndex)?.text?.take(30)}...'")
+                    lyricsAdapter?.setHighlight(currentLineIndex); lastHighlightedIndex = currentLineIndex
                     if (currentLineIndex != -1 && ::linearLayoutManager.isInitialized) {
-                        val firstVisible = linearLayoutManager.findFirstVisibleItemPosition()
-                        val lastVisible = linearLayoutManager.findLastVisibleItemPosition()
-                        if (firstVisible != RecyclerView.NO_POSITION && lastVisible != RecyclerView.NO_POSITION) {
-                            val visibleItemCount = lastVisible - firstVisible + 1
-                            if (currentLineIndex < firstVisible || currentLineIndex >= lastVisible - (visibleItemCount / 3).coerceAtLeast(1) || visibleItemCount < 4) {
+                        val firstVis = linearLayoutManager.findFirstVisibleItemPosition()
+                        val lastVis = linearLayoutManager.findLastVisibleItemPosition()
+                        if (firstVis != RecyclerView.NO_POSITION && lastVis != RecyclerView.NO_POSITION) {
+                            val visCount = lastVis - firstVis + 1
+                            if (currentLineIndex < firstVis || currentLineIndex >= lastVis - (visCount / 3).coerceAtLeast(1) || visCount < 4) {
                                 lyricsRecyclerView?.smoothScrollToPosition(currentLineIndex.coerceAtLeast(0))
                             }
                         }
                     }
                 }
-
                 if (songTotalDuration > 0 && currentPositionMs > songTotalDuration + 1000) {
-                    Log.d(TAG, "Highlighting: Song duration ($songTotalDuration ms) likely reached (pos $currentPositionMs ms). Stopping highlighting job.")
-                    lyricsAdapter?.setHighlight(-1)
-                    break
+                    Log.d(TAG, "Highlighting ($tokenForHighlighting): Song duration ($songTotalDuration ms) reached. Stopping job.")
+                    lyricsAdapter?.setHighlight(-1); break
                 }
                 delay(HIGHLIGHT_UPDATE_INTERVAL_MS)
             }
-            Log.d(TAG,"LyricsHighlightingJob: Ended or cancelled for '${currentData.title}'.")
+            Log.d(TAG,"LyricsHighlightingJob: Ended/cancelled for '${dataForHighlighting.title}' (Token: $tokenForHighlighting).")
+            if (lyricsAdapter?.getCurrentHighlightedPosition() != -1 && !isActive) lyricsAdapter?.setHighlight(-1)
         }
     }
 
-
     private fun hideLyricsWindow() {
         Log.d(TAG, "hideLyricsWindow() called")
-        lyricsHighlightingJob?.cancel()
+        lyricsHighlightingJob?.cancel(); lyricsHighlightingJob = null
         Handler(Looper.getMainLooper()).post {
             if (lyricsView != null && windowManager != null) {
-                try {
-                    windowManager?.removeView(lyricsView)
-                    Log.d(TAG, "Lyrics window removed.")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error hiding lyrics window", e)
-                } finally {
-                    lyricsView = null
-                    songInfoTextView = null
-                    lyricsRecyclerView = null
-                    expandCollapseButton = null
-                    lyricsAdapter = null
-                }
+                try { windowManager?.removeView(lyricsView); Log.d(TAG, "Lyrics window removed.") }
+                catch (e: Exception) { Log.e(TAG, "Error hiding lyrics window", e) }
+                finally { lyricsView = null; songInfoTextView = null; lyricsRecyclerView = null; expandCollapseButton = null; lyricsAdapter = null }
             }
         }
     }
 
     private fun parseSyncedLyrics(syncedLyricsText: String?): List<TimedLyricLine> {
-        if (syncedLyricsText.isNullOrBlank()) {
-            Log.d(TAG, "parseSyncedLyrics: input is null or blank.")
-            return emptyList()
-        }
-
+        if (syncedLyricsText.isNullOrBlank()) return emptyList()
         val lines = mutableListOf<TimedLyricLine>()
         val lyricLineRegex = "\\[(\\d{2}):(\\d{2})[.:](\\d{2,3})\\](.*)".toRegex()
         val simpleLyricLineRegex = "\\[(\\d{2}):(\\d{2})\\](.*)".toRegex()
@@ -868,17 +938,21 @@ class LyricService : NotificationListenerService() {
 
             for (matchResult in matches) {
                 try {
-                    val minutes = matchResult.groupValues[1].toInt()
-                    val seconds = matchResult.groupValues[2].toInt()
+                    val groups = matchResult.groupValues
+                    val minutes = groups[1].toInt()
+                    val seconds = groups[2].toInt()
                     val millisStr: String
                     val text: String
 
-                    if (matchResult.groupValues.size > 4) { // Matched lyricLineRegex [mm:ss.xx]text or [mm:ss:xx]text
-                        millisStr = matchResult.groupValues[3]
-                        text = matchResult.groupValues[4].trim()
-                    } else { // Matched simpleLyricLineRegex [mm:ss]text
+                    if (groups.size > 4 && matchResult.groups[3] != null) {
+                        millisStr = groups[3]
+                        text = groups[4].trim()
+                    } else if (groups.size > 3 && matchResult.groups[3] != null) {
                         millisStr = "0"
-                        text = matchResult.groupValues[3].trim()
+                        text = groups[3].trim()
+                    } else {
+                        Log.w(TAG, "Unexpected regex match groups for LRC line: '$line'")
+                        continue
                     }
 
                     val milliseconds = when {
@@ -886,34 +960,26 @@ class LyricService : NotificationListenerService() {
                         millisStr.length == 2 -> millisStr.toInt() * 10
                         else -> millisStr.toInt()
                     }
-
                     val timestamp = TimeUnit.MINUTES.toMillis(minutes.toLong()) +
-                            TimeUnit.SECONDS.toMillis(seconds.toLong()) +
-                            milliseconds.toLong()
-
-                    if (textContentForMultipleTags == null) {
-                        textContentForMultipleTags = text
-                    }
-                    if (textContentForMultipleTags?.isNotEmpty() == true) {
-                        lines.add(TimedLyricLine(timestamp, textContentForMultipleTags!!))
+                                    TimeUnit.SECONDS.toMillis(seconds.toLong()) + milliseconds.toLong()
+                    
+                    textContentForMultipleTags = textContentForMultipleTags ?: text
+                    if (textContentForMultipleTags.isNotEmpty()) {
+                        lines.add(TimedLyricLine(timestamp, textContentForMultipleTags))
                     } else if (text.isNotEmpty()) {
                          lines.add(TimedLyricLine(timestamp, text))
                     }
-                } catch (e: NumberFormatException) {
-                    Log.w(TAG, "Could not parse LRC timestamp components in line: '$line'. Match: '${matchResult.value}'", e)
-                } catch (e: IndexOutOfBoundsException) {
-                     Log.w(TAG, "Regex group issue in line: '$line'. Match: '${matchResult.value}'", e)
+                } catch (e: Exception) {
+                    Log.w(TAG, "LRC parse error: '$line'. Match: '${matchResult.value}'", e)
                 }
             }
         }
-        if (lines.isEmpty() && syncedLyricsText.isNotBlank() && !syncedLyricsText.startsWith("[")) {
+        if (lines.isEmpty() && syncedLyricsText.isNotBlank() && !syncedLyricsText.trimStart().startsWith("[")) {
             Log.w(TAG, "No LRC tags found in supposedly synced lyrics. Treating as plain. Preview: ${syncedLyricsText.take(100)}")
-            return syncedLyricsText.lines().mapIndexedNotNull { index, text ->
-                if (text.isNotBlank()) TimedLyricLine(index * 1000L, text) else null
-            }
+            return syncedLyricsText.lines().mapIndexedNotNull { i, t -> if (t.isNotBlank()) TimedLyricLine(i * 1000L, t.trim()) else null }
         }
         if (lines.isEmpty() && syncedLyricsText.isNotBlank()) {
-            Log.w(TAG, "Synced lyrics text was present but no valid timed lines parsed. Original text: ${syncedLyricsText.substring(0, syncedLyricsText.length.coerceAtMost(100))}")
+            Log.w(TAG, "Synced lyrics text was present but no valid timed lines parsed. Original text preview: ${syncedLyricsText.take(100)}")
         }
         return lines.sortedBy { it.timestamp }
     }
@@ -926,51 +992,27 @@ class LyricService : NotificationListenerService() {
             val importance = NotificationManager.IMPORTANCE_LOW
             val channel = NotificationChannel(NOTIFICATION_CHANNEL_ID, name, importance).apply {
                 description = descriptionText
-                setSound(null, null)
-                enableLights(false)
-                enableVibration(false)
+                setSound(null, null); enableLights(false); enableVibration(false)
             }
-            val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannel(channel)
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(channel)
         }
     }
 
     private fun createPersistentNotification(text: String): Notification {
-        // ... (createPersistentNotification code remains the same)
         val showLyricsIntent = Intent(this, LyricService::class.java).apply { action = ACTION_SHOW_LYRICS }
         val hideLyricsIntent = Intent(this, LyricService::class.java).apply { action = ACTION_HIDE_LYRICS }
-
-        val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        } else {
-            PendingIntent.FLAG_UPDATE_CURRENT
-        }
-
-        val showAction = NotificationCompat.Action.Builder(
-            R.drawable.ic_visibility,
-            "Show",
-            PendingIntent.getService(this, 0, showLyricsIntent, pendingIntentFlags)
-        ).build()
-
-        val hideAction = NotificationCompat.Action.Builder(
-            R.drawable.ic_visibility_off,
-            "Hide",
-            PendingIntent.getService(this, 1, hideLyricsIntent, pendingIntentFlags)
-        ).build()
-
-        val contentIntent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val contentPendingIntent: PendingIntent = PendingIntent.getActivity(
-            this, 2, contentIntent, pendingIntentFlags
-        )
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT else PendingIntent.FLAG_UPDATE_CURRENT
+        val showAction = NotificationCompat.Action.Builder(R.drawable.ic_visibility, "Show", PendingIntent.getService(this, 0, showLyricsIntent, flags)).build()
+        val hideAction = NotificationCompat.Action.Builder(R.drawable.ic_visibility_off, "Hide", PendingIntent.getService(this, 1, hideLyricsIntent, flags)).build()
+        val contentIntent = Intent(this, MainActivity::class.java).apply { this.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP }
+        val pContentIntent = PendingIntent.getActivity(this, 2, contentIntent, flags)
 
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_notification_icon)
             .setOngoing(true)
-            .setContentIntent(contentPendingIntent)
+            .setContentIntent(pContentIntent)
             .addAction(showAction)
             .addAction(hideAction)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -979,91 +1021,65 @@ class LyricService : NotificationListenerService() {
     }
 
     private fun updatePersistentNotification(text: String) {
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(NOTIFICATION_ID, createPersistentNotification(text))
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIFICATION_ID, createPersistentNotification(text))
     }
 
     override fun onDestroy() {
-        Log.d(TAG, "Service onDestroy(). Cleaning up resources.")
+        Log.d(TAG, "Service onDestroy(). Cleaning up for $currentMediaSessionToken.")
         serviceScope.cancel()
         cleanupMediaController()
+        currentMediaSessionToken = null
         hideLyricsWindow()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } else {
-            @Suppress("DEPRECATION")
-            stopForeground(true)
-        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE) else @Suppress("DEPRECATION") stopForeground(true)
         Log.d(TAG, "Service fully destroyed.")
         super.onDestroy()
     }
 
     private inner class ViewMover : View.OnTouchListener {
-        // ... (ViewMover code remains the same)
-        private var initialX: Int = 0
-        private var initialY: Int = 0
-        private var initialTouchX: Float = 0f
-        private var initialTouchY: Float = 0f
+        private var initialX: Int = 0; private var initialY: Int = 0
+        private var initialTouchX: Float = 0f; private var initialTouchY: Float = 0f
         private val touchSlop by lazy { android.view.ViewConfiguration.get(applicationContext).scaledTouchSlop }
         private var isDragging = false
 
         override fun onTouch(v: View, event: MotionEvent): Boolean {
             if (params == null || windowManager == null || lyricsView == null) return false
-
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialX = params!!.x
-                    initialY = params!!.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    isDragging = false
-                    return true
+                    initialX = params!!.x; initialY = params!!.y
+                    initialTouchX = event.rawX; initialTouchY = event.rawY
+                    isDragging = false; return true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = event.rawX - initialTouchX
-                    val dy = event.rawY - initialTouchY
-                    if (!isDragging && (kotlin.math.abs(dx) > touchSlop || kotlin.math.abs(dy) > touchSlop)) {
-                        isDragging = true
-                    }
+                    val dx = event.rawX - initialTouchX; val dy = event.rawY - initialTouchY
+                    if (!isDragging && (kotlin.math.abs(dx) > touchSlop || kotlin.math.abs(dy) > touchSlop)) isDragging = true
                     if (isDragging) {
-                        params!!.x = initialX + dx.toInt()
-                        params!!.y = initialY + dy.toInt()
-                        try {
-                            windowManager?.updateViewLayout(lyricsView, params)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error updating view layout during move: ${e.message}")
-                        }
+                        params!!.x = initialX + dx.toInt(); params!!.y = initialY + dy.toInt()
+                        try { windowManager?.updateViewLayout(lyricsView, params) }
+                        catch (e: Exception) { Log.e(TAG, "Error updating view layout move: ${e.message}")}
                     }
                     return true
                 }
-                MotionEvent.ACTION_UP -> {
-                    if (isDragging) {
-                        isDragging = false
-                        return true
-                    }
-                    return false
-                }
+                MotionEvent.ACTION_UP -> return isDragging.also { if (it) isDragging = false }
             }
             return false
         }
     }
 
     private fun stateToString(state: PlaybackState?): String {
-        // ... (stateToString code remains the same)
-        if (state == null) return "null"
+        if (state == null) return "null_state"
         return when (state.state) {
             PlaybackState.STATE_NONE -> "NONE"
             PlaybackState.STATE_STOPPED -> "STOPPED"
             PlaybackState.STATE_PAUSED -> "PAUSED"
             PlaybackState.STATE_PLAYING -> "PLAYING"
-            PlaybackState.STATE_FAST_FORWARDING -> "FAST_FORWARDING"
-            PlaybackState.STATE_REWINDING -> "REWINDING"
+            PlaybackState.STATE_FAST_FORWARDING -> "FF"
+            PlaybackState.STATE_REWINDING -> "REW"
             PlaybackState.STATE_BUFFERING -> "BUFFERING"
             PlaybackState.STATE_ERROR -> "ERROR"
             PlaybackState.STATE_CONNECTING -> "CONNECTING"
-            PlaybackState.STATE_SKIPPING_TO_PREVIOUS -> "SKIPPING_TO_PREVIOUS"
-            PlaybackState.STATE_SKIPPING_TO_NEXT -> "SKIPPING_TO_NEXT"
-            PlaybackState.STATE_SKIPPING_TO_QUEUE_ITEM -> "SKIPPING_TO_QUEUE_ITEM"
+            PlaybackState.STATE_SKIPPING_TO_PREVIOUS -> "SKIP_PREV"
+            PlaybackState.STATE_SKIPPING_TO_NEXT -> "SKIP_NEXT"
+            PlaybackState.STATE_SKIPPING_TO_QUEUE_ITEM -> "SKIP_QUEUE"
             else -> "UNKNOWN (${state.state})"
         }
     }
