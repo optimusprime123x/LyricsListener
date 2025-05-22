@@ -10,6 +10,16 @@
 - Background Service: Lyrics overlay persists as you navigate between apps.
 - Permissions Helper: Guided UI for requesting all required Android permissions. (see below)
 
+### Screenshots
+<p float="left">
+  <img src="https://github.com/user-attachments/assets/39a8d93f-1003-4c6a-8a5c-fe3a1044c30c" width="30%" />
+  <img src="https://github.com/user-attachments/assets/b8a9766e-27eb-48c1-a36f-aa8912fba877" width="30%" />
+  <img src="https://github.com/user-attachments/assets/87ba57ac-a77d-4e1b-9bed-b3c22beb7fa7" width="30%" />
+</p>
+
+
+
+
  ### Permissions Explained
 - Notification Access: Needed to detect currently playing track and fetch correct lyrics.
 - Overlay Permission: Allows the app to display lyrics on top of other apps.
@@ -17,7 +27,7 @@
 - Disable Battery Optimization: Optional, but recommended for uninterrupted background lyric service.
 
 ### Known Issues 
-~~- Switching between two music-player apps - seek the currrent song a bit ahead to fix.~~ (fixed) 
+- ~~Switching between two music-player apps - seek the currrent song a bit ahead to fix.~~ (fixed) 
 - YouTube support might be limited due to search issues.
 
 ### 📲 Usage and Installation
