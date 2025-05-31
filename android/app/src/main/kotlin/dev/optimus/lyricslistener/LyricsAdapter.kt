@@ -7,16 +7,34 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import dev.optimus.lyricslistener.R
-import androidx.core.content.ContextCompat // Not used currently but good for resource colors
 import androidx.recyclerview.widget.RecyclerView
+import android.graphics.Typeface
 
 class LyricsAdapter(
-    private val context: Context, // Keep context if needed for resources in future
+    private val context: Context,
     private var lyricLines: List<LyricService.TimedLyricLine>
 ) : RecyclerView.Adapter<LyricsAdapter.ViewHolder>() {
 
     private var highlightedPosition = -1
-    private var isSyncedMode = false // To control actual highlighting behavior
+    private var isSyncedMode = false
+
+    // Theme colors for lyrics, initialized to defaults
+    private var normalLineTextColor: Int = Color.WHITE
+    private var highlightedLineTextColor: Int = Color.WHITE
+    private var highlightedLineBackgroundColor: Int = Color.argb(70, 200, 200, 200)
+
+
+    fun updateThemeColors(
+        normalLineTextColor: Int,
+        highlightedLineTextColor: Int,
+        highlightedLineBackgroundColor: Int
+    ) {
+        this.normalLineTextColor = normalLineTextColor
+        this.highlightedLineTextColor = highlightedLineTextColor
+        this.highlightedLineBackgroundColor = highlightedLineBackgroundColor
+        notifyDataSetChanged()
+    }
+
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val view = LayoutInflater.from(parent.context)
@@ -29,15 +47,20 @@ class LyricsAdapter(
         holder.lyricText.text = line.text
 
         if (isSyncedMode && position == highlightedPosition) {
-            // Semi-transparent white highlight should work on most dark backgrounds
-            holder.itemView.setBackgroundColor(Color.argb(60, 255, 255, 255)) // Slightly more opaque highlight
-            holder.lyricText.setTypeface(null, android.graphics.Typeface.BOLD)
-            holder.lyricText.alpha = 1.0f // Full opacity for highlighted text
+            holder.itemView.setBackgroundColor(highlightedLineBackgroundColor)
+            holder.lyricText.setTextColor(highlightedLineTextColor) // Should be white
+            holder.lyricText.setTypeface(null, Typeface.BOLD)
+            holder.lyricText.alpha = 1.0f
         } else {
             holder.itemView.setBackgroundColor(Color.TRANSPARENT)
-            holder.lyricText.setTypeface(null, android.graphics.Typeface.NORMAL)
-            // Optionally, make non-highlighted lines slightly dimmer if many lines are visible
-            // holder.lyricText.alpha = if (isSyncedMode) 0.85f else 1.0f
+            holder.lyricText.setTextColor(normalLineTextColor) // Should be white
+            holder.lyricText.setTypeface(null, Typeface.NORMAL)
+            // For non-synced mode or non-highlighted synced lines, use a slightly lower alpha for a "dimmed" effect if desired
+            // For now, keeping it simple with full alpha, color itself handles it for otherLinesTextColor.
+            // If normalLineTextColor is pure white, and you want non-active synced lines dimmer,
+            // you might pass a separate "dimmedWhite" or apply alpha here.
+            // For simplicity, current design relies on 'normalLineTextColor' being appropriate (it's white).
+            holder.lyricText.alpha = if (isSyncedMode) 0.85f else 1.0f // Dim non-active synced lines slightly
         }
     }
 
@@ -46,18 +69,13 @@ class LyricsAdapter(
     fun updateLyrics(newLines: List<LyricService.TimedLyricLine>, synced: Boolean) {
         this.lyricLines = newLines
         this.isSyncedMode = synced
-        val oldHighlightedPosition = highlightedPosition
-        this.highlightedPosition = -1 // Reset highlight on new lyrics
-        notifyDataSetChanged() // Full redraw for new data
-        if (oldHighlightedPosition != -1 && oldHighlightedPosition < newLines.size && synced) {
-            // If we were highlighting, try to re-highlight the same logical position if it makes sense
-            // For simplicity, just reset.
-        }
+        this.highlightedPosition = -1
+        notifyDataSetChanged()
     }
 
     fun setHighlight(position: Int) {
-        if (!isSyncedMode) { // Only highlight in synced mode
-            if (highlightedPosition != -1) { // Clear previous highlight if existed
+        if (!isSyncedMode) {
+            if (highlightedPosition != -1) {
                 val oldPos = highlightedPosition
                 highlightedPosition = -1
                 notifyItemChanged(oldPos)
@@ -65,20 +83,18 @@ class LyricsAdapter(
             return
         }
 
-        // Valid range check, including -1 for clearing highlight
         if (position < -1 || position >= lyricLines.size) {
-            // If position is invalid but not -1, perhaps log or handle as clear highlight
             if (position != -1) {
                 if (highlightedPosition != -1) {
                      val oldPos = highlightedPosition
                      highlightedPosition = -1
                      notifyItemChanged(oldPos)
                 }
-                return
             }
+            return
         }
-        
-        if (position == highlightedPosition) return // No change
+
+        if (position == highlightedPosition) return
 
         val oldPosition = highlightedPosition
         highlightedPosition = position
@@ -86,7 +102,7 @@ class LyricsAdapter(
         if (oldPosition != -1) {
             notifyItemChanged(oldPosition)
         }
-        if (highlightedPosition != -1) { // Only notify if new position is valid
+        if (highlightedPosition != -1) {
             notifyItemChanged(highlightedPosition)
         }
     }
