@@ -2,13 +2,13 @@ package dev.optimus.lyricslistener
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.Typeface
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
-import dev.optimus.lyricslistener.R
 import androidx.recyclerview.widget.RecyclerView
-import android.graphics.Typeface
+import dev.optimus.lyricslistener.R
 
 class LyricsAdapter(
     private val context: Context,
@@ -18,9 +18,8 @@ class LyricsAdapter(
     private var highlightedPosition = -1
     private var isSyncedMode = false
 
-    // Theme colors for lyrics, initialized to defaults
     private var normalLineTextColor: Int = Color.WHITE
-    private var highlightedLineTextColor: Int = Color.WHITE
+    private var highlightedLineTextColor: Int = Color.WHITE // Often same as normal for lyrics
     private var highlightedLineBackgroundColor: Int = Color.argb(70, 200, 200, 200)
 
 
@@ -32,7 +31,7 @@ class LyricsAdapter(
         this.normalLineTextColor = normalLineTextColor
         this.highlightedLineTextColor = highlightedLineTextColor
         this.highlightedLineBackgroundColor = highlightedLineBackgroundColor
-        notifyDataSetChanged()
+        notifyDataSetChanged() // Redraw all visible items with new theme
     }
 
 
@@ -46,21 +45,47 @@ class LyricsAdapter(
         val line = lyricLines[position]
         holder.lyricText.text = line.text
 
-        if (isSyncedMode && position == highlightedPosition) {
-            holder.itemView.setBackgroundColor(highlightedLineBackgroundColor)
-            holder.lyricText.setTextColor(highlightedLineTextColor) // Should be white
-            holder.lyricText.setTypeface(null, Typeface.BOLD)
-            holder.lyricText.alpha = 1.0f
+        // Reset default appearance
+        holder.itemView.setBackgroundColor(Color.TRANSPARENT)
+        holder.lyricText.setTextColor(normalLineTextColor)
+        holder.lyricText.setTypeface(null, Typeface.NORMAL)
+        // holder.lyricText.textSize = 18f // Assuming 18sp is default from XML.
+                                         // Avoid frequent textSize changes if possible for performance.
+                                         // Alpha and Typeface are usually sufficient.
+
+        if (isSyncedMode) {
+            if (position == highlightedPosition) {
+                // Current highlighted line
+                holder.itemView.setBackgroundColor(highlightedLineBackgroundColor)
+                holder.lyricText.setTextColor(highlightedLineTextColor) // Usually same as normal for lyrics
+                holder.lyricText.setTypeface(null, Typeface.BOLD)
+                holder.lyricText.alpha = 1.0f
+            } else {
+                // Other lines in synced mode (past or upcoming)
+                holder.lyricText.setTextColor(normalLineTextColor) // Ensure it's the base color
+
+                if (highlightedPosition != -1) { // If there is an active highlight
+                    if (position < highlightedPosition) {
+                        // Past lines
+                        holder.lyricText.alpha = 0.60f // Dimmer
+                        // Optional: holder.lyricText.setTypeface(null, Typeface.ITALIC)
+                    } else {
+                        // Upcoming lines (position > highlightedPosition)
+                        val diff = position - highlightedPosition
+                        when (diff) {
+                            1 -> holder.lyricText.alpha = 0.90f // Next line, slightly dimmed
+                            2 -> holder.lyricText.alpha = 0.80f // Line after next
+                            else -> holder.lyricText.alpha = 0.70f // Further upcoming lines
+                        }
+                    }
+                } else {
+                    // Synced mode, but no line is currently highlighted (e.g., before song starts)
+                    holder.lyricText.alpha = 0.85f // Default for non-active synced lines
+                }
+            }
         } else {
-            holder.itemView.setBackgroundColor(Color.TRANSPARENT)
-            holder.lyricText.setTextColor(normalLineTextColor) // Should be white
-            holder.lyricText.setTypeface(null, Typeface.NORMAL)
-            // For non-synced mode or non-highlighted synced lines, use a slightly lower alpha for a "dimmed" effect if desired
-            // For now, keeping it simple with full alpha, color itself handles it for otherLinesTextColor.
-            // If normalLineTextColor is pure white, and you want non-active synced lines dimmer,
-            // you might pass a separate "dimmedWhite" or apply alpha here.
-            // For simplicity, current design relies on 'normalLineTextColor' being appropriate (it's white).
-            holder.lyricText.alpha = if (isSyncedMode) 0.85f else 1.0f // Dim non-active synced lines slightly
+            // Non-synced mode (plain lyrics) - full opacity, normal style
+            holder.lyricText.alpha = 1.0f
         }
     }
 
@@ -69,12 +94,25 @@ class LyricsAdapter(
     fun updateLyrics(newLines: List<LyricService.TimedLyricLine>, synced: Boolean) {
         this.lyricLines = newLines
         this.isSyncedMode = synced
-        this.highlightedPosition = -1
+        val oldHighlight = highlightedPosition
+        this.highlightedPosition = -1 // Reset highlight on new lyrics
+        if (oldHighlight != -1 && oldHighlight < lyricLines.size) { // oldHighlight could be out of bounds for new shorter list
+            // No, don't notify item changed for old highlight as list is entirely new.
+        }
         notifyDataSetChanged()
     }
 
     fun setHighlight(position: Int) {
-        if (!isSyncedMode) {
+        if (!isSyncedMode && highlightedPosition != -1) { // Clear highlight if switching from synced to non-synced with an active highlight
+            val oldPos = highlightedPosition
+            highlightedPosition = -1
+            notifyItemChanged(oldPos)
+            return
+        }
+        if (!isSyncedMode) return // No highlighting for non-synced mode
+
+        if (position < -1 || position >= lyricLines.size) {
+             // Invalid position, ensure current highlight is cleared if it was set
             if (highlightedPosition != -1) {
                 val oldPos = highlightedPosition
                 highlightedPosition = -1
@@ -83,27 +121,33 @@ class LyricsAdapter(
             return
         }
 
-        if (position < -1 || position >= lyricLines.size) {
-            if (position != -1) {
-                if (highlightedPosition != -1) {
-                     val oldPos = highlightedPosition
-                     highlightedPosition = -1
-                     notifyItemChanged(oldPos)
-                }
-            }
-            return
-        }
-
-        if (position == highlightedPosition) return
+        if (position == highlightedPosition) return // No change
 
         val oldPosition = highlightedPosition
         highlightedPosition = position
 
-        if (oldPosition != -1) {
+        // Animate changes by notifying specific items
+        if (oldPosition != -1 && oldPosition < lyricLines.size) { // Check bounds for oldPosition after list update
             notifyItemChanged(oldPosition)
         }
-        if (highlightedPosition != -1) {
+        if (highlightedPosition != -1) { // New position is valid
             notifyItemChanged(highlightedPosition)
+        }
+
+        // Also update items around the new/old highlight for the "pull-up" effect
+        // This makes the alpha changes smoother for nearby lines
+        val updateRange = 3 // Number of lines above/below to also refresh
+        if (oldPosition != -1 && oldPosition < lyricLines.size) {
+            for (i in 1..updateRange) {
+                if (oldPosition - i >= 0) notifyItemChanged(oldPosition - i)
+                if (oldPosition + i < lyricLines.size) notifyItemChanged(oldPosition + i)
+            }
+        }
+        if (highlightedPosition != -1) {
+            for (i in 1..updateRange) {
+                if (highlightedPosition - i >= 0) notifyItemChanged(highlightedPosition - i)
+                if (highlightedPosition + i < lyricLines.size) notifyItemChanged(highlightedPosition + i)
+            }
         }
     }
 

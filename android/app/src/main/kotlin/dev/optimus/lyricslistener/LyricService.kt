@@ -1,4 +1,3 @@
-//LyricService.kt : 
 package dev.optimus.lyricslistener
 
 import android.app.NotificationChannel
@@ -51,6 +50,9 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PorterDuff
 import androidx.core.graphics.ColorUtils
+import android.graphics.drawable.GradientDrawable
+import android.util.DisplayMetrics
+import androidx.recyclerview.widget.LinearSmoothScroller
 
 
 class LyricService : NotificationListenerService() {
@@ -68,7 +70,7 @@ class LyricService : NotificationListenerService() {
     private var songInfoTextView: TextView? = null
     private var expandCollapseButton: ImageButton? = null
     private var lyricsAdapter: LyricsAdapter? = null
-    private lateinit var linearLayoutManager: LinearLayoutManager // Stays lateinit, will be assigned in showLyricsWindow
+    private lateinit var linearLayoutManager: LinearLayoutManager
 
     private var lastDetectedSongTitle: String? = null
     private var lastDetectedSongArtist: String? = null
@@ -182,7 +184,7 @@ class LyricService : NotificationListenerService() {
             else -> {
                 Log.i(TAG, "Service (re)started with null or unhandled action (Intent: $intent, Action: ${intent?.action}). Current token: $currentMediaSessionToken. Attempting to scan for media.")
                 updatePersistentNotification("Service active. Scanning media...")
-                tryToConnectToActiveMediaSessions(delayMs = 500L) // Standard delay for restart scan
+                tryToConnectToActiveMediaSessions(delayMs = 500L)
             }
         }
         return START_STICKY
@@ -214,7 +216,7 @@ class LyricService : NotificationListenerService() {
             return
         }
         Log.d(TAG, "tryToConnectToActiveMediaSessions scheduled with delay: $delayMs ms. _listenerEverConnected: $_listenerEverConnected")
-        if(delayMs > 0) { // Only set flag for actual delayed attempts, immediate ones will clear it quickly
+        if(delayMs > 0) {
             _isAttemptingConnection = true
         }
 
@@ -228,7 +230,7 @@ class LyricService : NotificationListenerService() {
         var activeNotificationsInternal: Array<StatusBarNotification>? = null
         try {
             activeNotificationsInternal = this.activeNotifications
-             _isAttemptingConnection = false // Reset flag as we are now executing
+             _isAttemptingConnection = false
             if (!_listenerEverConnected && activeNotificationsInternal != null) {
                 Log.i(TAG, "executeFindActiveMediaSessions: Got active notifications, promoting _listenerEverConnected to true.")
                 _listenerEverConnected = true
@@ -256,7 +258,7 @@ class LyricService : NotificationListenerService() {
             } else {
                 updatePersistentNotification("Waiting for listener connection...")
             }
-            _isAttemptingConnection = false // Ensure flag is false before retry
+            _isAttemptingConnection = false
             tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS * 2)
             if (currentMediaSessionToken != null) clearSongContextAndHideLyrics()
             return
@@ -452,19 +454,22 @@ class LyricService : NotificationListenerService() {
                 Log.d(TAG,"Duration updated for '$newTitle' ($currentMediaSessionToken) to $newDuration ms")
                 currentSongDurationMs = newDuration
                 currentLyricsData = when(val cd = currentLyricsData) {
-                    is LyricsData.Synced -> cd.copy(durationMs = newDuration)
-                    is LyricsData.Plain -> cd.copy(durationMs = newDuration)
-                    is LyricsData.Info -> cd.copy(durationMs = newDuration)
+                    is LyricsData.Synced -> if (cd.durationMs != newDuration) cd.copy(durationMs = newDuration) else cd
+                    is LyricsData.Plain -> if (cd.durationMs != newDuration) cd.copy(durationMs = newDuration) else cd
+                    is LyricsData.Info -> if (cd.durationMs != newDuration) cd.copy(durationMs = newDuration) else cd
                     is LyricsData.MismatchInfo -> {
                         val original = cd.originalLyricsData
-                        val updatedOriginal = when (original) {
-                            is LyricsData.Synced -> original.copy(durationMs = newDuration)
-                            is LyricsData.Plain -> original.copy(durationMs = newDuration)
-                            is LyricsData.Info -> original.copy(durationMs = newDuration)
-                            is LyricsData.MismatchInfo -> original
-                            null -> null
+                        if (original != null && original.durationMs != newDuration) {
+                            val updatedOriginal = when (original) {
+                                is LyricsData.Synced -> original.copy(durationMs = newDuration)
+                                is LyricsData.Plain -> original.copy(durationMs = newDuration)
+                                is LyricsData.Info -> original.copy(durationMs = newDuration)
+                                else -> original
+                            }
+                            cd.copy(originalLyricsData = updatedOriginal)
+                        } else {
+                            cd
                         }
-                        cd.copy(originalLyricsData = updatedOriginal)
                     }
                     null -> null
                 }
@@ -617,121 +622,162 @@ class LyricService : NotificationListenerService() {
 
     private fun fetchAndDisplayLyrics(title: String, artist: String, durationFromMediaMs: Long) {
         lyricsHighlightingJob?.cancel()
-        val fetchForToken = currentMediaSessionToken
-        val fetchForTitle = title
-        val fetchForArtist = artist
+
+        val tokenForThisFetch = currentMediaSessionToken
+        val titleForThisFetch = title
+        val artistForThisFetch = artist
 
         serviceScope.launch(Dispatchers.IO) {
-            if (fetchForToken != currentMediaSessionToken || fetchForTitle != lastDetectedSongTitle || fetchForArtist != (lastDetectedSongArtist ?: "")) {
-                Log.d(TAG, "fetchAndDisplayLyrics: Context changed before fetch could start for '$fetchForTitle'. Current is '$lastDetectedSongTitle' for token $currentMediaSessionToken. Aborting.")
+            if (tokenForThisFetch != currentMediaSessionToken || titleForThisFetch != lastDetectedSongTitle || artistForThisFetch != (lastDetectedSongArtist ?: "")) {
+                Log.d(TAG, "fetchAndDisplayLyrics: Context changed before network request for '$titleForThisFetch' by '$artistForThisFetch'. Current: '$lastDetectedSongTitle' by '${lastDetectedSongArtist ?: ""}', Token: $currentMediaSessionToken. Aborting.")
                 return@launch
             }
-            Log.d(TAG, "Fetching lyrics for '$fetchForTitle' by '$fetchForArtist' (Token: $fetchForToken, Media Duration: ${durationFromMediaMs}ms)")
+            Log.d(TAG, "Fetching lyrics for '$titleForThisFetch' by '$artistForThisFetch' (Token: $tokenForThisFetch, Media Duration: ${durationFromMediaMs}ms)")
 
             var fetchedLyricsDataLocal: LyricsData? = null
+            var potentialMismatch = false
+            var results: List<LyricResult>? = null
+
             try {
-                var potentialMismatch = false
-                val initialQuery = if (fetchForArtist.isNotBlank()) "$fetchForTitle $fetchForArtist" else fetchForTitle
-                var results = searchLyrics(initialQuery)
+                val initialQuery = if (artistForThisFetch.isNotBlank()) "$titleForThisFetch $artistForThisFetch" else titleForThisFetch
+                results = searchLyrics(initialQuery)
 
-                if (results.isNullOrEmpty() && fetchForArtist.length > 10) {
-                    Log.d(TAG, "Initial lyrics search failed for '$fetchForTitle'. Retrying with artist truncated.")
-                    results = searchLyrics("$fetchForTitle ${fetchForArtist.take(10)}")
+                if (results.isNullOrEmpty() && artistForThisFetch.length > 10) {
+                    Log.d(TAG, "Initial lyrics search failed for '$titleForThisFetch'. Retrying with artist truncated.")
+                    results = searchLyrics("$titleForThisFetch ${artistForThisFetch.take(10)}")
                     if (!results.isNullOrEmpty()) potentialMismatch = true
                 }
-                if (results.isNullOrEmpty() && fetchForTitle.isNotBlank()) {
-                    Log.d(TAG, "Retry 1 failed for '$fetchForTitle'. Retrying with just track name.")
-                    results = searchLyrics(fetchForTitle)
+                if (results.isNullOrEmpty() && titleForThisFetch.isNotBlank()) {
+                    Log.d(TAG, "Retry 1 failed for '$titleForThisFetch'. Retrying with just track name.")
+                    results = searchLyrics(titleForThisFetch)
                     if (!results.isNullOrEmpty()) potentialMismatch = true
                 }
 
-                val lyricResult = results?.firstOrNull { !it.instrumental && (!it.syncedLyrics.isNullOrBlank() || !it.plainLyrics.isNullOrBlank()) }
-                    ?: results?.firstOrNull { !it.instrumental && !it.plainLyrics.isNullOrBlank() }
-                    ?: results?.firstOrNull { !it.syncedLyrics.isNullOrBlank() }
-                    ?: results?.firstOrNull()
+                val chosenLyricResult: LyricResult?
 
-                if (lyricResult != null) {
-                    val lyricsApiDurationMs = (lyricResult.duration * 1000).toLong()
-                    val finalDurationMs = if (durationFromMediaMs > 0) durationFromMediaMs else lyricsApiDurationMs
-                    val plainLyricsText = lyricResult.plainLyrics ?: ""
-                    val actualContentData: LyricsData = if (lyricResult.instrumental) {
-                        LyricsData.Info(fetchForTitle, fetchForArtist.ifEmpty { null }, "This is an instrumental song... 🎵", finalDurationMs)
+                if (!results.isNullOrEmpty()) {
+                    val mediaDurationSec = if (durationFromMediaMs > 0) durationFromMediaMs / 1000.0 else -1.0
+                    val durationToleranceSec = 2.0
+
+                    var selected = results.firstOrNull {
+                        !it.instrumental && !it.syncedLyrics.isNullOrBlank() &&
+                        mediaDurationSec > 0 && kotlin.math.abs(it.duration - mediaDurationSec) <= durationToleranceSec
+                    }
+
+                    if (selected == null) {
+                        selected = results.firstOrNull {
+                            !it.instrumental && !it.syncedLyrics.isNullOrBlank()
+                        }
+                    }
+
+                    if (selected == null) {
+                        selected = results.firstOrNull {
+                            !it.instrumental && !it.plainLyrics.isNullOrBlank() &&
+                            mediaDurationSec > 0 && kotlin.math.abs(it.duration - mediaDurationSec) <= durationToleranceSec
+                        }
+                    }
+
+                    if (selected == null) {
+                        selected = results.firstOrNull {
+                            !it.instrumental && !it.plainLyrics.isNullOrBlank()
+                        }
+                    }
+
+                    if (selected == null) {
+                        selected = results.firstOrNull()
+                    }
+                    chosenLyricResult = selected
+                } else {
+                    chosenLyricResult = null
+                }
+
+
+                if (chosenLyricResult != null) {
+                    val lyricsApiDurationMs = (chosenLyricResult.duration * 1000).toLong()
+                    val finalDurationMs = if (durationFromMediaMs > 0) durationFromMediaMs
+                                          else if (lyricsApiDurationMs > 0) lyricsApiDurationMs
+                                          else currentSongDurationMs.takeIf { it > 0 } ?: 0L
+
+                    val plainLyricsText = chosenLyricResult.plainLyrics ?: ""
+                    val actualContentData: LyricsData = if (chosenLyricResult.instrumental) {
+                        LyricsData.Info(titleForThisFetch, artistForThisFetch.ifEmpty { null }, "This is an instrumental song... 🎵", finalDurationMs)
                     } else {
                         var parsedSyncedData: LyricsData.Synced? = null
-                        if (!lyricResult.syncedLyrics.isNullOrBlank()) {
+                        if (!chosenLyricResult.syncedLyrics.isNullOrBlank()) {
                             try {
-                                val timedLines = parseSyncedLyrics(lyricResult.syncedLyrics)
+                                val timedLines = parseSyncedLyrics(chosenLyricResult.syncedLyrics)
                                 if (timedLines.isNotEmpty()) {
-                                    Log.d(TAG, "Successfully parsed ${timedLines.size} synced lines for '$fetchForTitle'.")
-                                    parsedSyncedData = LyricsData.Synced(fetchForTitle, fetchForArtist.ifEmpty { null }, timedLines, finalDurationMs)
+                                    Log.d(TAG, "Successfully parsed ${timedLines.size} synced lines for '$titleForThisFetch'.")
+                                    parsedSyncedData = LyricsData.Synced(titleForThisFetch, artistForThisFetch.ifEmpty { null }, timedLines, finalDurationMs)
                                 } else {
-                                    Log.w(TAG, "parseSyncedLyrics returned empty list for '$fetchForTitle' even though syncedLyrics was not blank.")
+                                    Log.w(TAG, "parseSyncedLyrics returned empty list for '$titleForThisFetch' even though syncedLyrics was not blank.")
                                 }
-                            } catch (e: Exception) { Log.w(TAG, "Error parsing synced lyrics for '$fetchForTitle'", e) }
+                            } catch (e: Exception) { Log.w(TAG, "Error parsing synced lyrics for '$titleForThisFetch'", e) }
                         }
                         parsedSyncedData ?: if (plainLyricsText.isNotBlank()) {
-                            LyricsData.Plain(fetchForTitle, fetchForArtist.ifEmpty { null }, plainLyricsText, finalDurationMs)
+                            LyricsData.Plain(titleForThisFetch, artistForThisFetch.ifEmpty { null }, plainLyricsText, finalDurationMs)
                         } else {
-                            LyricsData.Info(fetchForTitle, fetchForArtist.ifEmpty { null }, "Lyrics not found (empty content).", finalDurationMs)
+                            LyricsData.Info(titleForThisFetch, artistForThisFetch.ifEmpty { null }, "Lyrics not found (empty content).", finalDurationMs)
                         }
                     }
                     fetchedLyricsDataLocal = if (potentialMismatch && actualContentData !is LyricsData.Info &&
-                                             (lyricResult.trackName.lowercase().trim() != fetchForTitle.lowercase().trim() ||
-                                              lyricResult.artistName.lowercase().trim() != fetchForArtist.lowercase().trim() ) ) {
-                        Log.d(TAG, "Potential mismatch: API ('${lyricResult.trackName}/${lyricResult.artistName}') vs Query ('$fetchForTitle/$fetchForArtist')")
-                        LyricsData.MismatchInfo(fetchForTitle, fetchForArtist.ifEmpty { null }, actualContentData)
+                                             (chosenLyricResult.trackName.lowercase().trim() != titleForThisFetch.lowercase().trim() ||
+                                              chosenLyricResult.artistName.lowercase().trim() != artistForThisFetch.lowercase().trim().takeIf { it.isNotEmpty() } ?: chosenLyricResult.artistName.lowercase().trim()
+                                              )) {
+                        Log.d(TAG, "Potential mismatch: API ('${chosenLyricResult.trackName}/${chosenLyricResult.artistName}') vs Query ('$titleForThisFetch/$artistForThisFetch')")
+                        LyricsData.MismatchInfo(titleForThisFetch, artistForThisFetch.ifEmpty { null }, actualContentData)
                     } else {
                         actualContentData
                     }
                 } else {
-                    fetchedLyricsDataLocal = LyricsData.Info(fetchForTitle, fetchForArtist.ifEmpty { null }, "Lyrics not found.", durationFromMediaMs.takeIf { it > 0 } ?: 0L)
+                    fetchedLyricsDataLocal = LyricsData.Info(titleForThisFetch, artistForThisFetch.ifEmpty { null }, "Lyrics not found.", durationFromMediaMs.takeIf { it > 0 } ?: 0L)
                 }
 
-                if (fetchForToken != currentMediaSessionToken || fetchForTitle != lastDetectedSongTitle || fetchForArtist != (lastDetectedSongArtist ?: "")) {
-                    Log.d(TAG, "Context changed during/after lyrics fetch for '$fetchForTitle'. Current is '$lastDetectedSongTitle' for token $currentMediaSessionToken. Discarding fetched lyrics.")
+                if (tokenForThisFetch != currentMediaSessionToken || titleForThisFetch != lastDetectedSongTitle || artistForThisFetch != (lastDetectedSongArtist ?: "")) {
+                    Log.d(TAG, "fetchAndDisplayLyrics: Context changed AFTER lyrics processing for '$titleForThisFetch' by '$artistForThisFetch'. Current: '$lastDetectedSongTitle' by '${lastDetectedSongArtist ?: ""}'. Discarding fetched lyrics.")
                     return@launch
                 }
 
                 currentLyricsData = fetchedLyricsDataLocal
 
-                if (currentLyricsData != null && currentSongDurationMs <= 0 && currentLyricsData!!.durationMs > 0) {
-                    Log.d(TAG, "Updating currentSongDurationMs from API lyrics data to ${currentLyricsData!!.durationMs}ms")
-                    currentSongDurationMs = currentLyricsData!!.durationMs
-                    currentLyricsData = when (val cd = currentLyricsData!!) {
-                        is LyricsData.Synced -> cd.copy(durationMs = currentSongDurationMs)
-                        is LyricsData.Plain -> cd.copy(durationMs = currentSongDurationMs)
-                        is LyricsData.Info -> cd.copy(durationMs = currentSongDurationMs)
-                        is LyricsData.MismatchInfo -> {
-                            val original = cd.originalLyricsData
-                            val updatedOriginal = when (original) {
-                                is LyricsData.Synced -> original.copy(durationMs = currentSongDurationMs)
-                                is LyricsData.Plain -> original.copy(durationMs = currentSongDurationMs)
-                                is LyricsData.Info -> original.copy(durationMs = currentSongDurationMs)
-                                is LyricsData.MismatchInfo -> original
-                                null -> null
+                if (currentLyricsData != null && !(currentLyricsData is LyricsData.Info && ((currentLyricsData as LyricsData.Info).message.contains("not found", ignoreCase = true) || (currentLyricsData as LyricsData.Info).message.contains("Could not load", ignoreCase = true))) ) {
+                    if (currentSongDurationMs <= 0 && currentLyricsData!!.durationMs > 0) {
+                        Log.d(TAG, "Updating currentSongDurationMs from API lyrics data to ${currentLyricsData!!.durationMs}ms for '$titleForThisFetch'")
+                        currentSongDurationMs = currentLyricsData!!.durationMs
+                        currentLyricsData = when (val cd = currentLyricsData!!) {
+                            is LyricsData.Synced -> cd.copy(durationMs = currentSongDurationMs)
+                            is LyricsData.Plain -> cd.copy(durationMs = currentSongDurationMs)
+                            is LyricsData.Info -> cd.copy(durationMs = currentSongDurationMs)
+                            is LyricsData.MismatchInfo -> {
+                                val original = cd.originalLyricsData
+                                val updatedOriginal = when (original) {
+                                    is LyricsData.Synced -> original.copy(durationMs = currentSongDurationMs)
+                                    is LyricsData.Plain -> original.copy(durationMs = currentSongDurationMs)
+                                    is LyricsData.Info -> original.copy(durationMs = currentSongDurationMs)
+                                    else -> original
+                                }
+                                cd.copy(originalLyricsData = updatedOriginal)
                             }
-                            cd.copy(originalLyricsData = updatedOriginal)
                         }
                     }
                 }
-
             } catch (e: Exception) {
-                Log.e(TAG, "Exception fetching/processing lyrics for '$fetchForTitle'", e)
-                if (fetchForToken == currentMediaSessionToken && fetchForTitle == lastDetectedSongTitle) {
-                    currentLyricsData = LyricsData.Info(fetchForTitle, fetchForArtist.ifEmpty { null }, "Could not load lyrics.", durationFromMediaMs.takeIf { it > 0 } ?: 0L)
+                Log.e(TAG, "Exception fetching/processing lyrics for '$titleForThisFetch'", e)
+                if (tokenForThisFetch == currentMediaSessionToken && titleForThisFetch == lastDetectedSongTitle && artistForThisFetch == (lastDetectedSongArtist ?: "")) {
+                    currentLyricsData = LyricsData.Info(titleForThisFetch, artistForThisFetch.ifEmpty { null }, "Could not load lyrics.", durationFromMediaMs.takeIf { it > 0 } ?: 0L)
                 }
             }
 
             withContext(Dispatchers.Main) {
-                if (fetchForToken == currentMediaSessionToken && fetchForTitle == lastDetectedSongTitle && fetchForArtist == (lastDetectedSongArtist ?: "")) {
+                if (tokenForThisFetch == currentMediaSessionToken && titleForThisFetch == lastDetectedSongTitle && artistForThisFetch == (lastDetectedSongArtist ?: "")) {
                     currentLyricsData?.let { showLyricsWindow(it) }
                     if (currentLyricsData is LyricsData.Synced &&
                         activeMediaController?.playbackState?.state == PlaybackState.STATE_PLAYING &&
-                        activeMediaController?.sessionToken == currentMediaSessionToken) {
+                        activeMediaController?.sessionToken == tokenForThisFetch) {
                         startOrUpdateLyricsHighlighting()
                     }
                 } else {
-                    Log.d(TAG, "Song changed before lyrics for '$fetchForTitle' (token $fetchForToken) could be displayed on UI. Current: '$lastDetectedSongTitle' (token $currentMediaSessionToken).")
+                    Log.d(TAG, "Song changed before lyrics for '$titleForThisFetch' (token $tokenForThisFetch) could be displayed on UI. Current: '$lastDetectedSongTitle' (token $currentMediaSessionToken).")
                 }
             }
         }
@@ -841,10 +887,11 @@ class LyricService : NotificationListenerService() {
             val closeButton = lyricsView?.findViewById<ImageButton>(R.id.closeButton)
 
             lyricsAdapter = LyricsAdapter(this, emptyList())
-            linearLayoutManager = LinearLayoutManager(this) // Ensure a new instance
+            linearLayoutManager = LinearLayoutManager(this)
 
             lyricsRecyclerView?.layoutManager = linearLayoutManager
             lyricsRecyclerView?.adapter = lyricsAdapter
+            lyricsRecyclerView?.itemAnimator = null
 
             closeButton?.setOnClickListener { hideLyricsWindow() }
             expandCollapseButton?.setOnClickListener { toggleLyricsExpansion() }
@@ -902,11 +949,10 @@ class LyricService : NotificationListenerService() {
         }
         songInfoTextView?.text = songDisplayTitle
 
-        // Default colors, will be used if Palette fails or no album art
-        var finalOverlayBackgroundColor = Color.parseColor("#DD212121") // Dark semi-transparent
-        var finalTitleAndIconColor = Color.parseColor("#FFE0E0E0")    // Light Gray
-        val finalLyricsTextColor = Color.WHITE                               // White for lyrics text
-        var finalLyricsHighlightBgColor = Color.argb(70, 200, 200, 200) // Light gray, semi-transparent highlight
+        var finalOverlayBackgroundColor = Color.parseColor("#DD212121")
+        var finalTitleAndIconColor = Color.parseColor("#FFE0E0E0")
+        val finalLyricsTextColor = Color.WHITE
+        var finalLyricsHighlightBgColor = Color.argb(70, 200, 200, 200)
 
         val currentActiveMc = activeMediaController
         if (currentActiveMc != null && currentActiveMc.sessionToken == currentMediaSessionToken) {
@@ -915,53 +961,39 @@ class LyricService : NotificationListenerService() {
                     ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
 
                 if (albumArtBitmap != null) {
-                    Palette.from(albumArtBitmap).generate { palette -> // Async callback
+                    Palette.from(albumArtBitmap).generate { palette ->
                         palette?.let { p ->
-                            var selectedBackgroundColorRgb: Int? = null
-
-                            // 1. Determine Overlay Background Color - Prioritize dominant
-                            selectedBackgroundColorRgb = p.dominantSwatch?.rgb
-
-                            // Fallback if dominantSwatch is not available or not suitable (e.g. too light/dark for a BG)
-                            // For now, just fallback if null. Could add luminance checks here if needed.
+                            var selectedBackgroundColorRgb: Int? = p.dominantSwatch?.rgb
                             if (selectedBackgroundColorRgb == null) {
                                 val fallbackBgSwatch = p.darkVibrantSwatch ?: p.vibrantSwatch ?: p.darkMutedSwatch ?: p.mutedSwatch
                                 selectedBackgroundColorRgb = fallbackBgSwatch?.rgb
                             }
 
-                            selectedBackgroundColorRgb?.let { color ->
-                                finalOverlayBackgroundColor = ColorUtils.setAlphaComponent(color, 221) // ~87% opacity
-                            }
-                            // If selectedBackgroundColorRgb is still null, finalOverlayBackgroundColor retains its default
+                            val opaqueChosenBgColor = selectedBackgroundColorRgb ?: Color.parseColor("#FF212121")
 
-                            // 2. Determine if Background is Light or Dark
-                            val isBackgroundLight = ColorUtils.calculateLuminance(finalOverlayBackgroundColor) > 0.5
+                            finalOverlayBackgroundColor = selectedBackgroundColorRgb?.let {
+                                ColorUtils.setAlphaComponent(it, 221)
+                            } ?: Color.parseColor("#DD212121")
 
-                            // 3. Determine Title and Icon Color based on Background Luminance
-                            if (isBackgroundLight) {
-                                // Background is light, so we want a dark foreground (title/icon)
-                                finalTitleAndIconColor = p.darkVibrantSwatch?.rgb
-                                    ?: p.darkMutedSwatch?.rgb
-                                    ?: p.mutedSwatch?.rgb // Another potentially dark swatch
-                                    ?: Color.BLACK      // Absolute fallback
+
+                            val isBackgroundLight = ColorUtils.calculateLuminance(opaqueChosenBgColor) > 0.5
+                            finalTitleAndIconColor = if (isBackgroundLight) {
+                                p.darkVibrantSwatch?.rgb ?: p.darkMutedSwatch?.rgb ?: p.mutedSwatch?.rgb ?: Color.BLACK
                             } else {
-                                // Background is dark, so we want a light foreground (title/icon)
-                                finalTitleAndIconColor = p.lightVibrantSwatch?.rgb
-                                    ?: p.lightMutedSwatch?.rgb
-                                    ?: p.vibrantSwatch?.rgb // Another potentially light swatch
-                                    ?: Color.WHITE        // Absolute fallback
+                                p.lightVibrantSwatch?.rgb ?: p.lightMutedSwatch?.rgb ?: p.vibrantSwatch?.rgb ?: Color.WHITE
                             }
 
-                            // 4. Determine Lyrics Highlight Background Color
+                            val contrastTitleBg = ColorUtils.calculateContrast(finalTitleAndIconColor, opaqueChosenBgColor)
+                            if (contrastTitleBg < 3.0) {
+                                Log.w(TAG, "Low contrast ($contrastTitleBg) between title color (${Integer.toHexString(finalTitleAndIconColor)}) and OPAQUE BG (${Integer.toHexString(opaqueChosenBgColor)}). Forcing default title color.")
+                                finalTitleAndIconColor = if (isBackgroundLight) Color.BLACK else Color.WHITE
+                            }
+
                             val highlightSwatch = p.lightMutedSwatch ?: p.lightVibrantSwatch ?: p.vibrantSwatch ?: p.mutedSwatch
-                            highlightSwatch?.rgb?.let { color ->
-                                finalLyricsHighlightBgColor = ColorUtils.setAlphaComponent(color, 70) // ~27% opacity
-                            }
+                            highlightSwatch?.rgb?.let { finalLyricsHighlightBgColor = ColorUtils.setAlphaComponent(it, 70) }
 
-                            Log.d(TAG, "Palette applied. BG Dominant used: ${p.dominantSwatch != null && selectedBackgroundColorRgb == p.dominantSwatch?.rgb}. BG Light: $isBackgroundLight. OverlayBG: #${Integer.toHexString(finalOverlayBackgroundColor)}, Title/Icon: #${Integer.toHexString(finalTitleAndIconColor)}, LyricHighlightBG: #${Integer.toHexString(finalLyricsHighlightBgColor)}")
-                        } ?: run {
-                            Log.d(TAG, "Palette object was null after generation. Using pre-set defaults.")
-                        }
+                            Log.d(TAG, "Palette applied. BG Light: $isBackgroundLight. OverlayBG (translucent): #${Integer.toHexString(finalOverlayBackgroundColor)}, Title/Icon: #${Integer.toHexString(finalTitleAndIconColor)}, LyricHighlightBG: #${Integer.toHexString(finalLyricsHighlightBgColor)}")
+                        } ?: Log.d(TAG, "Palette object was null. Using defaults.")
                         applyThemeToOverlayElements(finalOverlayBackgroundColor, finalTitleAndIconColor, finalLyricsTextColor, finalLyricsHighlightBgColor)
                     }
                 } else {
@@ -1044,12 +1076,14 @@ class LyricService : NotificationListenerService() {
         lyricTextColor: Int,
         lyricHighlightBgColor: Int
     ) {
-        lyricsView?.setBackgroundColor(overlayBgColor)
-        songInfoTextView?.setTextColor(titleIconColor)
+        val bgDrawable = lyricsView?.background?.mutate()
+        if (bgDrawable is GradientDrawable) {
+            bgDrawable.setColor(overlayBgColor)
+        } else {
+            lyricsView?.setBackgroundColor(overlayBgColor)
+        }
 
-        val isTitleIconLight = ColorUtils.calculateLuminance(titleIconColor) > 0.4
-        val shadowColor = ColorUtils.setAlphaComponent(if (isTitleIconLight) Color.BLACK else Color.WHITE, 150)
-        songInfoTextView?.setShadowLayer(1.8f, 2f, 2f, shadowColor)
+        songInfoTextView?.setTextColor(titleIconColor)
 
         expandCollapseButton?.setColorFilter(titleIconColor, PorterDuff.Mode.SRC_IN)
         lyricsView?.findViewById<ImageButton>(R.id.closeButton)?.setColorFilter(titleIconColor, PorterDuff.Mode.SRC_IN)
@@ -1076,7 +1110,8 @@ class LyricService : NotificationListenerService() {
             }
         }
         expandCollapseButton?.setImageResource(
-            if (isLyricsExpanded) android.R.drawable.arrow_up_float else android.R.drawable.arrow_down_float
+            if (isLyricsExpanded) R.drawable.ic_round_keyboard_arrow_up_24
+            else R.drawable.ic_round_keyboard_arrow_down_24
         )
     }
 
@@ -1135,19 +1170,59 @@ class LyricService : NotificationListenerService() {
                     lastHighlightedIndex = currentLineIndex
 
                     if (currentLineIndex != -1 && ::linearLayoutManager.isInitialized && lyricsRecyclerView?.isAttachedToWindow == true) {
+                        val smoothScroller = object : LinearSmoothScroller(applicationContext) {
+                            override fun getVerticalSnapPreference(): Int = LinearSmoothScroller.SNAP_TO_ANY
+
+                            override fun calculateDyToMakeVisible(view: View, snapPreference: Int): Int {
+                                val layoutManager = this.layoutManager ?: return super.calculateDyToMakeVisible(view, snapPreference)
+                                if (!layoutManager.canScrollVertically()) {
+                                    return 0
+                                }
+                                val params = view.layoutParams as RecyclerView.LayoutParams
+                                val top = layoutManager.getDecoratedTop(view) - params.topMargin
+                                val bottom = layoutManager.getDecoratedBottom(view) + params.bottomMargin
+                                val parentTop = layoutManager.paddingTop
+                                val parentBottom = layoutManager.height - layoutManager.paddingBottom
+                                val viewCenter = top + (bottom - top) / 2
+                                val parentCenter = parentTop + (parentBottom - parentTop) / 2
+                                return parentCenter - viewCenter
+                            }
+
+                            override fun calculateSpeedPerPixel(displayMetrics: DisplayMetrics): Float {
+                                return 60f / displayMetrics.densityDpi
+                            }
+                        }
+                        smoothScroller.targetPosition = currentLineIndex.coerceAtLeast(0)
+
                         val firstVis = linearLayoutManager.findFirstVisibleItemPosition()
                         val lastVis = linearLayoutManager.findLastVisibleItemPosition()
-                        if (firstVis != RecyclerView.NO_POSITION && lastVis != RecyclerView.NO_POSITION) {
-                            val visCount = lastVis - firstVis + 1
-                            if (currentLineIndex < firstVis || currentLineIndex >= lastVis - (visCount / 3).coerceAtLeast(1) || visCount < 4) {
-                                lyricsRecyclerView?.smoothScrollToPosition(currentLineIndex.coerceAtLeast(0))
+                        val itemCount = lyricsAdapter?.itemCount ?: 0
+
+                        var shouldScrollManually = true
+
+                        if (itemCount > 0 && firstVis != RecyclerView.NO_POSITION && lastVis != RecyclerView.NO_POSITION) {
+                             val targetView = linearLayoutManager.findViewByPosition(currentLineIndex)
+                             if (targetView != null && lyricsRecyclerView != null) {
+                                val parentCenterY = lyricsRecyclerView!!.height / 2
+                                val viewTop = linearLayoutManager.getDecoratedTop(targetView)
+                                val viewBottom = linearLayoutManager.getDecoratedBottom(targetView)
+                                val viewCenterY = viewTop + (viewBottom - viewTop) / 2
+                                val scrollThresholdPx = (20 * resources.displayMetrics.density).toInt()
+
+                                if (kotlin.math.abs(viewCenterY - parentCenterY) < scrollThresholdPx) {
+                                    shouldScrollManually = false
+                                }
+                             }
+                        }
+
+                        if (shouldScrollManually) {
+                            if (itemCount > 0) {
+                                linearLayoutManager.startSmoothScroll(smoothScroller)
                             }
-                        } else {
-                            lyricsRecyclerView?.smoothScrollToPosition(currentLineIndex.coerceAtLeast(0))
                         }
                     }
                 }
-                if (songTotalDuration > 0 && currentPositionMs > songTotalDuration + 1000) {
+                if (songTotalDuration > 0 && currentPositionMs > songTotalDuration + 2000) {
                     Log.d(TAG, "Highlighting ($tokenForHighlighting): Song duration ($songTotalDuration ms) passed by ${currentPositionMs - songTotalDuration}ms. Stopping job.")
                     if (lastHighlightedIndex != -1) lyricsAdapter?.setHighlight(-1)
                     break
@@ -1205,7 +1280,7 @@ class LyricService : NotificationListenerService() {
 
             while (currentTextSegment.startsWith("[")) {
                 val matcher = LRC_LINE_PATTERN.matcher(currentTextSegment)
-                if (matcher.find() && matcher.start() == 1) { // Ensure '[' is the first char of the segment we're checking
+                if (matcher.find() && matcher.start() == 1) {
                     try {
                         val minutes = matcher.group(1)!!.toInt()
                         val seconds = matcher.group(2)!!.toInt()
@@ -1213,32 +1288,30 @@ class LyricService : NotificationListenerService() {
                         val textFollowingTag = matcher.group(5)!!
 
                         val milliseconds = when {
-                            millisStr.length == 2 -> millisStr.toInt() * 10 // Handles 2-digit centiseconds
-                            else -> millisStr.toInt() // Handles 3-digit milliseconds
+                            millisStr.length == 2 -> millisStr.toInt() * 10
+                            else -> millisStr.toInt()
                         }
                         val timestamp = TimeUnit.MINUTES.toMillis(minutes.toLong()) +
                                         TimeUnit.SECONDS.toMillis(seconds.toLong()) +
                                         milliseconds.toLong()
 
-                        tempLinesForThisPhysicalLine.add(TimedLyricLine(timestamp, "")) // Placeholder text
+                        tempLinesForThisPhysicalLine.add(TimedLyricLine(timestamp, ""))
 
-                        currentTextSegment = textFollowingTag.trimStart() // Prepare for next tag or actual text
+                        currentTextSegment = textFollowingTag.trimStart()
                     } catch (e: NumberFormatException) {
                         Log.w(TAG, "LRC timestamp number format error for part of line: '$lineContent'. Tag content: '${matcher.group(0)}'", e)
-                        currentTextSegment = "" // Stop processing this line if a tag is malformed
-                        break 
+                        currentTextSegment = ""
+                        break
                     } catch (e: Exception) {
                         Log.w(TAG, "Generic LRC timestamp parse error for part of line: '$lineContent'. Matcher group 0: '${matcher.group(0)}'", e)
-                        currentTextSegment = "" // Stop processing this line
+                        currentTextSegment = ""
                         break
                     }
                 } else {
-                    // No more valid tags at the beginning of currentTextSegment
                     break
                 }
             }
 
-            // Assign the remaining text (or "..." if blank) to all timestamps found on this physical line
             if (tempLinesForThisPhysicalLine.isNotEmpty()) {
                 val finalLyricTextForTags = currentTextSegment.trim()
                 val displayText = if (finalLyricTextForTags.isBlank()) "🎶 ... 🎶" else finalLyricTextForTags
@@ -1246,19 +1319,16 @@ class LyricService : NotificationListenerService() {
                     lines.add(timedLinePlaceholder.copy(text = displayText))
                 }
             } else if (currentTextSegment.isNotBlank() && !lineContent.trim().startsWith("[")) {
-                // This means the original line didn't start with a tag, or all tags were malformed
-                // Log.v(TAG, "Line without parseable LRC tags or only malformed tags: '$lineContent'");
+                // Line without parseable LRC tags or only malformed tags
             }
         }
 
-        // Fallback for non-LRC or improperly formatted synced lyrics
         if (lines.isEmpty() && syncedLyricsText.isNotBlank()) {
             if (!syncedLyricsText.trimStart().startsWith("[")) {
                  Log.w(TAG, "No LRC tags found and content does not start with '['. Treating as plain text. Preview: ${syncedLyricsText.take(100)}")
-                 // Attempt to create some timed lines from plain text, just in case
                  return syncedLyricsText.lines().mapIndexedNotNull { index, textLine ->
                     val trimmedText = textLine.trim()
-                    if (trimmedText.isNotBlank()) TimedLyricLine(index * 2000L, trimmedText) else null // Arbitrary 2s interval
+                    if (trimmedText.isNotBlank()) TimedLyricLine(index * 2000L, trimmedText) else null
                 }
             } else {
                 Log.w(TAG, "Synced lyrics text was present (and likely LRC-formatted) but no valid timed lines parsed. Original text preview: ${syncedLyricsText.take(150).replace("\n", " \\n ")}")
@@ -1369,9 +1439,9 @@ class LyricService : NotificationListenerService() {
                     if (isDragging) {
                         v.parent?.requestDisallowInterceptTouchEvent(false)
                         isDragging = false
-                        return true // Consume the event if it was a drag
+                        return true
                     }
-                    return false // Don't consume if it was a click (allow onClickListeners to fire)
+                    return false
                 }
                 MotionEvent.ACTION_CANCEL -> {
                      v.parent?.requestDisallowInterceptTouchEvent(false)
@@ -1379,7 +1449,7 @@ class LyricService : NotificationListenerService() {
                      return false
                 }
             }
-            return false // Default case, don't consume
+            return false
         }
     }
 
