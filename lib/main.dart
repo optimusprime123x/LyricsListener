@@ -1141,7 +1141,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ),
               child: Text(
-                'Once permissions are granted and the service is launched, you can close this screen. The lyric service will continue running in the background.',
+                'Once permissions are granted and the service is launched, you can close this screen. The lyric service will continue running in the background. In case it stops, come back here to launch the service again!',
                 style: textTheme.bodySmall,
                 textAlign: TextAlign.center,
               ),

@@ -1,3 +1,4 @@
+//LyricService.kt : 
 package dev.optimus.lyricslistener
 
 import android.app.NotificationChannel
@@ -1204,7 +1205,7 @@ class LyricService : NotificationListenerService() {
 
             while (currentTextSegment.startsWith("[")) {
                 val matcher = LRC_LINE_PATTERN.matcher(currentTextSegment)
-                if (matcher.find() && matcher.start() == 1) {
+                if (matcher.find() && matcher.start() == 1) { // Ensure '[' is the first char of the segment we're checking
                     try {
                         val minutes = matcher.group(1)!!.toInt()
                         val seconds = matcher.group(2)!!.toInt()
@@ -1212,46 +1213,52 @@ class LyricService : NotificationListenerService() {
                         val textFollowingTag = matcher.group(5)!!
 
                         val milliseconds = when {
-                            millisStr.length == 2 -> millisStr.toInt() * 10
-                            else -> millisStr.toInt()
+                            millisStr.length == 2 -> millisStr.toInt() * 10 // Handles 2-digit centiseconds
+                            else -> millisStr.toInt() // Handles 3-digit milliseconds
                         }
                         val timestamp = TimeUnit.MINUTES.toMillis(minutes.toLong()) +
                                         TimeUnit.SECONDS.toMillis(seconds.toLong()) +
                                         milliseconds.toLong()
 
-                        tempLinesForThisPhysicalLine.add(TimedLyricLine(timestamp, ""))
+                        tempLinesForThisPhysicalLine.add(TimedLyricLine(timestamp, "")) // Placeholder text
 
-                        currentTextSegment = textFollowingTag.trimStart()
+                        currentTextSegment = textFollowingTag.trimStart() // Prepare for next tag or actual text
                     } catch (e: NumberFormatException) {
                         Log.w(TAG, "LRC timestamp number format error for part of line: '$lineContent'. Tag content: '${matcher.group(0)}'", e)
-                        currentTextSegment = ""
-                        break
+                        currentTextSegment = "" // Stop processing this line if a tag is malformed
+                        break 
                     } catch (e: Exception) {
                         Log.w(TAG, "Generic LRC timestamp parse error for part of line: '$lineContent'. Matcher group 0: '${matcher.group(0)}'", e)
-                        currentTextSegment = ""
+                        currentTextSegment = "" // Stop processing this line
                         break
                     }
                 } else {
+                    // No more valid tags at the beginning of currentTextSegment
                     break
                 }
             }
 
+            // Assign the remaining text (or "..." if blank) to all timestamps found on this physical line
             if (tempLinesForThisPhysicalLine.isNotEmpty()) {
-                var finalLyricTextForTags = currentTextSegment.trim()
+                val finalLyricTextForTags = currentTextSegment.trim()
+                val displayText = if (finalLyricTextForTags.isBlank()) "🎶 ... 🎶" else finalLyricTextForTags
                 tempLinesForThisPhysicalLine.forEach { timedLinePlaceholder ->
-                    lines.add(timedLinePlaceholder.copy(text = finalLyricTextForTags))
+                    lines.add(timedLinePlaceholder.copy(text = displayText))
                 }
             } else if (currentTextSegment.isNotBlank() && !lineContent.trim().startsWith("[")) {
-                // Log.v(TAG, "Line without parseable LRC tags: '$lineContent'");
+                // This means the original line didn't start with a tag, or all tags were malformed
+                // Log.v(TAG, "Line without parseable LRC tags or only malformed tags: '$lineContent'");
             }
         }
 
+        // Fallback for non-LRC or improperly formatted synced lyrics
         if (lines.isEmpty() && syncedLyricsText.isNotBlank()) {
             if (!syncedLyricsText.trimStart().startsWith("[")) {
                  Log.w(TAG, "No LRC tags found and content does not start with '['. Treating as plain text. Preview: ${syncedLyricsText.take(100)}")
+                 // Attempt to create some timed lines from plain text, just in case
                  return syncedLyricsText.lines().mapIndexedNotNull { index, textLine ->
                     val trimmedText = textLine.trim()
-                    if (trimmedText.isNotBlank()) TimedLyricLine(index * 2000L, trimmedText) else null
+                    if (trimmedText.isNotBlank()) TimedLyricLine(index * 2000L, trimmedText) else null // Arbitrary 2s interval
                 }
             } else {
                 Log.w(TAG, "Synced lyrics text was present (and likely LRC-formatted) but no valid timed lines parsed. Original text preview: ${syncedLyricsText.take(150).replace("\n", " \\n ")}")
@@ -1362,9 +1369,9 @@ class LyricService : NotificationListenerService() {
                     if (isDragging) {
                         v.parent?.requestDisallowInterceptTouchEvent(false)
                         isDragging = false
-                        return true
+                        return true // Consume the event if it was a drag
                     }
-                    return false
+                    return false // Don't consume if it was a click (allow onClickListeners to fire)
                 }
                 MotionEvent.ACTION_CANCEL -> {
                      v.parent?.requestDisallowInterceptTouchEvent(false)
@@ -1372,7 +1379,7 @@ class LyricService : NotificationListenerService() {
                      return false
                 }
             }
-            return false
+            return false // Default case, don't consume
         }
     }
 
