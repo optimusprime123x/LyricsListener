@@ -1,4 +1,4 @@
-package dev.optimus.lyricslistener 
+package dev.optimus.lyricslistener
 
 import android.app.ActivityManager
 import android.content.ComponentName
@@ -8,18 +8,18 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.PowerManager // For Battery Optimization
+import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import androidx.annotation.NonNull
-import androidx.core.app.NotificationManagerCompat // For checking POST_NOTIFICATIONS
+import androidx.core.app.NotificationManagerCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "dev.optimus.lyricslistener/permissions"
-    private val POST_NOTIFICATIONS_REQUEST_CODE = 101 // Define request code
+    private val POST_NOTIFICATIONS_REQUEST_CODE = 101
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -41,8 +41,6 @@ class MainActivity : FlutterActivity() {
                 "requestNotificationAccess" -> {
                     try {
                         val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                        // Optional: Add flag if you want to ensure this activity is brought to front if already running in task.
-                        // intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         startActivity(intent)
                         result.success(null)
                     } catch (e: Exception) {
@@ -72,7 +70,7 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "isPostNotificationsGranted" -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // Android 13 (API 33)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         result.success(NotificationManagerCompat.from(this).areNotificationsEnabled())
                     } else {
                         result.success(true)
@@ -80,25 +78,20 @@ class MainActivity : FlutterActivity() {
                 }
                 "requestPostNotifications" -> {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        // Check if permission is already granted
                         if (NotificationManagerCompat.from(this).areNotificationsEnabled()) {
-                            result.success(true) // Already granted
+                            result.success(true)
                         } else {
-                            // Request permission. The result will be handled in onRequestPermissionsResult.
-                            // Flutter side should re-check on resume.
                             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), POST_NOTIFICATIONS_REQUEST_CODE)
-                            // We don't call result.success() here immediately because the request is async.
-                            // The Dart side will re-query the status when the app resumes.
-                            // For now, just acknowledge the call if needed, or rely on resume.
-                            // result.success(null) // Or let it be handled by onResume
                         }
                     } else {
-                        result.success(true) // Not needed for older versions
+                        result.success(true)
                     }
                 }
                 "startLyricService" -> {
                     try {
-                        val serviceIntent = Intent(this, LyricService::class.java)
+                        val serviceIntent = Intent(this, LyricService::class.java).apply {
+                            action = LyricService.ACTION_USER_INITIATED_START
+                        }
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                             startForegroundService(serviceIntent)
                         } else {
@@ -110,16 +103,36 @@ class MainActivity : FlutterActivity() {
                         result.error("ERROR_START_SERVICE", e.message, null)
                     }
                 }
-                "isLyricServiceRunning" -> {
-                    result.success(isServiceRunning(LyricService::class.java))
+                "stopLyricService" -> {
+                    try {
+                        val serviceIntent = Intent(this, LyricService::class.java).apply {
+                            action = LyricService.ACTION_USER_INITIATED_STOP
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            startForegroundService(serviceIntent)
+                        } else {
+                            startService(serviceIntent)
+                        }
+                        result.success(null)
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Error stopping LyricService: ${e.message}")
+                        result.error("ERROR_STOP_SERVICE", e.message, null)
+                    }
                 }
-                // --- BATTERY OPTIMIZATION METHODS ---
+                "isLyricServiceRunning" -> {
+                    val isManuallyStarted = LyricService.isServiceManuallyStarted.get()
+                    val isActuallyRunning = isServiceProcessRunning(LyricService::class.java)
+                    Log.d("MainActivity", "isLyricServiceRunning: ManuallyStarted=$isManuallyStarted, ProcessRunning=$isActuallyRunning")
+                    // The service is considered "running" if the app intends it to be AND its process is found.
+                    // After a stop, isManuallyStarted will be false.
+                    result.success(isManuallyStarted && isActuallyRunning)
+                }
                 "isIgnoringBatteryOptimizations" -> {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
                         result.success(powerManager.isIgnoringBatteryOptimizations(packageName))
                     } else {
-                        result.success(true) // Not applicable before Marshmallow
+                        result.success(true)
                     }
                 }
                 "requestDisableBatteryOptimization" -> {
@@ -128,28 +141,26 @@ class MainActivity : FlutterActivity() {
                             val intent = Intent()
                             val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
                             if (powerManager.isIgnoringBatteryOptimizations(packageName)) {
-                                Log.d("MainActivity", "App already ignoring battery optimizations.")
-                                result.success(true) // Indicate it's already done
+                                result.success(true)
                                 return@setMethodCallHandler
                             }
                             intent.action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
                             intent.data = Uri.parse("package:$packageName")
                             startActivity(intent)
-                            result.success(null) // Acknowledge request was made
+                            result.success(null)
                         } catch (e: Exception) {
                             Log.e("MainActivity", "Could not open specific battery optimization request: ${e.message}")
-                            // Fallback to general battery settings if specific request fails
                             try {
                                 val generalIntent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
                                 startActivity(generalIntent)
-                                result.success(null) // Acknowledge fallback request was made
+                                result.success(null)
                             } catch (se: Exception) {
                                 Log.e("MainActivity", "Could not open general battery optimization settings: ${se.message}")
                                 result.error("BATTERY_OPTIMIZATION_SETTINGS_UNAVAILABLE", "Battery optimization settings could not be opened.", null)
                             }
                         }
                     } else {
-                        result.success(true) // Not applicable before Marshmallow
+                        result.success(true)
                     }
                 }
                 else -> {
@@ -159,9 +170,8 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    // Helper function to check if a service is running
-    @Suppress("DEPRECATION") // Needed for getRunningServices on older Android versions
-    private fun isServiceRunning(serviceClass: Class<*>): Boolean {
+    @Suppress("DEPRECATION")
+    private fun isServiceProcessRunning(serviceClass: Class<*>): Boolean {
         try {
             val manager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager?
             manager?.getRunningServices(Integer.MAX_VALUE)?.forEach { service ->
@@ -170,32 +180,20 @@ class MainActivity : FlutterActivity() {
                 }
             }
         } catch (e: Exception) {
-            Log.e("MainActivity", "Error checking service status: ${e.message}")
-            return false // Assume not running if an error occurs
+            Log.e("MainActivity", "Error checking service process status: ${e.message}")
+            return false
         }
         return false
     }
 
-    // Handle the result of runtime permissions requests (e.g., POST_NOTIFICATIONS)
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == POST_NOTIFICATIONS_REQUEST_CODE) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 Log.d("MainActivity", "POST_NOTIFICATIONS permission granted.")
-                // Optionally, you could send an event back to Flutter here,
-                // but the current Dart logic re-checks on resume, which is usually sufficient.
             } else {
                 Log.d("MainActivity", "POST_NOTIFICATIONS permission denied.")
             }
         }
-        // You can add more request codes here if you request other runtime permissions directly
     }
-
-    // Optional: If you want to send an event to Dart when the activity resumes,
-    // for example, after a permission is granted/denied from settings.
-    // However, the Dart side's didChangeAppLifecycleState already handles re-checking.
-    // override fun onResume() {
-    //     super.onResume()
-    //     // Example: MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).invokeMethod("activityResumed", null)
-    // }
 }
