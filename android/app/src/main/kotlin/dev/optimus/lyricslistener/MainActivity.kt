@@ -38,7 +38,7 @@ class MainActivity : FlutterActivity() {
                         result.error("ERROR_NOTIFICATION_ACCESS", e.message, null)
                     }
                 }
-                "requestNotificationAccess" -> {
+                "requestNotificationAccess" -> { // This method already opens the settings page
                     try {
                         val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
                         startActivity(intent)
@@ -46,6 +46,16 @@ class MainActivity : FlutterActivity() {
                     } catch (e: Exception) {
                         Log.e("MainActivity", "Error opening notification settings: ${e.message}")
                         result.error("ERROR_OPEN_NOTIFICATION_SETTINGS", e.message, null)
+                    }
+                }
+                "openNotificationSettings" -> { // Added method to explicitly open notification listener settings
+                    try {
+                        val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                        startActivity(intent)
+                        result.success(null)
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Error opening notification listener settings page: ${e.message}")
+                        result.error("ERROR_OPEN_NOTIFICATION_LISTENER_SETTINGS", e.message, null)
                     }
                 }
                 "canDrawOverlays" -> {
@@ -82,6 +92,7 @@ class MainActivity : FlutterActivity() {
                             result.success(true)
                         } else {
                             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), POST_NOTIFICATIONS_REQUEST_CODE)
+                            // Result for this will be handled by onRequestPermissionsResult and Flutter side will re-check status on resume
                         }
                     } else {
                         result.success(true)
@@ -108,11 +119,13 @@ class MainActivity : FlutterActivity() {
                         val serviceIntent = Intent(this, LyricService::class.java).apply {
                             action = LyricService.ACTION_USER_INITIATED_STOP
                         }
+                         // We still need to call startService/startForegroundService to deliver the stop intent
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                             startForegroundService(serviceIntent)
                         } else {
                             startService(serviceIntent)
                         }
+                        // LyricService itself will call stopSelf() or stopForeground(true)
                         result.success(null)
                     } catch (e: Exception) {
                         Log.e("MainActivity", "Error stopping LyricService: ${e.message}")
@@ -123,8 +136,6 @@ class MainActivity : FlutterActivity() {
                     val isManuallyStarted = LyricService.isServiceManuallyStarted.get()
                     val isActuallyRunning = isServiceProcessRunning(LyricService::class.java)
                     Log.d("MainActivity", "isLyricServiceRunning: ManuallyStarted=$isManuallyStarted, ProcessRunning=$isActuallyRunning")
-                    // The service is considered "running" if the app intends it to be AND its process is found.
-                    // After a stop, isManuallyStarted will be false.
                     result.success(isManuallyStarted && isActuallyRunning)
                 }
                 "isIgnoringBatteryOptimizations" -> {
@@ -141,26 +152,27 @@ class MainActivity : FlutterActivity() {
                             val intent = Intent()
                             val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
                             if (powerManager.isIgnoringBatteryOptimizations(packageName)) {
-                                result.success(true)
+                                result.success(true) // Already ignoring
                                 return@setMethodCallHandler
                             }
                             intent.action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
                             intent.data = Uri.parse("package:$packageName")
                             startActivity(intent)
-                            result.success(null)
+                            result.success(null) // User will be taken to settings
                         } catch (e: Exception) {
                             Log.e("MainActivity", "Could not open specific battery optimization request: ${e.message}")
                             try {
+                                // Fallback to general battery optimization settings if specific one fails
                                 val generalIntent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
                                 startActivity(generalIntent)
-                                result.success(null)
+                                result.success(null) // User will be taken to settings
                             } catch (se: Exception) {
                                 Log.e("MainActivity", "Could not open general battery optimization settings: ${se.message}")
                                 result.error("BATTERY_OPTIMIZATION_SETTINGS_UNAVAILABLE", "Battery optimization settings could not be opened.", null)
                             }
                         }
                     } else {
-                        result.success(true)
+                        result.success(true) // Not applicable for older versions
                     }
                 }
                 else -> {
@@ -174,15 +186,22 @@ class MainActivity : FlutterActivity() {
     private fun isServiceProcessRunning(serviceClass: Class<*>): Boolean {
         try {
             val manager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager?
+            // On newer Android versions, getRunningServices is restricted for 3rd party apps.
+            // This method might not be reliable for determining if the service *process* is running.
+            // Relying on LyricService.isServiceManuallyStarted and LyricService.isServiceRunningInternal
+            // is generally better for the service's own state.
+            // However, this check can still be a fallback or supplemental information.
             manager?.getRunningServices(Integer.MAX_VALUE)?.forEach { service ->
                 if (serviceClass.name == service.service.className) {
+                    Log.d("MainActivity", "Service process ${serviceClass.name} found in getRunningServices.")
                     return true
                 }
             }
         } catch (e: Exception) {
             Log.e("MainActivity", "Error checking service process status: ${e.message}")
-            return false
+            return false // If error, assume not running via this check
         }
+        Log.d("MainActivity", "Service process ${serviceClass.name} NOT found in getRunningServices.")
         return false
     }
 
@@ -191,8 +210,10 @@ class MainActivity : FlutterActivity() {
         if (requestCode == POST_NOTIFICATIONS_REQUEST_CODE) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 Log.d("MainActivity", "POST_NOTIFICATIONS permission granted.")
+                // Flutter side will re-check on resume via didChangeAppLifecycleState
             } else {
                 Log.d("MainActivity", "POST_NOTIFICATIONS permission denied.")
+                // Flutter side will re-check on resume
             }
         }
     }

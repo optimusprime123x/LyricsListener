@@ -1,19 +1,35 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 const int _android13ApiLevel = 33;
 
-void main() {
+const _defaultSeedColor = Color(0xFF6750A4);
+
+const String _seedColorKey = 'seed_color';
+
+// MODIFIED: main is now async to await loading the color
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  MobileAds.instance.initialize();
-  runApp(const MyApp());
+  // MobileAds.instance.initialize(); // MODIFIED: Ads are disabled for this version
+
+  final prefs = await SharedPreferences.getInstance();
+  final int? savedColorValue = prefs.getInt(_seedColorKey);
+  final Color initialSeedColor =
+      savedColorValue != null ? Color(savedColorValue) : _defaultSeedColor;
+
+  runApp(MyApp(initialSeedColor: initialSeedColor));
 }
 
 class MyApp extends StatefulWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, required this.initialSeedColor});
+
+  final Color initialSeedColor;
 
   @override
   State<MyApp> createState() => _MyAppState();
@@ -21,6 +37,13 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   ThemeMode _themeMode = ThemeMode.system;
+  late Color _seedColor;
+
+  @override
+  void initState() {
+    super.initState();
+    _seedColor = widget.initialSeedColor;
+  }
 
   void _toggleTheme() {
     setState(() {
@@ -29,324 +52,273 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
+  void _changeSeedColor(Color color) async {
+    setState(() {
+      _seedColor = color;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_seedColorKey, color.value);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final baseHeadlineTheme = GoogleFonts.poppinsTextTheme(
+      Theme.of(context).textTheme,
+    );
+    final baseBodyTheme = GoogleFonts.manropeTextTheme(
+      Theme.of(context).textTheme,
+    );
+
     final baseLightColorScheme = ColorScheme.fromSeed(
-      seedColor: Colors.deepPurple,
+      seedColor: _seedColor,
       brightness: Brightness.light,
     );
+
+    final lightTextTheme = _buildExpressiveTextTheme(
+      baseHeadlineTheme,
+      baseBodyTheme,
+      baseLightColorScheme.onSurface,
+    );
+
+    final lightTheme = ThemeData(
+      colorScheme: baseLightColorScheme,
+      useMaterial3: true,
+      brightness: Brightness.light,
+      textTheme: lightTextTheme,
+      cardTheme: CardThemeData(
+        elevation: 1,
+        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: baseLightColorScheme.outlineVariant),
+        ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          shape: const StadiumBorder(),
+          textStyle: lightTextTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+      appBarTheme: AppBarTheme(
+        backgroundColor: baseLightColorScheme.surfaceContainer,
+        elevation: 0,
+        titleTextStyle: lightTextTheme.titleLarge?.copyWith(
+          color: baseLightColorScheme.onSurface,
+        ),
+        iconTheme: IconThemeData(color: baseLightColorScheme.onSurfaceVariant),
+      ),
+      dividerTheme: DividerThemeData(
+        thickness: 1,
+        color: baseLightColorScheme.outlineVariant,
+      ),
+      listTileTheme: ListTileThemeData(
+        iconColor: baseLightColorScheme.primary,
+        titleTextStyle: lightTextTheme.titleMedium,
+        subtitleTextStyle: lightTextTheme.bodyMedium,
+        minVerticalPadding: 16,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      expansionTileTheme: ExpansionTileThemeData(
+        iconColor: baseLightColorScheme.primary,
+        collapsedIconColor: baseLightColorScheme.onSurfaceVariant,
+        textColor: baseLightColorScheme.primary,
+        collapsedTextColor: baseLightColorScheme.onSurface,
+        backgroundColor: baseLightColorScheme.surfaceContainerLow,
+        collapsedBackgroundColor: baseLightColorScheme.surfaceContainer,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        collapsedShape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: baseLightColorScheme.outline),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: baseLightColorScheme.primary, width: 2),
+        ),
+        filled: true,
+        fillColor: baseLightColorScheme.surfaceContainerHighest,
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor: baseLightColorScheme.inverseSurface,
+        contentTextStyle: lightTextTheme.bodyMedium?.copyWith(
+          color: baseLightColorScheme.onInverseSurface,
+        ),
+        actionTextColor: baseLightColorScheme.inversePrimary,
+      ),
+    );
+
     final baseDarkColorScheme = ColorScheme.fromSeed(
-      seedColor: Colors.deepPurple,
+      seedColor: _seedColor,
       brightness: Brightness.dark,
     );
-
-    final baseTextTheme = GoogleFonts.manropeTextTheme(
-      Theme.of(context).textTheme, // Use context theme as base
+    final darkTextTheme = _buildExpressiveTextTheme(
+      baseHeadlineTheme,
+      baseBodyTheme,
+      baseDarkColorScheme.onSurface,
     );
 
-    // Apply colors to light text theme
-    final lightTextTheme = baseTextTheme
-        .copyWith(
-          displayLarge: baseTextTheme.displayLarge?.copyWith(
-            color: baseLightColorScheme.onSurface,
+    final darkTheme = ThemeData(
+      colorScheme: baseDarkColorScheme,
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      textTheme: darkTextTheme,
+      cardTheme: CardThemeData(
+        elevation: 1,
+        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: baseDarkColorScheme.outlineVariant),
+        ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          shape: const StadiumBorder(),
+          textStyle: darkTextTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.bold,
           ),
-          displayMedium: baseTextTheme.displayMedium?.copyWith(
-            color: baseLightColorScheme.onSurface,
-          ),
-          displaySmall: baseTextTheme.displaySmall?.copyWith(
-            color: baseLightColorScheme.onSurface,
-          ),
-          headlineLarge: baseTextTheme.headlineLarge?.copyWith(
-            color: baseLightColorScheme.onSurface,
-          ),
-          headlineMedium: baseTextTheme.headlineMedium?.copyWith(
-            color: baseLightColorScheme.onSurface,
-          ),
-          headlineSmall: baseTextTheme.headlineSmall?.copyWith(
-            color: baseLightColorScheme.onSurface,
-          ),
-          titleLarge: baseTextTheme.titleLarge?.copyWith(
-            color: baseLightColorScheme.onSurface,
-          ),
-          titleMedium: baseTextTheme.titleMedium?.copyWith(
-            color: baseLightColorScheme.onSurface,
-          ),
-          titleSmall: baseTextTheme.titleSmall?.copyWith(
-            color: baseLightColorScheme.onSurface,
-          ),
-          bodyLarge: baseTextTheme.bodyLarge?.copyWith(
-            color: baseLightColorScheme.onSurface,
-          ),
-          bodyMedium: baseTextTheme.bodyMedium?.copyWith(
-            color: baseLightColorScheme.onSurface,
-          ),
-          bodySmall: baseTextTheme.bodySmall?.copyWith(
-            color: baseLightColorScheme.onSurfaceVariant,
-          ),
-          labelLarge: baseTextTheme.labelLarge?.copyWith(
-            color: baseLightColorScheme.onPrimaryContainer,
-            fontWeight: FontWeight.w500,
-          ),
-          labelMedium: baseTextTheme.labelMedium?.copyWith(
-            color: baseLightColorScheme.onSurfaceVariant,
-          ),
-          labelSmall: baseTextTheme.labelSmall?.copyWith(
-            color: baseLightColorScheme.onSurfaceVariant,
-          ),
-        )
-        .apply(
-          bodyColor: baseLightColorScheme.onSurface,
-          displayColor: baseLightColorScheme.onSurface,
-        );
-
-    // Apply colors to dark text theme
-    final darkTextTheme = baseTextTheme
-        .copyWith(
-          displayLarge: baseTextTheme.displayLarge?.copyWith(
-            color: baseDarkColorScheme.onSurface,
-          ),
-          displayMedium: baseTextTheme.displayMedium?.copyWith(
-            color: baseDarkColorScheme.onSurface,
-          ),
-          displaySmall: baseTextTheme.displaySmall?.copyWith(
-            color: baseDarkColorScheme.onSurface,
-          ),
-          headlineLarge: baseTextTheme.headlineLarge?.copyWith(
-            color: baseDarkColorScheme.onSurface,
-          ),
-          headlineMedium: baseTextTheme.headlineMedium?.copyWith(
-            color: baseDarkColorScheme.onSurface,
-          ),
-          headlineSmall: baseTextTheme.headlineSmall?.copyWith(
-            color: baseDarkColorScheme.onSurface,
-          ),
-          titleLarge: baseTextTheme.titleLarge?.copyWith(
-            color: baseDarkColorScheme.onSurface,
-          ),
-          titleMedium: baseTextTheme.titleMedium?.copyWith(
-            color: baseDarkColorScheme.onSurface,
-          ),
-          titleSmall: baseTextTheme.titleSmall?.copyWith(
-            color: baseDarkColorScheme.onSurface,
-          ),
-          bodyLarge: baseTextTheme.bodyLarge?.copyWith(
-            color: baseDarkColorScheme.onSurface,
-          ),
-          bodyMedium: baseTextTheme.bodyMedium?.copyWith(
-            color: baseDarkColorScheme.onSurface,
-          ),
-          bodySmall: baseTextTheme.bodySmall?.copyWith(
-            color: baseDarkColorScheme.onSurfaceVariant,
-          ),
-          labelLarge: baseTextTheme.labelLarge?.copyWith(
-            color: baseDarkColorScheme.onPrimaryContainer,
-            fontWeight: FontWeight.w500,
-          ),
-          labelMedium: baseTextTheme.labelMedium?.copyWith(
-            color: baseDarkColorScheme.onSurfaceVariant,
-          ),
-          labelSmall: baseTextTheme.labelSmall?.copyWith(
-            color: baseDarkColorScheme.onSurfaceVariant,
-          ),
-        )
-        .apply(
-          bodyColor: baseDarkColorScheme.onSurface,
-          displayColor: baseDarkColorScheme.onSurface,
-        );
+        ),
+      ),
+      appBarTheme: AppBarTheme(
+        backgroundColor: baseDarkColorScheme.surfaceContainer,
+        elevation: 0,
+        titleTextStyle: darkTextTheme.titleLarge?.copyWith(
+          color: baseDarkColorScheme.onSurface,
+        ),
+        iconTheme: IconThemeData(color: baseDarkColorScheme.onSurfaceVariant),
+      ),
+      dividerTheme: DividerThemeData(
+        thickness: 1,
+        color: baseDarkColorScheme.outlineVariant,
+      ),
+      listTileTheme: ListTileThemeData(
+        iconColor: baseDarkColorScheme.primary,
+        titleTextStyle: darkTextTheme.titleMedium,
+        subtitleTextStyle: darkTextTheme.bodyMedium,
+        minVerticalPadding: 16,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      expansionTileTheme: ExpansionTileThemeData(
+        iconColor: baseDarkColorScheme.primary,
+        collapsedIconColor: baseDarkColorScheme.onSurfaceVariant,
+        textColor: baseDarkColorScheme.primary,
+        collapsedTextColor: baseDarkColorScheme.onSurface,
+        backgroundColor: baseDarkColorScheme.surfaceContainerLow,
+        collapsedBackgroundColor: baseDarkColorScheme.surfaceContainer,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        collapsedShape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: baseDarkColorScheme.outline),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: baseDarkColorScheme.primary, width: 2),
+        ),
+        filled: true,
+        fillColor: baseDarkColorScheme.surfaceContainerHighest,
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor: baseDarkColorScheme.inverseSurface,
+        contentTextStyle: darkTextTheme.bodyMedium?.copyWith(
+          color: baseDarkColorScheme.onInverseSurface,
+        ),
+        actionTextColor: baseDarkColorScheme.inversePrimary,
+      ),
+    );
 
     return MaterialApp(
       title: 'Lyric Listener',
-      theme: ThemeData(
-        colorScheme: baseLightColorScheme,
-        useMaterial3: true,
-        brightness: Brightness.light,
-        textTheme: lightTextTheme,
-        cardTheme: CardThemeData(
-          elevation: 1,
-          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(
-              color: baseLightColorScheme.outlineVariant.withOpacity(0.5),
-            ),
-          ),
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-            textStyle: lightTextTheme.labelLarge,
-          ),
-        ),
-        appBarTheme: AppBarTheme(
-          backgroundColor: baseLightColorScheme.surfaceContainerHighest,
-          elevation: 0,
-          titleTextStyle: lightTextTheme.titleLarge?.copyWith(
-            color: baseLightColorScheme.onSurface,
-          ),
-          iconTheme: IconThemeData(
-            color: baseLightColorScheme.onSurfaceVariant,
-          ),
-        ),
-        dividerTheme: DividerThemeData(
-          space: 1, // This will be overridden by height typically
-          thickness: 0.5,
-          color: baseLightColorScheme.outlineVariant.withOpacity(0.7),
-        ),
-        listTileTheme: ListTileThemeData(
-          iconColor: baseLightColorScheme.onSurfaceVariant,
-          titleTextStyle:
-              lightTextTheme.titleMedium, // Made slightly larger for clarity
-          subtitleTextStyle: lightTextTheme.bodyMedium, // Made slightly larger
-          minVerticalPadding: 16, // Increased padding
-          dense: false,
-        ),
-        expansionTileTheme: ExpansionTileThemeData(
-          iconColor: baseLightColorScheme.primary,
-          collapsedIconColor: baseLightColorScheme.onSurfaceVariant,
-          textColor: baseLightColorScheme.primary,
-          collapsedTextColor: baseLightColorScheme.onSurface,
-          backgroundColor: baseLightColorScheme.surfaceContainerLow,
-          collapsedBackgroundColor: baseLightColorScheme.surfaceContainer,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          collapsedShape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: baseLightColorScheme.outline),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: baseLightColorScheme.outline),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(
-              color: baseLightColorScheme.primary,
-              width: 2,
-            ),
-          ),
-          filled: true,
-          fillColor: baseLightColorScheme.surfaceContainerHighest,
-        ),
-        snackBarTheme: SnackBarThemeData(
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          backgroundColor: baseLightColorScheme.inverseSurface,
-          contentTextStyle: lightTextTheme.bodyMedium?.copyWith(
-            color: baseLightColorScheme.onInverseSurface,
-          ),
-          actionTextColor: baseLightColorScheme.inversePrimary,
-        ),
-      ),
-      darkTheme: ThemeData(
-        colorScheme: baseDarkColorScheme,
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        textTheme: darkTextTheme,
-        cardTheme: CardThemeData(
-          elevation: 1,
-          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(
-              color: baseDarkColorScheme.outlineVariant.withOpacity(0.5),
-            ),
-          ),
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-            textStyle: darkTextTheme.labelLarge,
-          ),
-        ),
-        appBarTheme: AppBarTheme(
-          backgroundColor: baseDarkColorScheme.surfaceContainerHighest,
-          elevation: 0,
-          titleTextStyle: darkTextTheme.titleLarge?.copyWith(
-            color: baseDarkColorScheme.onSurface,
-          ),
-          iconTheme: IconThemeData(color: baseDarkColorScheme.onSurfaceVariant),
-        ),
-        dividerTheme: DividerThemeData(
-          space: 1,
-          thickness: 0.5,
-          color: baseDarkColorScheme.outlineVariant.withOpacity(0.7),
-        ),
-        listTileTheme: ListTileThemeData(
-          iconColor: baseDarkColorScheme.onSurfaceVariant,
-          titleTextStyle: darkTextTheme.titleMedium,
-          subtitleTextStyle: darkTextTheme.bodyMedium,
-          minVerticalPadding: 16,
-          dense: false,
-        ),
-        expansionTileTheme: ExpansionTileThemeData(
-          iconColor: baseDarkColorScheme.primary,
-          collapsedIconColor: baseDarkColorScheme.onSurfaceVariant,
-          textColor: baseDarkColorScheme.primary,
-          collapsedTextColor: baseDarkColorScheme.onSurface,
-          backgroundColor: baseDarkColorScheme.surfaceContainerLow,
-          collapsedBackgroundColor: baseDarkColorScheme.surfaceContainer,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          collapsedShape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: baseDarkColorScheme.outline),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: baseDarkColorScheme.outline),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(
-              color: baseDarkColorScheme.primary,
-              width: 2,
-            ),
-          ),
-          filled: true,
-          fillColor: baseDarkColorScheme.surfaceContainerHighest,
-        ),
-        snackBarTheme: SnackBarThemeData(
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          backgroundColor: baseDarkColorScheme.inverseSurface,
-          contentTextStyle: darkTextTheme.bodyMedium?.copyWith(
-            color: baseDarkColorScheme.onInverseSurface,
-          ),
-          actionTextColor: baseDarkColorScheme.inversePrimary,
-        ),
-      ),
+      theme: lightTheme,
+      darkTheme: darkTheme,
       themeMode: _themeMode,
-      home: HomeScreen(toggleTheme: _toggleTheme),
+      home: HomeScreen(
+        toggleTheme: _toggleTheme,
+        seedColor: _seedColor,
+        onSeedColorChanged: _changeSeedColor,
+      ),
     );
+  }
+
+  TextTheme _buildExpressiveTextTheme(
+    TextTheme headlineTheme,
+    TextTheme bodyTheme,
+    Color onSurfaceColor,
+  ) {
+    return bodyTheme
+        .copyWith(
+          displayLarge: headlineTheme.displayLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: onSurfaceColor,
+          ),
+          displayMedium: headlineTheme.displayMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: onSurfaceColor,
+          ),
+          displaySmall: headlineTheme.displaySmall?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: onSurfaceColor,
+          ),
+          headlineLarge: headlineTheme.headlineLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: onSurfaceColor,
+          ),
+          headlineMedium: headlineTheme.headlineMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: onSurfaceColor,
+          ),
+          headlineSmall: headlineTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: onSurfaceColor,
+          ),
+          titleLarge: headlineTheme.titleLarge,
+          titleMedium: bodyTheme.titleMedium,
+          titleSmall: bodyTheme.titleSmall,
+          bodyLarge: bodyTheme.bodyLarge,
+          bodyMedium: bodyTheme.bodyMedium,
+          bodySmall: bodyTheme.bodySmall,
+          labelLarge: bodyTheme.labelLarge,
+          labelMedium: bodyTheme.labelMedium,
+          labelSmall: bodyTheme.labelSmall,
+        )
+        .apply(bodyColor: onSurfaceColor, displayColor: onSurfaceColor);
   }
 }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.toggleTheme});
+  const HomeScreen({
+    super.key,
+    required this.toggleTheme,
+    required this.seedColor,
+    required this.onSeedColorChanged,
+  });
 
   final VoidCallback toggleTheme;
+  final Color seedColor;
+  final ValueChanged<Color> onSeedColorChanged;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -368,45 +340,44 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   bool _isServiceActionInProgress = false;
 
+  // MODIFIED: Ad logic is kept but will not be invoked.
   RewardedAd? _rewardedAd;
   bool _isRewardedAdLoaded = false;
   bool _isLoadingAd = false;
+  final String _rewardedAdUnitId = 'ca-app-pub-2408734303848985/6810436417';
 
-  // Use your production Ad Unit ID or a test ID
-  // final String _rewardedAdUnitId = 'ca-app-pub-3940256099942544/5224354917'; // Test ID
-  final String _rewardedAdUnitId =
-      'ca-app-pub-2408734303848985/6810436417'; // Your provided ID
+  static const List<Color> _predefinedSeedColors = [
+    Color(0xFF6750A4),
+    Color(0xFF006D60),
+    Color(0xFFB95D12),
+    Color(0xFF984061),
+    Color(0xFF416FDF),
+    Color(0xFF556614),
+  ];
 
   @override
   void initState() {
     super.initState();
     print("HomeScreen initState: Called");
     WidgetsBinding.instance.addObserver(this);
-    _loadInitialData().then((_) {
-      // Load ad only after initial data is loaded and if not in loading state anymore
-      if (mounted && !_isLoadingAppStatus) {
-        _loadRewardedAd();
-      }
-    });
+    // MODIFIED: Ad loading is disabled for this version.
+    _loadInitialData();
   }
 
   Future<void> _loadInitialData() async {
     print("HomeScreen _loadInitialData: Starting");
     if (!mounted) return;
 
-    // Set loading state only if not already loading (e.g., on resume)
-    // During initState, _isLoadingAppStatus is already true.
     if (!_isLoadingAppStatus) {
       setState(() {
         _isLoadingAppStatus = true;
       });
     }
-    // Removed the problematic 'else if' block that caused crashes during initState
 
     try {
       await _getAndroidVersion();
       if (mounted) {
-        await _checkPermissionsStatus(); // This updates _canStartService
+        await _checkPermissionsStatus();
       }
       if (mounted) await _checkServiceStatus();
     } catch (e, s) {
@@ -415,7 +386,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
     } finally {
       if (mounted) {
-        // Ensure _isLoadingAppStatus is set to false if it was true
         if (_isLoadingAppStatus) {
           setState(() {
             _isLoadingAppStatus = false;
@@ -444,15 +414,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (!_isLoadingAppStatus && !_isServiceActionInProgress) {
         _loadInitialData();
       }
-      if (!_isRewardedAdLoaded &&
-          _rewardedAd == null &&
-          !_isLoadingAd &&
-          mounted) {
-        _loadRewardedAd();
-      }
+      // MODIFIED: Ad loading on resume is disabled for this version.
+      // if (!_isRewardedAdLoaded &&
+      //     _rewardedAd == null &&
+      //     !_isLoadingAd &&
+      //     mounted) {
+      //   _loadRewardedAd();
+      // }
     }
   }
 
+  // NOTE: This method is kept for future use but is not currently called.
   void _loadRewardedAd() {
     if (_isLoadingAd || _isRewardedAdLoaded || !mounted) {
       return;
@@ -495,6 +467,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  // NOTE: This method is kept for future use but is not currently called.
   void _setFullScreenContentCallback() {
     if (_rewardedAd == null || !mounted) return;
     _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
@@ -507,7 +480,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         print('HomeScreen: Ad failed to show full screen content: $error');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
+            const SnackBar(
               content: Text('Oops! Failed to show the ad. Please try again.'),
             ),
           );
@@ -536,6 +509,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  // NOTE: This method is kept for future use but is not currently called.
   void _showRewardedAd() {
     if (_rewardedAd == null || !_isRewardedAdLoaded || !mounted) {
       print('HomeScreen _showRewardedAd: Ad not ready or not mounted.');
@@ -570,6 +544,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         }
       },
     );
+  }
+
+  Future<void> _launchDonateUrl() async {
+    final Uri donateUrl = Uri.parse('https://prancingunicorn.pages.dev/donate');
+    try {
+      await launchUrl(donateUrl, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open the donation page.')),
+        );
+      }
+    }
   }
 
   Future<void> _getAndroidVersion() async {
@@ -776,6 +763,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _openNotificationSettings() async {
+    print("HomeScreen _openNotificationSettings: Attempting to open.");
+    try {
+      await platform.invokeMethod('openNotificationSettings');
+    } on PlatformException catch (e) {
+      print('HomeScreen _openNotificationSettings: Failed - ${e.message}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Could not open settings: ${e.message ?? "Unknown error"}',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _requestOverlayPermission() async {
     await _handlePermissionRequest(
       () => platform.invokeMethod('requestOverlayPermission'),
@@ -799,17 +804,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Widget _buildPermissionStatusIcon(bool isGranted, {bool optional = false}) {
     final colorScheme = Theme.of(context).colorScheme;
+    final Color iconColor;
+    if (isGranted) {
+      iconColor = colorScheme.primary;
+    } else if (optional) {
+      iconColor = colorScheme.onSurfaceVariant;
+    } else {
+      iconColor = colorScheme.error;
+    }
+
     return Icon(
       isGranted
-          ? Icons.check_circle_outline_rounded
+          ? Icons.check_circle_rounded
           : (optional
               ? Icons.info_outline_rounded
               : Icons.error_outline_rounded),
-      color:
-          isGranted
-              ? Colors.green.shade600
-              : (optional ? colorScheme.tertiary : colorScheme.error),
-      size: 24,
+      color: iconColor,
+      size: 28,
     );
   }
 
@@ -844,8 +855,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return Card(
       child: ListTile(
         leading: _buildPermissionStatusIcon(isGranted, optional: optional),
-        title: Text(title),
-        subtitle: Text(subtitle),
+        title: Text(title, style: Theme.of(context).textTheme.titleSmall),
+        subtitle: Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
         trailing: ElevatedButton(
           onPressed: isGranted ? null : onPressed,
           style: ElevatedButton.styleFrom(
@@ -857,7 +868,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 isGranted
                     ? colorScheme.onSurfaceVariant
                     : colorScheme.onPrimaryContainer,
-            elevation: isGranted ? 0 : 1,
+            elevation: isGranted ? 0 : 2,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
           child: Text(isGranted ? 'Granted' : 'Grant'),
         ),
@@ -871,8 +886,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final textTheme = Theme.of(context).textTheme;
 
     return Card(
-      elevation: 2,
-      margin: const EdgeInsets.only(bottom: 16.0), // Added margin for spacing
+      elevation: 0,
+      color: colorScheme.secondaryContainer,
+      margin: const EdgeInsets.only(bottom: 16.0),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -880,55 +896,56 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           children: [
             Text(
               'Support Lyric Listener!',
-              style: textTheme.titleLarge?.copyWith(color: colorScheme.primary),
+              style: textTheme.titleLarge?.copyWith(
+                color: colorScheme.onSecondaryContainer,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Hi, you can ignore this for now - but if you like this app, please consider supporting me by watching an ad or two.',
-              style: textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 16),
-            Center(
-              child: ElevatedButton.icon(
-                icon: Icon(
-                  _isLoadingAd
-                      ? Icons.hourglass_empty_rounded
-                      : Icons.play_circle_fill_rounded,
-                ),
-                label: Text(
-                  _isLoadingAd
-                      ? 'Loading Ad...'
-                      : 'Support me by seeing an ad!',
-                ),
-                onPressed:
-                    (_isRewardedAdLoaded && !_isLoadingAd)
-                        ? _showRewardedAd
-                        : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      (_isRewardedAdLoaded && !_isLoadingAd)
-                          ? colorScheme.primaryContainer
-                          : colorScheme.surfaceContainerHighest,
-                  foregroundColor:
-                      (_isRewardedAdLoaded && !_isLoadingAd)
-                          ? colorScheme.onPrimaryContainer
-                          : colorScheme.onSurfaceVariant.withOpacity(0.7),
-                ),
+              'If you like this app, please consider supporting my work! Every little bit helps!',
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSecondaryContainer,
               ),
             ),
-            if (!_isRewardedAdLoaded && !_isLoadingAd)
-              Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: Center(
-                  child: Text(
-                    '(Ad not available right now, try again later)',
-                    style: textTheme.bodySmall?.copyWith(
-                      fontStyle: FontStyle.italic,
-                      color: colorScheme.onSurfaceVariant.withOpacity(0.7),
-                    ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // MODIFIED: "Watch an Ad" button is always disabled.
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.local_activity_rounded),
+                  label: const Text('Watch an Ad'),
+                  onPressed: null, // Always disabled
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: colorScheme.secondary,
+                    foregroundColor: colorScheme.onSecondary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.favorite_rounded),
+                  label: const Text('Donate'),
+                  onPressed: _launchDonateUrl,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: colorScheme.primary,
+                    foregroundColor: colorScheme.onPrimary,
+                  ),
+                ),
+              ],
+            ),
+            // MODIFIED: Text is always shown as ads are disabled.
+            Padding(
+              padding: const EdgeInsets.only(top: 8.0),
+              child: Center(
+                child: Text(
+                  '(Ads are not available right now.)',
+                  style: textTheme.bodySmall?.copyWith(
+                    fontStyle: FontStyle.italic,
+                    color: colorScheme.onSecondaryContainer,
                   ),
                 ),
               ),
+            ),
           ],
         ),
       ),
@@ -941,49 +958,42 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     return Column(
       children: [
-        Icon(
-          Icons.music_note_rounded,
-          size: 50, // Slightly smaller
-          color: colorScheme.secondary,
-        ),
-        const SizedBox(height: 12),
+        Icon(Icons.music_note_rounded, size: 64, color: colorScheme.primary),
+        const SizedBox(height: 16),
         Text(
           'Welcome to Lyric Listener!',
-          style: textTheme.headlineSmall?.copyWith(
-            color: colorScheme.primary,
-            fontWeight: FontWeight.bold,
-          ),
+          style: textTheme.headlineSmall?.copyWith(color: colorScheme.primary),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 8),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
           child: Text(
-            'Get ready for a purr-fectly synced lyric experience with your favorite tunes!',
+            'A purr-fectly synced lyric experience for your favorite tunes!',
             style: textTheme.titleMedium?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
             textAlign: TextAlign.center,
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 24),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             SvgPicture.asset(
               'assets/images/cat-left.svg',
-              height: 65, // Slightly smaller
+              height: 70,
               colorFilter: ColorFilter.mode(
-                colorScheme.primary.withOpacity(0.9),
+                colorScheme.secondary,
                 BlendMode.srcIn,
               ),
             ),
             const SizedBox(width: 24),
             SvgPicture.asset(
               'assets/images/bird-right.svg',
-              height: 65, // Slightly smaller
+              height: 70,
               colorFilter: ColorFilter.mode(
-                colorScheme.primary.withOpacity(0.9),
+                colorScheme.secondary,
                 BlendMode.srcIn,
               ),
             ),
@@ -998,32 +1008,97 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
+      padding: const EdgeInsets.fromLTRB(8, 24, 8, 12),
       child: Text(
         title,
-        style: textTheme.titleLarge?.copyWith(
-          color: colorScheme.secondary,
-          fontWeight: FontWeight.w600,
-        ),
+        style: textTheme.titleLarge?.copyWith(color: colorScheme.primary),
         textAlign: TextAlign.center,
       ),
     );
   }
 
-  Widget _buildFaqSection(BuildContext context) {
+  Widget _buildCustomizationSection(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    // final colorScheme = Theme.of(context).colorScheme;
+
+    return Card(
+      color: Theme.of(context).colorScheme.surfaceContainer,
+      margin: EdgeInsets.zero,
+      child: ExpansionTile(
+        title: Text('Customization & Appearance', style: textTheme.titleMedium),
+        initiallyExpanded: false,
+        childrenPadding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+        children: <Widget>[
+          Row(
+            children: [
+              Text(
+                'Theme Color',
+                style: textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 16.0,
+            runSpacing: 12.0,
+            children:
+                _predefinedSeedColors.map((color) {
+                  final isSelected = widget.seedColor == color;
+                  return GestureDetector(
+                    onTap: () => widget.onSeedColorChanged(color),
+                    child: Tooltip(
+                      message:
+                          'Set theme color to #${color.value.toRadixString(16).substring(2).toUpperCase()}',
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.outlineVariant,
+                            width: isSelected ? 2.5 : 1.5,
+                          ),
+                        ),
+                        child:
+                            isSelected
+                                ? Center(
+                                  child: Icon(
+                                    Icons.check_rounded,
+                                    color:
+                                        ThemeData.estimateBrightnessForColor(
+                                                  color,
+                                                ) ==
+                                                Brightness.dark
+                                            ? Colors.white
+                                            : Colors.black,
+                                    size: 24,
+                                  ),
+                                )
+                                : null,
+                      ),
+                    ),
+                  );
+                }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHelpAndSupportSection(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Padding(
       padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
       child: Card(
-        // Wrap ExpansionTile in a Card for consistent styling
-        margin: EdgeInsets.zero, // CardTheme handles margin
+        color: colorScheme.surfaceContainer,
+        margin: EdgeInsets.zero,
         child: ExpansionTile(
-          title: Text(
-            'Frequently Asked Questions',
-            style: textTheme.titleMedium,
-          ),
+          title: Text('Help and Support', style: textTheme.titleMedium),
           initiallyExpanded: false,
           childrenPadding: const EdgeInsets.symmetric(
             horizontal: 16,
@@ -1041,7 +1116,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 const TextSpan(
                   text:
-                      "Well, certain devices have evil task killers that stop processes without proper procedure, leading to problems when the app tries to restart.\n\n",
+                      "Certain devices have aggressive task killers that stop this app's processes, leading to problems when the service tries to restart.\n\n",
                 ),
                 const TextSpan(
                   text: "What to do? ",
@@ -1049,15 +1124,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 const TextSpan(
                   text:
-                      "Try stopping and restarting the service, and give it a few seconds. If the lyrics are still not shown, go to app info and clear data and grant permissions and start the service again.",
+                      "First, try stopping and restarting the Lyric Service using the button above. If the issue persists, follow these steps:\n1. Stop the Lyric Service.\n2. Click ",
+                ),
+                TextSpan(
+                  text: 'here',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
+                    decoration: TextDecoration.underline,
+                  ),
+                  recognizer:
+                      TapGestureRecognizer()..onTap = _openNotificationSettings,
+                ),
+                const TextSpan(
+                  text:
+                      " to go to Notification Access settings.\n3. Turn OFF access for 'Lyric Listener'.\n4. Return to this app.\n5. Re-grant 'Notification Access' above.\n6. Launch the Lyric Service again.",
                 ),
               ],
             ),
-            const Divider(height: 16),
+            const Divider(height: 24),
             _buildFaqItem(
               context,
               question:
-                  'Youtube videos always say "Lyrics not found" or show incorrect lyrics',
+                  'Youtube videos show "Lyrics not found" or incorrect lyrics',
               answerParts: [
                 const TextSpan(
                   text: "Why this happens? ",
@@ -1065,7 +1153,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 const TextSpan(
                   text:
-                      "Youtube video notifications generally do not follow the proper naming scheme for songs, which hinders the app's ability to detect what is actually playing.\n\n",
+                      "Youtube video notifications often don't have standard song titles, making it hard to find the right lyrics.\n\n",
                 ),
                 const TextSpan(
                   text: "What to do? ",
@@ -1073,30 +1161,66 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 const TextSpan(
                   text:
-                      "Nothing much on your side. I will try to improve this in the future, for now - official audios without extra words in the video name work best.",
+                      "This is being worked on. Later versions should be better, but synced lyrics may not be perfect if the video length differs from the actual song.",
                 ),
               ],
             ),
-            const Divider(height: 16),
+            const Divider(height: 24),
             _buildFaqItem(
               context,
               question: 'Incorrect (or no) lyrics are displayed',
               answerParts: [
-                const TextSpan(text: "Why this happens? "),
                 const TextSpan(
-                  text: "Perhaps the archives are incomplete",
-                  style: TextStyle(decoration: TextDecoration.lineThrough),
+                  text: "Why this happens? ",
+                  style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const TextSpan(
                   text:
-                      ". The lyrics source possibly does not have lyrics of that particular song.\n\n",
+                      "The lyrics source(s) may not have lyrics for that particular song.\n\n",
                 ),
                 const TextSpan(
                   text: "What to do? ",
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const TextSpan(
-                  text: "Try again after some days, or try a different song.",
+                  text:
+                      "You may try again after some days, or try a different song.",
+                ),
+              ],
+            ),
+            const Divider(height: 24),
+            _buildFaqItem(
+              context,
+              question: 'Need help with a different issue?',
+              answerParts: [
+                TextSpan(
+                  text: 'Contact Support',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
+                    decoration: TextDecoration.underline,
+                  ),
+                  recognizer:
+                      TapGestureRecognizer()
+                        ..onTap = () async {
+                          final Uri emailLaunchUri = Uri(
+                            scheme: 'mailto',
+                            path: 'adrestaia47@gmail.com',
+                            queryParameters: {
+                              'subject': 'LyricListener App Support',
+                            },
+                          );
+                          if (await canLaunchUrl(emailLaunchUri)) {
+                            await launchUrl(emailLaunchUri);
+                          } else {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Could not open email app.'),
+                                ),
+                              );
+                            }
+                          }
+                        },
                 ),
               ],
             ),
@@ -1126,6 +1250,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             text: TextSpan(
               style: textTheme.bodyMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
+                height: 1.5,
               ),
               children: answerParts,
             ),
@@ -1154,20 +1279,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             children: [
               CircularProgressIndicator(),
               SizedBox(height: 20),
-              Text("Loading app status..."),
+              Text("Loading App Status..."),
             ],
           ),
         ),
       );
     } else {
       screenContent = ListView(
-        // Changed to ListView for better structure with sections
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
         children: <Widget>[
           _buildSupportCard(),
           _buildWelcomeSection(context),
 
-          const SizedBox(height: 16),
           const Divider(height: 24, indent: 16, endIndent: 16),
           _buildSectionHeader(context, 'App Setup & Permissions'),
           Padding(
@@ -1176,7 +1299,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               vertical: 4.0,
             ),
             child: Text(
-              'Grant these permissions for the app to function correctly.',
+              'Grant these required permissions for the app to function.',
               style: textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -1185,7 +1308,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           const SizedBox(height: 12),
 
-          // Required Permissions
           if (_androidSdkInt != null && _androidSdkInt! >= _android13ApiLevel)
             _buildPermissionRequestTile(
               title: 'Post Notifications (Android 13+)',
@@ -1208,11 +1330,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           const SizedBox(height: 16),
 
-          // Optional Settings
           Padding(
             padding: const EdgeInsets.only(top: 12.0, bottom: 4.0),
             child: Text(
-              'Optional Enhancements',
+              'Optional Setting',
               style: textTheme.titleMedium?.copyWith(
                 color: colorScheme.secondary,
                 fontWeight: FontWeight.w500,
@@ -1226,7 +1347,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               vertical: 4.0,
             ),
             child: Text(
-              'Consider these for a more reliable experience.',
+              'Consider this for a more reliable experience on some devices.',
               style: textTheme.bodySmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -1236,8 +1357,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           const SizedBox(height: 8),
           _buildPermissionRequestTile(
             title: 'Disable Battery Optimization',
-            subtitle:
-                'Helps the service run reliably in the background (Recommended).',
+            subtitle: 'Helps the service run reliably in the background.',
             isGranted: _isBatteryOptimizationDisabled,
             onPressed: _requestDisableBatteryOptimization,
             optional: true,
@@ -1246,25 +1366,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           const Divider(height: 24, indent: 16, endIndent: 16),
           _buildSectionHeader(context, 'Lyric Service Control'),
 
-          // Service Status and Control
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text('Service Status:', style: textTheme.titleMedium),
-                const SizedBox(width: 8),
+                const SizedBox(width: 12),
                 Icon(
                   _isServiceRunning
                       ? Icons.rocket_launch_rounded
                       : Icons.rocket_outlined,
                   color:
                       _isServiceRunning
-                          ? Colors.green.shade600
-                          : colorScheme.onSurface.withOpacity(0.6),
-                  size: 22,
+                          ? colorScheme.primary
+                          : colorScheme.onSurfaceVariant,
+                  size: 24,
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     _isServiceRunning
@@ -1272,12 +1391,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         : (_canStartService
                             ? 'Ready to Launch'
                             : 'Awaiting Permissions'),
-                    style: textTheme.bodyMedium?.copyWith(
-                      fontStyle: FontStyle.italic,
+                    style: textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
                       color:
                           _isServiceRunning
-                              ? Colors.green.shade600
-                              : colorScheme.onSurface.withOpacity(0.7),
+                              ? colorScheme.primary
+                              : colorScheme.onSurfaceVariant,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -1294,10 +1413,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         width: 24,
                         height: 24,
                         child: CircularProgressIndicator(
-                          strokeWidth: 2,
+                          strokeWidth: 3,
                           color:
                               _isServiceRunning
-                                  ? colorScheme.onErrorContainer
+                                  ? colorScheme.onError
                                   : colorScheme.onPrimary,
                         ),
                       )
@@ -1305,6 +1424,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         _isServiceRunning
                             ? Icons.stop_circle_outlined
                             : Icons.play_circle_outline_rounded,
+                        size: 28,
                       ),
               label: Text(
                 _isServiceActionInProgress
@@ -1322,22 +1442,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               style: ElevatedButton.styleFrom(
                 backgroundColor:
                     _isServiceRunning
-                        ? colorScheme.errorContainer
+                        ? colorScheme.error
                         : (_canStartService
                             ? colorScheme.primary
-                            : colorScheme.surfaceContainerHighest.withOpacity(
-                              0.5,
-                            )),
+                            : colorScheme.surfaceContainerHighest),
                 foregroundColor:
                     _isServiceRunning
-                        ? colorScheme.onErrorContainer
+                        ? colorScheme.onError
                         : (_canStartService
                             ? colorScheme.onPrimary
-                            : colorScheme.onSurfaceVariant.withOpacity(0.5)),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 14,
-                ),
+                            : colorScheme.onSurfaceVariant),
               ).copyWith(
                 elevation: WidgetStateProperty.resolveWith<double?>((
                   Set<WidgetState> states,
@@ -1346,25 +1460,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       !_isServiceActionInProgress) {
                     return 0;
                   }
-                  return 2;
+                  return 4;
                 }),
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: colorScheme.surfaceContainer,
+              color: colorScheme.surfaceContainerLow,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: colorScheme.outlineVariant.withOpacity(0.3),
-              ),
             ),
             child: Text(
               _isServiceRunning
-                  ? 'The lyric service is active. You can stop it here if needed. It will try to restart if music plays and permissions are granted (if not explicitly stopped via this button).'
-                  : 'Once permissions are granted, launch the service. It will run in the background. In case it stops, come back here to launch it again!',
+                  ? 'The lyric service is active. Stop it here if needed. It may restart if music plays and permissions are granted.'
+                  : 'Once permissions are granted, launch the service. It will run in the background. If it stops, come back here to launch it again!',
               style: textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),
@@ -1372,19 +1483,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
           const SizedBox(height: 16),
           const Divider(height: 24, indent: 16, endIndent: 16),
-          _buildFaqSection(context), // Added FAQ Section
+          _buildCustomizationSection(context),
+          const Divider(height: 24, indent: 16, endIndent: 16),
+          _buildHelpAndSupportSection(context),
 
-          const SizedBox(height: 20), // Bottom padding
+          const SizedBox(height: 20),
         ],
       );
     }
 
     return Scaffold(
       appBar: AppBar(
+        centerTitle: true,
         title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.lyrics_outlined, color: colorScheme.primary),
-            const SizedBox(width: 8),
+            Icon(Icons.lyrics_rounded, color: colorScheme.primary),
+            const SizedBox(width: 12),
             const Text('Lyric Listener'),
           ],
         ),
@@ -1392,8 +1507,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           IconButton(
             icon: Icon(
               Theme.of(context).brightness == Brightness.dark
-                  ? Icons.light_mode_outlined
-                  : Icons.dark_mode_outlined,
+                  ? Icons.light_mode_rounded
+                  : Icons.dark_mode_rounded,
             ),
             onPressed: widget.toggleTheme,
             tooltip: 'Toggle Theme',

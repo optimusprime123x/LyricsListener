@@ -32,8 +32,8 @@ android {
 
     defaultConfig {
         applicationId = "dev.optimus.lyricslistener"
-        minSdk = 29
-        targetSdk = 34
+        minSdk = 26
+        targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 

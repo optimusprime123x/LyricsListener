@@ -14,7 +14,7 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:textColor="@android:color/white"
-        android:textSize="16sp"
+        android:textSize="18sp"
         android:fontFamily="sans-serif-medium"
         android:textStyle="bold"
         android:layout_marginStart="4dp"
@@ -23,15 +23,28 @@
         android:ellipsize="end"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toStartOf="@id/expandCollapseButton"
-        app:layout_constraintBottom_toTopOf="@+id/lyricsRecyclerView"
-        app:layout_constraintVertical_bias="0.0"
-        android:paddingBottom="4dp"
+        app:layout_constraintEnd_toStartOf="@id/translateButton"
         tools:text="Very Long Song Title That Might Wrap - Artist Name With Many Words"
         android:shadowColor="#AA000000"
         android:shadowDx="1"
         android:shadowDy="1"
         android:shadowRadius="2"/>
+
+    <ImageButton
+        android:id="@+id/translateButton"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:src="@drawable/ic_translate_24"
+        android:scaleType="fitCenter"
+        app:tint="@android:color/white"
+        android:contentDescription="Toggle translated lyrics"
+        app:layout_constraintTop_toTopOf="@id/songInfoTextView"
+        app:layout_constraintBottom_toBottomOf="@id/songInfoTextView"
+        app:layout_constraintEnd_toStartOf="@id/expandCollapseButton"
+        android:layout_marginEnd="8dp"
+        android:visibility="gone"
+        tools:visibility="visible"/>
 
     <ImageButton
         android:id="@+id/expandCollapseButton"
@@ -61,13 +74,22 @@
         app:layout_constraintBottom_toBottomOf="@id/songInfoTextView"
         app:layout_constraintEnd_toEndOf="parent" />
 
+    <!-- A Barrier ensures the RecyclerView always starts below the entire header -->
+    <androidx.constraintlayout.widget.Barrier
+        android:id="@+id/headerBarrier"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:barrierDirection="bottom"
+        app:constraint_referenced_ids="songInfoTextView,translateButton,expandCollapseButton,closeButton" />
+
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/lyricsRecyclerView"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:scrollbars="vertical"
-        app:layout_constraintTop_toBottomOf="@id/songInfoTextView"
+        app:layout_constraintTop_toBottomOf="@id/headerBarrier"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
