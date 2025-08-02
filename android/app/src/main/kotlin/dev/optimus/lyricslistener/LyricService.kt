@@ -1270,13 +1270,19 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                             }
 
                             val contrastTitleBg = ColorUtils.calculateContrast(finalTitleAndIconColor, opaqueChosenBgColor)
-                            if (contrastTitleBg < 4.0) {
+                            if (contrastTitleBg < 5.0) {
                                 Log.w(TAG, "Low contrast ($contrastTitleBg) between title color (${Integer.toHexString(finalTitleAndIconColor)}) and OPAQUE BG (${Integer.toHexString(opaqueChosenBgColor)}). Forcing default title color.")
                                 finalTitleAndIconColor = if (isBackgroundLight) Color.BLACK else Color.WHITE
                             }
 
-                            val highlightSwatch = p.lightMutedSwatch ?: p.lightVibrantSwatch ?: p.vibrantSwatch ?: p.mutedSwatch
-                            highlightSwatch?.rgb?.let { finalLyricsHighlightBgColor = ColorUtils.setAlphaComponent(it, 70) }
+                            val highlightSwatch = if (isBackgroundLight) {
+                                p.darkMutedSwatch ?: p.darkVibrantSwatch ?: p.mutedSwatch ?: p.vibrantSwatch
+                            } else {
+                                p.lightMutedSwatch ?: p.lightVibrantSwatch ?: p.vibrantSwatch ?: p.mutedSwatch
+                                }
+                            highlightSwatch?.rgb?.let { 
+                            finalLyricsHighlightBgColor = ColorUtils.setAlphaComponent(it, 70) 
+                            }
 
                             Log.d(TAG, "Palette applied. BG Light: $isBackgroundLight. OverlayBG (translucent): #${Integer.toHexString(finalOverlayBackgroundColor)}, Title/Icon: #${Integer.toHexString(finalTitleAndIconColor)}, LyricHighlightBG: #${Integer.toHexString(finalLyricsHighlightBgColor)}")
                         } ?: Log.d(TAG, "Palette object was null. Using defaults.")
