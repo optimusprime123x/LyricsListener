@@ -203,6 +203,11 @@ class LyricService : NotificationListenerService() {
 
         private const val LYRIC_API_BASE_URL = "https://lrclib.net/api/search"
         private val LRC_LINE_PATTERN: Pattern = Pattern.compile("(?<=\\[)(\\d{2,}):(\\d{2})([.:])(\\d{2,3})\\](.*)")
+
+        private const val FLUTTER_SHARED_PREFERENCES = "FlutterSharedPreferences"
+        private const val PREF_REMEMBER_WINDOW_POSITION = "flutter.remember_window_position"
+        private const val PREF_REMEMBER_WINDOW_POSITION_X = "flutter.remember_window_position_x"
+        private const val PREF_REMEMBER_WINDOW_POSITION_Y = "flutter.remember_window_position_y"
         
         // Musixmatch constants
         private const val MUSIXMATCH_TOKEN_URL = "https://apic.musixmatch.com/ws/1.1/token.get?app_id=mac-ios-v2.0"
@@ -1183,6 +1188,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 @Suppress("DEPRECATION")
                 WindowManager.LayoutParams.TYPE_PHONE
             }
+            val savedWindowPosition = loadSavedWindowPosition()
             this.params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
@@ -1190,8 +1196,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT
             ).apply {
-                x = 0
-                y = 100
+                x = savedWindowPosition?.first ?: 0
+                y = savedWindowPosition?.second ?: 100
             }
 
             try {
@@ -1567,6 +1573,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         Log.d(TAG, "hideLyricsWindow() called. LyricsView Null: ${lyricsView == null}, Attached: ${lyricsView?.isAttachedToWindow}")
         lyricsHighlightingJob?.cancel(); lyricsHighlightingJob = null
 
+        persistWindowPositionIfEnabled()
+
         val wm = this.windowManager
         val lv = this.lyricsView
 
@@ -1591,6 +1599,44 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             }
         } else {
             Log.d(TAG, "hideLyricsWindow: lyricsView or windowManager was already null. No action needed.")
+        }
+    }
+
+    private fun loadSavedWindowPosition(): Pair<Int, Int>? {
+        return try {
+            val prefs = applicationContext.getSharedPreferences(FLUTTER_SHARED_PREFERENCES, Context.MODE_PRIVATE)
+            if (!prefs.getBoolean(PREF_REMEMBER_WINDOW_POSITION, false)) {
+                null
+            } else if (!prefs.contains(PREF_REMEMBER_WINDOW_POSITION_X) || !prefs.contains(PREF_REMEMBER_WINDOW_POSITION_Y)) {
+                null
+            } else {
+                val savedPosition = Pair(
+                    prefs.getInt(PREF_REMEMBER_WINDOW_POSITION_X, 0),
+                    prefs.getInt(PREF_REMEMBER_WINDOW_POSITION_Y, 100)
+                )
+                Log.d(TAG, "Loaded saved lyrics window position: x=${savedPosition.first}, y=${savedPosition.second}")
+                savedPosition
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load saved lyrics window position.", e)
+            null
+        }
+    }
+
+    private fun persistWindowPositionIfEnabled() {
+        val currentParams = this.params ?: return
+        try {
+            val prefs = applicationContext.getSharedPreferences(FLUTTER_SHARED_PREFERENCES, Context.MODE_PRIVATE)
+            if (!prefs.getBoolean(PREF_REMEMBER_WINDOW_POSITION, false)) {
+                return
+            }
+            prefs.edit()
+                .putInt(PREF_REMEMBER_WINDOW_POSITION_X, currentParams.x)
+                .putInt(PREF_REMEMBER_WINDOW_POSITION_Y, currentParams.y)
+                .apply()
+            Log.d(TAG, "Persisted lyrics window position: x=${currentParams.x}, y=${currentParams.y}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to persist lyrics window position.", e)
         }
     }
     private fun parseSyncedLyrics(syncedLyricsText: String?): List<TimedLyricLine> {
@@ -1766,14 +1812,19 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                     if (isDragging) {
                         v.parent?.requestDisallowInterceptTouchEvent(false)
                         isDragging = false
+                        persistWindowPositionIfEnabled()
                         return true
                     }
                     return false
                 }
                 MotionEvent.ACTION_CANCEL -> {
-                     v.parent?.requestDisallowInterceptTouchEvent(false)
-                     isDragging = false
-                     return false
+                    val wasDragging = isDragging
+                    v.parent?.requestDisallowInterceptTouchEvent(false)
+                    isDragging = false
+                    if (wasDragging) {
+                        persistWindowPositionIfEnabled()
+                    }
+                    return false
                 }
             }
             return false
