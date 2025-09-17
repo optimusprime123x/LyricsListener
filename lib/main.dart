@@ -337,6 +337,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _canStartService = false;
 
   bool _isServiceActionInProgress = false;
+  bool _supportCardVisible = false;
+  bool _welcomeVisible = false;
 
   bool _rememberLyricsWindowPosition = false;
 
@@ -356,6 +358,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _loadCustomizationPreferences();
     _loadInitialData();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      setState(() {
+        _supportCardVisible = true;
+        _welcomeVisible = true;
+      });
+    });
   }
 
   Future<void> _loadCustomizationPreferences() async {
@@ -784,7 +792,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
             const SizedBox(height: 8),
             Text(
-              'If you like this app, please consider supporting my work! Every little bit helps!',
+              'If you like this app, please consider supporting my work! Every little bit helps me continue to work on this, and keep it ad-free ♥',
               style: textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSecondaryContainer,
               ),
@@ -797,20 +805,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 label: const Text('Donate'),
                 onPressed: _launchDonateUrl,
                 style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                   textStyle: textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Thank you for helping keep Lyric Listener alive and ad-free ♥',
-              style: textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSecondaryContainer,
-              ),
-              textAlign: TextAlign.center,
             ),
           ],
         ),
@@ -1176,8 +1176,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       screenContent = ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
         children: <Widget>[
-          _buildSupportCard(),
-          _buildWelcomeSection(context),
+          AnimatedOpacity(
+            opacity: _supportCardVisible ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 500),
+            child: _buildSupportCard(),
+          ),
+          AnimatedOpacity(
+            opacity: _welcomeVisible ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 500),
+            child: _buildWelcomeSection(context),
+          ),
 
           const Divider(height: 24, indent: 16, endIndent: 16),
           _buildSectionHeader(context, 'App Setup & Permissions'),
@@ -1294,33 +1302,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           const SizedBox(height: 8),
           Center(
-            child: ElevatedButton.icon(
-              icon:
-                  _isServiceActionInProgress
-                      ? SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 3,
-                          color:
-                              _isServiceRunning
-                                  ? colorScheme.onError
-                                  : colorScheme.onPrimary,
-                        ),
-                      )
-                      : Icon(
-                        _isServiceRunning
-                            ? Icons.stop_circle_outlined
-                            : Icons.play_circle_outline_rounded,
-                        size: 28,
-                      ),
-              label: Text(
-                _isServiceActionInProgress
-                    ? (_isServiceRunning ? 'Stopping...' : 'Starting...')
-                    : (_isServiceRunning
-                        ? 'Stop Lyric Service'
-                        : 'Launch Lyric Service'),
-              ),
+            child: ElevatedButton(
               onPressed:
                   _isServiceActionInProgress
                       ? null
@@ -1350,6 +1332,41 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   }
                   return 4;
                 }),
+              ),
+              child: AnimatedScale(
+                scale: _isServiceActionInProgress ? 0.95 : 1.0,
+                duration: const Duration(milliseconds: 200),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _isServiceActionInProgress
+                        ? SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            color:
+                                _isServiceRunning
+                                    ? colorScheme.onError
+                                    : colorScheme.onPrimary,
+                          ),
+                        )
+                        : Icon(
+                          _isServiceRunning
+                              ? Icons.stop_circle_outlined
+                              : Icons.play_circle_outline_rounded,
+                          size: 28,
+                        ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _isServiceActionInProgress
+                          ? (_isServiceRunning ? 'Stopping...' : 'Starting...')
+                          : (_isServiceRunning
+                              ? 'Stop Lyric Service'
+                              : 'Launch Lyric Service'),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
