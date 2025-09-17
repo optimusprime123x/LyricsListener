@@ -208,7 +208,15 @@ class LyricService : NotificationListenerService() {
         private const val PREF_REMEMBER_WINDOW_POSITION = "flutter.remember_window_position"
         private const val PREF_REMEMBER_WINDOW_POSITION_X = "flutter.remember_window_position_x"
         private const val PREF_REMEMBER_WINDOW_POSITION_Y = "flutter.remember_window_position_y"
-        
+        private const val PREF_DYNAMIC_LYRICS_WINDOW_COLORS = "flutter.lyrics_window_dynamic_colors"
+        private const val PREF_LYRICS_WINDOW_TITLE_COLOR = "flutter.lyrics_window_title_color"
+        private const val PREF_LYRICS_WINDOW_BACKGROUND_COLOR = "flutter.lyrics_window_background_color"
+        private const val PREF_LYRICS_WINDOW_HIGHLIGHT_COLOR = "flutter.lyrics_window_highlight_color"
+
+        private val DEFAULT_STATIC_TITLE_COLOR = Color.parseColor("#FFE0E0E0")
+        private val DEFAULT_STATIC_BACKGROUND_COLOR = Color.parseColor("#DD212121")
+        private val DEFAULT_STATIC_HIGHLIGHT_COLOR = Color.argb(70, 200, 200, 200)
+
         // Musixmatch constants
         private const val MUSIXMATCH_TOKEN_URL = "https://apic.musixmatch.com/ws/1.1/token.get?app_id=mac-ios-v2.0"
         private const val MUSIXMATCH_API_BASE_URL = "https://apic.musixmatch.com/ws/1.1/macro.subtitles.get"
@@ -1241,70 +1249,79 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         }
         songInfoTextView?.text = songDisplayTitle
 
-        var finalOverlayBackgroundColor = Color.parseColor("#DD212121")
-        var finalTitleAndIconColor = Color.parseColor("#FFE0E0E0")
+        val prefs = applicationContext.getSharedPreferences(FLUTTER_SHARED_PREFERENCES, Context.MODE_PRIVATE)
+        val dynamicColoursEnabled = prefs.getBoolean(PREF_DYNAMIC_LYRICS_WINDOW_COLORS, true)
+        val storedBackgroundColor = prefs.getInt(PREF_LYRICS_WINDOW_BACKGROUND_COLOR, DEFAULT_STATIC_BACKGROUND_COLOR)
+        val storedTitleColor = prefs.getInt(PREF_LYRICS_WINDOW_TITLE_COLOR, DEFAULT_STATIC_TITLE_COLOR)
+        val storedHighlightColor = prefs.getInt(PREF_LYRICS_WINDOW_HIGHLIGHT_COLOR, DEFAULT_STATIC_HIGHLIGHT_COLOR)
         val finalLyricsTextColor = Color.WHITE
-        var finalLyricsHighlightBgColor = Color.argb(70, 200, 200, 200)
 
-        val currentActiveMc = activeMediaController
-        if (currentActiveMc != null && currentActiveMc.sessionToken == currentMediaSessionToken) {
-            currentActiveMc.metadata?.let { metadata ->
-                val albumArtBitmap = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
-                    ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
+        if (!dynamicColoursEnabled) {
+            applyThemeToOverlayElements(storedBackgroundColor, storedTitleColor, finalLyricsTextColor, storedHighlightColor)
+        } else {
+            var finalOverlayBackgroundColor = DEFAULT_STATIC_BACKGROUND_COLOR
+            var finalTitleAndIconColor = DEFAULT_STATIC_TITLE_COLOR
+            var finalLyricsHighlightBgColor = DEFAULT_STATIC_HIGHLIGHT_COLOR
 
-                if (albumArtBitmap != null) {
-                    Palette.from(albumArtBitmap).generate { palette ->
-                        palette?.let { p ->
-                            var selectedBackgroundColorRgb: Int? = p.dominantSwatch?.rgb
-                            if (selectedBackgroundColorRgb == null) {
-                                val fallbackBgSwatch = p.darkVibrantSwatch ?: p.vibrantSwatch ?: p.darkMutedSwatch ?: p.mutedSwatch
-                                selectedBackgroundColorRgb = fallbackBgSwatch?.rgb
-                            }
+            val currentActiveMc = activeMediaController
+            if (currentActiveMc != null && currentActiveMc.sessionToken == currentMediaSessionToken) {
+                currentActiveMc.metadata?.let { metadata ->
+                    val albumArtBitmap = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+                        ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
 
-                            val opaqueChosenBgColor = selectedBackgroundColorRgb ?: Color.parseColor("#FF212121")
-
-                            finalOverlayBackgroundColor = selectedBackgroundColorRgb?.let {
-                                ColorUtils.setAlphaComponent(it, 221)
-                            } ?: Color.parseColor("#DD212121")
-
-
-                            val isBackgroundLight = ColorUtils.calculateLuminance(opaqueChosenBgColor) > 0.5
-                            finalTitleAndIconColor = if (isBackgroundLight) {
-                                p.darkVibrantSwatch?.rgb ?: p.darkMutedSwatch?.rgb ?: p.mutedSwatch?.rgb ?: Color.BLACK
-                            } else {
-                                p.lightVibrantSwatch?.rgb ?: p.lightMutedSwatch?.rgb ?: p.vibrantSwatch?.rgb ?: Color.WHITE
-                            }
-
-                            val contrastTitleBg = ColorUtils.calculateContrast(finalTitleAndIconColor, opaqueChosenBgColor)
-                            if (contrastTitleBg < 5.0) {
-                                Log.w(TAG, "Low contrast ($contrastTitleBg) between title color (${Integer.toHexString(finalTitleAndIconColor)}) and OPAQUE BG (${Integer.toHexString(opaqueChosenBgColor)}). Forcing default title color.")
-                                finalTitleAndIconColor = if (isBackgroundLight) Color.BLACK else Color.WHITE
-                            }
-
-                            val highlightSwatch = if (isBackgroundLight) {
-                                p.darkMutedSwatch ?: p.darkVibrantSwatch ?: p.mutedSwatch ?: p.vibrantSwatch
-                            } else {
-                                p.lightMutedSwatch ?: p.lightVibrantSwatch ?: p.vibrantSwatch ?: p.mutedSwatch
+                    if (albumArtBitmap != null) {
+                        Palette.from(albumArtBitmap).generate { palette ->
+                            palette?.let { p ->
+                                var selectedBackgroundColorRgb: Int? = p.dominantSwatch?.rgb
+                                if (selectedBackgroundColorRgb == null) {
+                                    val fallbackBgSwatch = p.darkVibrantSwatch ?: p.vibrantSwatch ?: p.darkMutedSwatch ?: p.mutedSwatch
+                                    selectedBackgroundColorRgb = fallbackBgSwatch?.rgb
                                 }
-                            highlightSwatch?.rgb?.let { 
-                            finalLyricsHighlightBgColor = ColorUtils.setAlphaComponent(it, 70) 
-                            }
 
-                            Log.d(TAG, "Palette applied. BG Light: $isBackgroundLight. OverlayBG (translucent): #${Integer.toHexString(finalOverlayBackgroundColor)}, Title/Icon: #${Integer.toHexString(finalTitleAndIconColor)}, LyricHighlightBG: #${Integer.toHexString(finalLyricsHighlightBgColor)}")
-                        } ?: Log.d(TAG, "Palette object was null. Using defaults.")
+                                val opaqueChosenBgColor = selectedBackgroundColorRgb ?: Color.parseColor("#FF212121")
+
+                                finalOverlayBackgroundColor = selectedBackgroundColorRgb?.let {
+                                    ColorUtils.setAlphaComponent(it, 221)
+                                } ?: DEFAULT_STATIC_BACKGROUND_COLOR
+
+                                val isBackgroundLight = ColorUtils.calculateLuminance(opaqueChosenBgColor) > 0.5
+                                finalTitleAndIconColor = if (isBackgroundLight) {
+                                    p.darkVibrantSwatch?.rgb ?: p.darkMutedSwatch?.rgb ?: p.mutedSwatch?.rgb ?: Color.BLACK
+                                } else {
+                                    p.lightVibrantSwatch?.rgb ?: p.lightMutedSwatch?.rgb ?: p.vibrantSwatch?.rgb ?: Color.WHITE
+                                }
+
+                                val contrastTitleBg = ColorUtils.calculateContrast(finalTitleAndIconColor, opaqueChosenBgColor)
+                                if (contrastTitleBg < 5.0) {
+                                    Log.w(TAG, "Low contrast ($contrastTitleBg) between title color (${Integer.toHexString(finalTitleAndIconColor)}) and OPAQUE BG (${Integer.toHexString(opaqueChosenBgColor)}). Forcing default title color.")
+                                    finalTitleAndIconColor = if (isBackgroundLight) Color.BLACK else Color.WHITE
+                                }
+
+                                val highlightSwatch = if (isBackgroundLight) {
+                                    p.darkMutedSwatch ?: p.darkVibrantSwatch ?: p.mutedSwatch ?: p.vibrantSwatch
+                                } else {
+                                    p.lightMutedSwatch ?: p.lightVibrantSwatch ?: p.vibrantSwatch ?: p.mutedSwatch
+                                }
+                                highlightSwatch?.rgb?.let {
+                                    finalLyricsHighlightBgColor = ColorUtils.setAlphaComponent(it, 70)
+                                }
+
+                                Log.d(TAG, "Palette applied. BG Light: $isBackgroundLight. OverlayBG (translucent): #${Integer.toHexString(finalOverlayBackgroundColor)}, Title/Icon: #${Integer.toHexString(finalTitleAndIconColor)}, LyricHighlightBG: #${Integer.toHexString(finalLyricsHighlightBgColor)}")
+                            } ?: Log.d(TAG, "Palette object was null. Using defaults.")
+                            applyThemeToOverlayElements(finalOverlayBackgroundColor, finalTitleAndIconColor, finalLyricsTextColor, finalLyricsHighlightBgColor)
+                        }
+                    } else {
+                        Log.d(TAG, "No album art bitmap. Applying default theme.")
                         applyThemeToOverlayElements(finalOverlayBackgroundColor, finalTitleAndIconColor, finalLyricsTextColor, finalLyricsHighlightBgColor)
                     }
-                } else {
-                    Log.d(TAG, "No album art bitmap. Applying default theme.")
+                } ?: run {
+                    Log.d(TAG, "No MediaController metadata. Applying default theme.")
                     applyThemeToOverlayElements(finalOverlayBackgroundColor, finalTitleAndIconColor, finalLyricsTextColor, finalLyricsHighlightBgColor)
                 }
-            } ?: run {
-                Log.d(TAG, "No MediaController metadata. Applying default theme.")
+            } else {
+                Log.d(TAG, "No active MediaController or token mismatch for theme. Applying default theme.")
                 applyThemeToOverlayElements(finalOverlayBackgroundColor, finalTitleAndIconColor, finalLyricsTextColor, finalLyricsHighlightBgColor)
             }
-        } else {
-            Log.d(TAG, "No active MediaController or token mismatch for theme. Applying default theme.")
-            applyThemeToOverlayElements(finalOverlayBackgroundColor, finalTitleAndIconColor, finalLyricsTextColor, finalLyricsHighlightBgColor)
         }
 
 
