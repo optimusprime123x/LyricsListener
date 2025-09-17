@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -16,8 +15,6 @@ const String _seedColorKey = 'seed_color';
 // MODIFIED: main is now async to await loading the color
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // MobileAds.instance.initialize(); // MODIFIED: Ads are disabled for this version
-
   final prefs = await SharedPreferences.getInstance();
   final int? savedColorValue = prefs.getInt(_seedColorKey);
   final Color initialSeedColor =
@@ -340,12 +337,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   bool _isServiceActionInProgress = false;
 
-  // MODIFIED: Ad logic is kept but will not be invoked.
-  RewardedAd? _rewardedAd;
-  bool _isRewardedAdLoaded = false;
-  bool _isLoadingAd = false;
-  final String _rewardedAdUnitId = 'ca-app-pub-2408734303848985/6810436417';
-
   static const List<Color> _predefinedSeedColors = [
     Color(0xFF6750A4),
     Color(0xFF006D60),
@@ -360,7 +351,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     print("HomeScreen initState: Called");
     WidgetsBinding.instance.addObserver(this);
-    // MODIFIED: Ad loading is disabled for this version.
     _loadInitialData();
   }
 
@@ -402,7 +392,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     print("HomeScreen dispose: Called");
     WidgetsBinding.instance.removeObserver(this);
-    _rewardedAd?.dispose();
     super.dispose();
   }
 
@@ -414,136 +403,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (!_isLoadingAppStatus && !_isServiceActionInProgress) {
         _loadInitialData();
       }
-      // MODIFIED: Ad loading on resume is disabled for this version.
-      // if (!_isRewardedAdLoaded &&
-      //     _rewardedAd == null &&
-      //     !_isLoadingAd &&
-      //     mounted) {
-      //   _loadRewardedAd();
-      // }
     }
-  }
-
-  // NOTE: This method is kept for future use but is not currently called.
-  void _loadRewardedAd() {
-    if (_isLoadingAd || _isRewardedAdLoaded || !mounted) {
-      return;
-    }
-    print("HomeScreen _loadRewardedAd: Attempting to load rewarded ad.");
-    setState(() {
-      _isLoadingAd = true;
-    });
-    RewardedAd.load(
-      adUnitId: _rewardedAdUnitId,
-      request: const AdRequest(),
-      rewardedAdLoadCallback: RewardedAdLoadCallback(
-        onAdLoaded: (RewardedAd ad) {
-          print(
-            'HomeScreen _loadRewardedAd: Rewarded ad loaded: ${ad.adUnitId}',
-          );
-          if (!mounted) {
-            ad.dispose();
-            return;
-          }
-          _rewardedAd = ad;
-          _setFullScreenContentCallback();
-          setState(() {
-            _isRewardedAdLoaded = true;
-            _isLoadingAd = false;
-          });
-        },
-        onAdFailedToLoad: (LoadAdError error) {
-          print(
-            'HomeScreen _loadRewardedAd: Rewarded ad failed to load: $error',
-          );
-          if (!mounted) return;
-          _rewardedAd = null;
-          setState(() {
-            _isRewardedAdLoaded = false;
-            _isLoadingAd = false;
-          });
-        },
-      ),
-    );
-  }
-
-  // NOTE: This method is kept for future use but is not currently called.
-  void _setFullScreenContentCallback() {
-    if (_rewardedAd == null || !mounted) return;
-    _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
-      onAdShowedFullScreenContent:
-          (RewardedAd ad) =>
-              print('HomeScreen: Ad showed full screen content.'),
-      onAdImpression:
-          (RewardedAd ad) => print('HomeScreen: Ad impression occurred.'),
-      onAdFailedToShowFullScreenContent: (RewardedAd ad, AdError error) {
-        print('HomeScreen: Ad failed to show full screen content: $error');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Oops! Failed to show the ad. Please try again.'),
-            ),
-          );
-        }
-        ad.dispose();
-        if (mounted) {
-          setState(() {
-            _rewardedAd = null;
-            _isRewardedAdLoaded = false;
-          });
-          _loadRewardedAd();
-        }
-      },
-      onAdDismissedFullScreenContent: (RewardedAd ad) {
-        print('HomeScreen: Ad dismissed full screen content.');
-        ad.dispose();
-        if (mounted) {
-          setState(() {
-            _rewardedAd = null;
-            _isRewardedAdLoaded = false;
-          });
-          _loadRewardedAd();
-        }
-      },
-      onAdClicked: (RewardedAd ad) => print('HomeScreen: Ad clicked.'),
-    );
-  }
-
-  // NOTE: This method is kept for future use but is not currently called.
-  void _showRewardedAd() {
-    if (_rewardedAd == null || !_isRewardedAdLoaded || !mounted) {
-      print('HomeScreen _showRewardedAd: Ad not ready or not mounted.');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            _isLoadingAd
-                ? 'Ad is loading, please wait...'
-                : 'Ad not ready yet. Please try again.',
-          ),
-        ),
-      );
-      if (!_isLoadingAd && _rewardedAd == null) {
-        _loadRewardedAd();
-      }
-      return;
-    }
-    _rewardedAd!.show(
-      onUserEarnedReward: (AdWithoutView ad, RewardItem reward) {
-        print(
-          'HomeScreen: User earned reward: ${reward.amount} ${reward.type}',
-        );
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Thank You! ♥ Your support means a lot to me :) Come back and see another ad in a few days if you have the time!',
-              ),
-              duration: Duration(seconds: 5),
-            ),
-          );
-        }
-      },
-    );
   }
 
   Future<void> _launchDonateUrl() async {
@@ -908,43 +768,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             ),
             const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // MODIFIED: "Watch an Ad" button is always disabled.
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.local_activity_rounded),
-                  label: const Text('Watch an Ad'),
-                  onPressed: null, // Always disabled
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: colorScheme.secondary,
-                    foregroundColor: colorScheme.onSecondary,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.favorite_rounded),
-                  label: const Text('Donate'),
-                  onPressed: _launchDonateUrl,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: colorScheme.primary,
-                    foregroundColor: colorScheme.onPrimary,
-                  ),
-                ),
-              ],
-            ),
-            // MODIFIED: Text is always shown as ads are disabled.
-            Padding(
-              padding: const EdgeInsets.only(top: 8.0),
-              child: Center(
-                child: Text(
-                  '(Ads are not available right now.)',
-                  style: textTheme.bodySmall?.copyWith(
-                    fontStyle: FontStyle.italic,
-                    color: colorScheme.onSecondaryContainer,
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                icon: const Icon(Icons.favorite_rounded),
+                label: const Text('Donate'),
+                onPressed: _launchDonateUrl,
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  textStyle: textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Thank you for helping keep Lyric Listener alive and ad-free ♥',
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSecondaryContainer,
+              ),
+              textAlign: TextAlign.center,
             ),
           ],
         ),
