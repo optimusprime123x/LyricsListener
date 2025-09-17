@@ -955,7 +955,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             value: _rememberLyricsWindowPosition,
             onChanged: _onRememberWindowPositionChanged,
             title: Text(
-              'Remember lyrics window position (beta)',
+              'Remember lyrics window position',
               style: textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
