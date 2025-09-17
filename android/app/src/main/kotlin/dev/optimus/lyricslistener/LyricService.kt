@@ -12,6 +12,7 @@ import androidx.core.app.NotificationCompat
 import android.view.WindowManager
 import android.graphics.PixelFormat
 import android.content.Intent
+import android.content.SharedPreferences
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSession
@@ -210,12 +211,25 @@ class LyricService : NotificationListenerService() {
         private const val PREF_REMEMBER_WINDOW_POSITION_Y = "flutter.remember_window_position_y"
         private const val PREF_DYNAMIC_LYRICS_WINDOW_COLORS = "flutter.lyrics_window_dynamic_colors"
         private const val PREF_LYRICS_WINDOW_TITLE_COLOR = "flutter.lyrics_window_title_color"
-        private const val PREF_LYRICS_WINDOW_BACKGROUND_COLOR = "flutter.lyrics_window_background_color"
-        private const val PREF_LYRICS_WINDOW_HIGHLIGHT_COLOR = "flutter.lyrics_window_highlight_color"
+    private const val PREF_LYRICS_WINDOW_BACKGROUND_COLOR = "flutter.lyrics_window_background_color"
+    private const val PREF_LYRICS_WINDOW_HIGHLIGHT_COLOR = "flutter.lyrics_window_highlight_color"
 
-        private val DEFAULT_STATIC_TITLE_COLOR = Color.parseColor("#FFE0E0E0")
-        private val DEFAULT_STATIC_BACKGROUND_COLOR = Color.parseColor("#DD212121")
-        private val DEFAULT_STATIC_HIGHLIGHT_COLOR = Color.argb(70, 200, 200, 200)
+    private val DEFAULT_STATIC_TITLE_COLOR = Color.parseColor("#FFE0E0E0")
+    private val DEFAULT_STATIC_BACKGROUND_COLOR = Color.parseColor("#DD212121")
+    private val DEFAULT_STATIC_HIGHLIGHT_COLOR = Color.argb(70, 200, 200, 200)
+
+    private fun getStoredColorPreference(
+        prefs: SharedPreferences,
+        key: String,
+        defaultColor: Int
+    ): Int {
+        val value = prefs.all[key]
+        return when (value) {
+            is Int -> value
+            is Long -> value.toInt()
+            else -> defaultColor
+        }
+    }
 
         // Musixmatch constants
         private const val MUSIXMATCH_TOKEN_URL = "https://apic.musixmatch.com/ws/1.1/token.get?app_id=mac-ios-v2.0"
@@ -1251,9 +1265,21 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
 
         val prefs = applicationContext.getSharedPreferences(FLUTTER_SHARED_PREFERENCES, Context.MODE_PRIVATE)
         val dynamicColoursEnabled = prefs.getBoolean(PREF_DYNAMIC_LYRICS_WINDOW_COLORS, true)
-        val storedBackgroundColor = prefs.getInt(PREF_LYRICS_WINDOW_BACKGROUND_COLOR, DEFAULT_STATIC_BACKGROUND_COLOR)
-        val storedTitleColor = prefs.getInt(PREF_LYRICS_WINDOW_TITLE_COLOR, DEFAULT_STATIC_TITLE_COLOR)
-        val storedHighlightColor = prefs.getInt(PREF_LYRICS_WINDOW_HIGHLIGHT_COLOR, DEFAULT_STATIC_HIGHLIGHT_COLOR)
+        val storedBackgroundColor = getStoredColorPreference(
+            prefs,
+            PREF_LYRICS_WINDOW_BACKGROUND_COLOR,
+            DEFAULT_STATIC_BACKGROUND_COLOR
+        )
+        val storedTitleColor = getStoredColorPreference(
+            prefs,
+            PREF_LYRICS_WINDOW_TITLE_COLOR,
+            DEFAULT_STATIC_TITLE_COLOR
+        )
+        val storedHighlightColor = getStoredColorPreference(
+            prefs,
+            PREF_LYRICS_WINDOW_HIGHLIGHT_COLOR,
+            DEFAULT_STATIC_HIGHLIGHT_COLOR
+        )
         val finalLyricsTextColor = Color.WHITE
 
         if (!dynamicColoursEnabled) {
