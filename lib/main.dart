@@ -12,6 +12,14 @@ const _defaultSeedColor = Color(0xFF6750A4);
 
 const String _seedColorKey = 'seed_color';
 const String _rememberWindowPositionKey = 'remember_window_position';
+const String _dynamicLyricsWindowColorsKey = 'lyrics_window_dynamic_colors';
+const String _lyricsWindowTitleColorKey = 'lyrics_window_title_color';
+const String _lyricsWindowBackgroundColorKey = 'lyrics_window_background_color';
+const String _lyricsWindowHighlightColorKey = 'lyrics_window_highlight_color';
+
+const Color _defaultLyricsWindowTitleColor = Color(0xFFE0E0E0);
+const Color _defaultLyricsWindowBackgroundColor = Color(0xDD212121);
+const Color _defaultLyricsWindowHighlightColor = Color(0x46C8C8C8);
 
 // MODIFIED: main is now async to await loading the color
 void main() async {
@@ -341,6 +349,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _welcomeVisible = false;
 
   bool _rememberLyricsWindowPosition = false;
+  bool _dynamicLyricsWindowColors = true;
+
+  Color _lyricsWindowTitleColor = _defaultLyricsWindowTitleColor;
+  Color _lyricsWindowBackgroundColor = _defaultLyricsWindowBackgroundColor;
+  Color _lyricsWindowHighlightColor = _defaultLyricsWindowHighlightColor;
 
   static const List<Color> _predefinedSeedColors = [
     Color(0xFF6750A4),
@@ -349,6 +362,39 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     Color(0xFF984061),
     Color(0xFF416FDF),
     Color(0xFF556614),
+  ];
+
+  static const List<Color> _lyricsWindowBackgroundOptions = [
+    Color(0xDD212121),
+    Color(0xF01C1B1F),
+    Color(0xE6421F7B),
+    Color(0xE6006D60),
+    Color(0xE61B5E20),
+    Color(0xE64A4458),
+    Color(0xF0F4EFF4),
+    Color(0xE6FFFFFF),
+  ];
+
+  static const List<Color> _lyricsWindowTitleOptions = [
+    Color(0xFFFFFFFF),
+    Color(0xFFE0E0E0),
+    Color(0xFF1C1B1F),
+    Color(0xFF000000),
+    Color(0xFF6750A4),
+    Color(0xFF006D60),
+    Color(0xFFB3261E),
+    Color(0xFF4CAF50),
+  ];
+
+  static const List<Color> _lyricsWindowHighlightOptions = [
+    Color(0x46C8C8C8),
+    Color(0x4DFFFFFF),
+    Color(0x4D000000),
+    Color(0x4D6750A4),
+    Color(0x4D006D60),
+    Color(0x4DB3261E),
+    Color(0x4D4CAF50),
+    Color(0x666750A4),
   ];
 
   @override
@@ -370,9 +416,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final prefs = await SharedPreferences.getInstance();
     final rememberPosition =
         prefs.getBool(_rememberWindowPositionKey) ?? false;
+    final dynamicLyricsColours =
+        prefs.getBool(_dynamicLyricsWindowColorsKey) ?? true;
+    final storedTitleColor =
+        prefs.getInt(_lyricsWindowTitleColorKey);
+    final storedBackgroundColor =
+        prefs.getInt(_lyricsWindowBackgroundColorKey);
+    final storedHighlightColor =
+        prefs.getInt(_lyricsWindowHighlightColorKey);
     if (!mounted) return;
     setState(() {
       _rememberLyricsWindowPosition = rememberPosition;
+      _dynamicLyricsWindowColors = dynamicLyricsColours;
+      _lyricsWindowTitleColor = Color(
+        storedTitleColor ?? _defaultLyricsWindowTitleColor.value,
+      );
+      _lyricsWindowBackgroundColor = Color(
+        storedBackgroundColor ?? _defaultLyricsWindowBackgroundColor.value,
+      );
+      _lyricsWindowHighlightColor = Color(
+        storedHighlightColor ?? _defaultLyricsWindowHighlightColor.value,
+      );
     });
   }
 
@@ -382,6 +446,38 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_rememberWindowPositionKey, value);
+  }
+
+  Future<void> _onDynamicLyricsWindowColorsChanged(bool value) async {
+    setState(() {
+      _dynamicLyricsWindowColors = value;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_dynamicLyricsWindowColorsKey, value);
+  }
+
+  Future<void> _onLyricsWindowTitleColorChanged(Color color) async {
+    setState(() {
+      _lyricsWindowTitleColor = color;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_lyricsWindowTitleColorKey, color.value);
+  }
+
+  Future<void> _onLyricsWindowBackgroundColorChanged(Color color) async {
+    setState(() {
+      _lyricsWindowBackgroundColor = color;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_lyricsWindowBackgroundColorKey, color.value);
+  }
+
+  Future<void> _onLyricsWindowHighlightColorChanged(Color color) async {
+    setState(() {
+      _lyricsWindowHighlightColor = color;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_lyricsWindowHighlightColorKey, color.value);
   }
 
   Future<void> _loadInitialData() async {
@@ -883,6 +979,159 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  String _formatColorLabel(Color color) {
+    final hex = color.value.toRadixString(16).padLeft(8, '0').toUpperCase();
+    return '#$hex';
+  }
+
+  Future<Color?> _showColorPickerDialog({
+    required BuildContext context,
+    required String title,
+    required List<Color> options,
+    required Color currentColor,
+    required Color defaultColor,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return showDialog<Color>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(title),
+          content: SingleChildScrollView(
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: options.map((color) {
+                final isSelected = color.value == currentColor.value;
+                return GestureDetector(
+                  onTap: () => Navigator.of(dialogContext).pop(color),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color:
+                            isSelected ? colorScheme.primary : colorScheme.outlineVariant,
+                        width: isSelected ? 3 : 1.5,
+                      ),
+                      boxShadow: [
+                        if (isSelected)
+                          BoxShadow(
+                            color: colorScheme.primary.withOpacity(0.25),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(defaultColor),
+              child: const Text('Reset to default'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildLyricsWindowColorTile({
+    required BuildContext context,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required List<Color> options,
+    required Color defaultColor,
+    required Future<void> Function(Color) onColorChanged,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Material(
+        color: colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () async {
+            final selectedColor = await _showColorPickerDialog(
+              context: context,
+              title: title,
+              options: options,
+              currentColor: color,
+              defaultColor: defaultColor,
+            );
+            if (selectedColor != null) {
+              await onColorChanged(selectedColor);
+            }
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$subtitle • ${_formatColorLabel(color)}',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: colorScheme.outlineVariant, width: 1.5),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Tap to change',
+                      style: textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildCustomizationSection(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
@@ -951,6 +1200,76 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 }).toList(),
           ),
           const SizedBox(height: 24),
+          SwitchListTile.adaptive(
+            value: _dynamicLyricsWindowColors,
+            onChanged: _onDynamicLyricsWindowColorsChanged,
+            title: Text(
+              'Dynamic lyrics window colours',
+              style: textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            contentPadding: EdgeInsets.zero,
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 4.0),
+            child: Text(
+              'Album art tones will be used automatically when this is on.',
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            child: _dynamicLyricsWindowColors
+                ? const SizedBox.shrink()
+                : Column(
+                    key: const ValueKey('static-lyrics-colours'),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 16),
+                      Text(
+                        'Static lyrics window colours',
+                        style: textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _buildLyricsWindowColorTile(
+                        context: context,
+                        title: 'Title & icons',
+                        subtitle: 'Applies to the song title and overlay controls',
+                        color: _lyricsWindowTitleColor,
+                        options: _lyricsWindowTitleOptions,
+                        defaultColor: _defaultLyricsWindowTitleColor,
+                        onColorChanged: _onLyricsWindowTitleColorChanged,
+                      ),
+                      _buildLyricsWindowColorTile(
+                        context: context,
+                        title: 'Background',
+                        subtitle: 'The floating lyrics window surface colour',
+                        color: _lyricsWindowBackgroundColor,
+                        options: _lyricsWindowBackgroundOptions,
+                        defaultColor: _defaultLyricsWindowBackgroundColor,
+                        onColorChanged: _onLyricsWindowBackgroundColorChanged,
+                      ),
+                      _buildLyricsWindowColorTile(
+                        context: context,
+                        title: 'Highlight',
+                        subtitle: 'Used behind the active lyric line',
+                        color: _lyricsWindowHighlightColor,
+                        options: _lyricsWindowHighlightOptions,
+                        defaultColor: _defaultLyricsWindowHighlightColor,
+                        onColorChanged: _onLyricsWindowHighlightColorChanged,
+                      ),
+                      const SizedBox(height: 4),
+                    ],
+                  ),
+          ),
+          const SizedBox(height: 12),
           SwitchListTile.adaptive(
             value: _rememberLyricsWindowPosition,
             onChanged: _onRememberWindowPositionChanged,
