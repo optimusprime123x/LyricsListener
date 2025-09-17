@@ -92,8 +92,6 @@ dependencies {
     implementation("io.ktor:ktor-client-content-negotiation:$ktorVersion")
     implementation("io.ktor:ktor-serialization-kotlinx-json:$ktorVersion")
 
-    implementation("com.google.android.gms:play-services-ads:24.3.0")
-
     val kotlinxSerializationVersion = "1.6.3"
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:$kotlinxSerializationVersion")
 
