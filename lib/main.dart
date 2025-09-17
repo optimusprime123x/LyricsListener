@@ -11,6 +11,7 @@ const int _android13ApiLevel = 33;
 const _defaultSeedColor = Color(0xFF6750A4);
 
 const String _seedColorKey = 'seed_color';
+const String _rememberWindowPositionKey = 'remember_window_position';
 
 // MODIFIED: main is now async to await loading the color
 void main() async {
@@ -337,6 +338,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   bool _isServiceActionInProgress = false;
 
+  bool _rememberLyricsWindowPosition = false;
+
   static const List<Color> _predefinedSeedColors = [
     Color(0xFF6750A4),
     Color(0xFF006D60),
@@ -351,7 +354,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     print("HomeScreen initState: Called");
     WidgetsBinding.instance.addObserver(this);
+    _loadCustomizationPreferences();
     _loadInitialData();
+  }
+
+  Future<void> _loadCustomizationPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    final rememberPosition =
+        prefs.getBool(_rememberWindowPositionKey) ?? false;
+    if (!mounted) return;
+    setState(() {
+      _rememberLyricsWindowPosition = rememberPosition;
+    });
+  }
+
+  Future<void> _onRememberWindowPositionChanged(bool value) async {
+    setState(() {
+      _rememberLyricsWindowPosition = value;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_rememberWindowPositionKey, value);
   }
 
   Future<void> _loadInitialData() async {
@@ -863,6 +885,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Widget _buildCustomizationSection(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Card(
       color: Theme.of(context).colorScheme.surfaceContainer,
@@ -926,6 +949,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                   );
                 }).toList(),
+          ),
+          const SizedBox(height: 24),
+          SwitchListTile.adaptive(
+            value: _rememberLyricsWindowPosition,
+            onChanged: _onRememberWindowPositionChanged,
+            title: Text(
+              'Remember lyrics window position (beta)',
+              style: textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            contentPadding: EdgeInsets.zero,
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 4.0),
+            child: Text(
+              'When enabled, the floating lyrics window reopens where you last placed it.',
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
           ),
         ],
       ),
