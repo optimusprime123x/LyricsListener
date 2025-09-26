@@ -6,6 +6,7 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import android.app.Notification
+import android.content.ComponentName
 import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -13,6 +14,7 @@ import android.view.WindowManager
 import android.graphics.PixelFormat
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSession
@@ -56,6 +58,8 @@ import androidx.recyclerview.widget.LinearSmoothScroller
 import io.ktor.serialization.kotlinx.KotlinxSerializationConverter
 import kotlinx.serialization.SerialName
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 
 class LyricService : NotificationListenerService() {
@@ -65,6 +69,11 @@ class LyricService : NotificationListenerService() {
     private val NOTIFICATION_ID = 1
     private val HIGHLIGHT_UPDATE_INTERVAL_MS = 200L
     private val CONNECT_RETRY_DELAY_MS = 3000L
+    private val MIN_REBIND_INTERVAL_MS = 10000L
+    private val LISTENER_HEALTH_SHORT_INTERVAL_MS = TimeUnit.SECONDS.toMillis(15)
+    private val LISTENER_HEALTH_LONG_INTERVAL_MS = TimeUnit.MINUTES.toMillis(2)
+    private val LISTENER_STALE_NOTIFICATION_THRESHOLD_MS = TimeUnit.MINUTES.toMillis(3)
+    private val MAX_CONSECUTIVE_RECOVERY_ATTEMPTS = 3
 
     @Volatile private var windowManager: WindowManager? = null
     @Volatile private var lyricsView: View? = null
@@ -84,6 +93,13 @@ class LyricService : NotificationListenerService() {
     private var serviceJob = SupervisorJob()
     private var serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
     private var lyricsHighlightingJob: Job? = null
+
+    private val lastListenerRebindAttempt = AtomicLong(0L)
+    private val lastListenerHeartbeatMs = AtomicLong(0L)
+    private val consecutiveListenerRecoveryAttempts = AtomicInteger(0)
+    private val nextListenerHealthCheckAtMs = AtomicLong(0L)
+    private val listenerHealthHandler by lazy { Handler(Looper.getMainLooper()) }
+    private val listenerHealthCheckRunnable = Runnable { evaluateListenerHealth() }
 
     @Volatile private var activeMediaController: MediaController? = null
     private var mediaControllerCallback: MediaController.Callback? = null
@@ -256,7 +272,9 @@ class LyricService : NotificationListenerService() {
         isLyricsExpanded = false
         _listenerEverConnected = false
         _isAttemptingConnection = false
-        
+        consecutiveListenerRecoveryAttempts.set(0)
+        lastListenerHeartbeatMs.set(SystemClock.elapsedRealtime())
+
         initializeMusixmatchToken()
     }
     
@@ -299,6 +317,9 @@ class LyricService : NotificationListenerService() {
         }
 
         isServiceManuallyStarted.set(true)
+        consecutiveListenerRecoveryAttempts.set(0)
+        lastListenerHeartbeatMs.set(SystemClock.elapsedRealtime())
+        scheduleListenerHealthCheck(LISTENER_HEALTH_SHORT_INTERVAL_MS, "onStartCommand action=${intent?.action}", preferSooner = true)
 
         when (intent?.action) {
             ACTION_USER_INITIATED_START -> {
@@ -307,6 +328,7 @@ class LyricService : NotificationListenerService() {
                 _listenerEverConnected = false
                 _isAttemptingConnection = false
                 clearSongContextAndHideLyrics()
+                requestNotificationListenerRebind("User initiated start")
                 if(musixmatchUserToken == null) initializeMusixmatchToken()
                 tryToConnectToActiveMediaSessions(delayMs = 0L)
             }
@@ -323,6 +345,7 @@ class LyricService : NotificationListenerService() {
                     fetchAndDisplayLyrics(lastDetectedSongTitle!!, lastDetectedSongArtist ?: "", currentSongDurationMs)
                 } else if (lastDetectedSongTitle == null) {
                     _isAttemptingConnection = false
+                    requestNotificationListenerRebind("Show lyrics action with no active song")
                     tryToConnectToActiveMediaSessions(delayMs = 0L)
                 }
             }
@@ -337,14 +360,19 @@ class LyricService : NotificationListenerService() {
                     else if (_listenerEverConnected) "Service active. Scanning..."
                     else "Service starting..."))
                 _isAttemptingConnection = false
+                if (!_listenerEverConnected) {
+                    requestNotificationListenerRebind("General service start with no listener connection")
+                }
                 tryToConnectToActiveMediaSessions(delayMs = 300L)
             }
         }
         return START_STICKY
     }
-     private fun performStopActions() {
+    private fun performStopActions() {
         Log.i(TAG, "performStopActions: Initiating service stop procedures.")
         isServiceManuallyStarted.set(false)
+        cancelListenerHealthChecks("performStopActions")
+        consecutiveListenerRecoveryAttempts.set(0)
         hideLyricsWindow()
         cleanupMediaController()
 
@@ -389,19 +417,25 @@ class LyricService : NotificationListenerService() {
 
         _listenerEverConnected = true
         _isAttemptingConnection = false
+        consecutiveListenerRecoveryAttempts.set(0)
+        lastListenerHeartbeatMs.set(SystemClock.elapsedRealtime())
         Log.i(TAG, "Notification Listener connected by system. (Instance: ${this.hashCode()})")
         updatePersistentNotification("Listener connected, scanning media...")
         tryToConnectToActiveMediaSessions(delayMs = 0L)
+        scheduleListenerHealthCheck(LISTENER_HEALTH_LONG_INTERVAL_MS, "onListenerConnected")
     }
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
         _listenerEverConnected = false
         _isAttemptingConnection = false
+        lastListenerHeartbeatMs.set(SystemClock.elapsedRealtime())
         Log.w(TAG, "Notification Listener disconnected by system! (Instance: ${this.hashCode()}) Cleaning up.")
         clearSongContextAndHideLyrics()
         if (isServiceManuallyStarted.get()) {
             updatePersistentNotification("Listener disconnected. Check permissions.")
+            requestNotificationListenerRebind("System disconnected listener")
+            scheduleListenerHealthCheck(LISTENER_HEALTH_SHORT_INTERVAL_MS, "onListenerDisconnected", preferSooner = true)
         }
     }
 
@@ -424,6 +458,80 @@ class LyricService : NotificationListenerService() {
         Handler(Looper.getMainLooper()).postDelayed(executeFindActiveMediaSessionsRunnable, delayMs)
     }
 
+    private fun requestNotificationListenerRebind(reason: String, force: Boolean = false) {
+        if (!isServiceManuallyStarted.get()) {
+            Log.d(TAG, "requestNotificationListenerRebind: Skipping ($reason) because service is not marked as manually started.")
+            return
+        }
+
+        if (!hasNotificationAccess()) {
+            Log.w(TAG, "requestNotificationListenerRebind: Notification access not currently granted. Reason: $reason")
+            handleMissingNotificationAccess("requestNotificationListenerRebind($reason)")
+            return
+        }
+
+        val now = SystemClock.elapsedRealtime()
+        if (!force) {
+            val lastAttempt = lastListenerRebindAttempt.get()
+            if (now - lastAttempt < MIN_REBIND_INTERVAL_MS) {
+                Log.d(TAG, "requestNotificationListenerRebind: Recent attempt ${now - lastAttempt}ms ago. Skipping. Reason: $reason")
+                return
+            }
+            if (!lastListenerRebindAttempt.compareAndSet(lastAttempt, now)) {
+                Log.d(TAG, "requestNotificationListenerRebind: Another attempt is in progress. Skipping duplicate. Reason: $reason")
+                return
+            }
+        } else {
+            lastListenerRebindAttempt.set(now)
+        }
+
+        val componentName = ComponentName(this, javaClass)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                Log.i(TAG, "requestNotificationListenerRebind: Requesting system rebind. Reason: $reason")
+                requestRebind(componentName)
+            } else {
+                Log.i(TAG, "requestNotificationListenerRebind: Toggling component to force rebind (legacy). Reason: $reason")
+                toggleNotificationListenerComponent(componentName)
+            }
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "requestNotificationListenerRebind: requestRebind failed (${e.message}). Falling back to component toggle.")
+            toggleNotificationListenerComponent(componentName)
+        } catch (e: SecurityException) {
+            Log.e(TAG, "requestNotificationListenerRebind: SecurityException during rebind request: ${e.message}", e)
+        }
+    }
+
+    private fun toggleNotificationListenerComponent(componentName: ComponentName) {
+        try {
+            val packageManager = applicationContext.packageManager
+            packageManager.setComponentEnabledSetting(
+                componentName,
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP
+            )
+            packageManager.setComponentEnabledSetting(
+                componentName,
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                PackageManager.DONT_KILL_APP
+            )
+            Log.i(TAG, "toggleNotificationListenerComponent: Component toggled to force listener rebind.")
+        } catch (e: Exception) {
+            Log.e(TAG, "toggleNotificationListenerComponent: Failed to toggle component for rebind: ${e.message}", e)
+        }
+    }
+
+    private fun hasNotificationAccess(): Boolean {
+        return try {
+            val enabledListeners = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+            val componentName = ComponentName(this, javaClass).flattenToString()
+            enabledListeners != null && enabledListeners.contains(componentName)
+        } catch (e: Exception) {
+            Log.w(TAG, "hasNotificationAccess: Unable to determine notification access state: ${e.message}")
+            true
+        }
+    }
+
 
     private fun executeFindActiveMediaSessions() {
         if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) {
@@ -443,6 +551,7 @@ class LyricService : NotificationListenerService() {
             _listenerEverConnected = false
             updatePersistentNotification("Error: Check Notification Access.")
             clearSongContextAndHideLyrics()
+            requestNotificationListenerRebind("SecurityException while querying active notifications", force = true)
             _isAttemptingConnection = false
             return
         } catch (e: Exception) {
@@ -456,6 +565,9 @@ class LyricService : NotificationListenerService() {
         if (activeNotificationsInternal == null) {
             Log.w(TAG, "activeNotifications API returned null. Listener might not be fully bound or permission issue.")
             updatePersistentNotification(if (_listenerEverConnected) "Listener error. Retrying..." else "Waiting for listener connection...")
+            if (!_listenerEverConnected) {
+                requestNotificationListenerRebind("activeNotifications returned null")
+            }
             _isAttemptingConnection = false
             tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS * 2)
             if (currentMediaSessionToken != null) clearSongContextAndHideLyrics()
@@ -725,6 +837,11 @@ class LyricService : NotificationListenerService() {
     private fun _onNotificationPosted(sbn: StatusBarNotification, source: String) {
         if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) { Log.w(TAG, "_onNotificationPosted: Ignoring. ServiceJob cancelled or service not manually started."); return }
         Log.d(TAG, "_onNotificationPosted (source: $source, pkg: ${sbn.packageName})")
+        lastListenerHeartbeatMs.set(SystemClock.elapsedRealtime())
+        if (consecutiveListenerRecoveryAttempts.get() != 0) {
+            consecutiveListenerRecoveryAttempts.set(0)
+        }
+        scheduleListenerHealthCheck(LISTENER_HEALTH_LONG_INTERVAL_MS, "notification from ${sbn.packageName}")
         val notification = sbn.notification ?: return
         val extras = notification.extras ?: return
         val tokenFromSbn = extras.getParcelable<MediaSession.Token>(Notification.EXTRA_MEDIA_SESSION)
@@ -1768,15 +1885,21 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             PendingIntent.FLAG_UPDATE_CURRENT
         }
 
-        val showAction = NotificationCompat.Action.Builder(R.drawable.ic_visibility, "Show", PendingIntent.getService(this, 0, showLyricsIntent, pendingIntentFlags)).build()
-        val hideAction = NotificationCompat.Action.Builder(R.drawable.ic_visibility_off, "Hide", PendingIntent.getService(this, 1, hideLyricsIntent, pendingIntentFlags)).build()
+        val showAction = NotificationCompat.Action.Builder(R.drawable.ic_visibility, getString(R.string.lyric_service_action_show), PendingIntent.getService(this, 0, showLyricsIntent, pendingIntentFlags)).build()
+        val hideAction = NotificationCompat.Action.Builder(R.drawable.ic_visibility_off, getString(R.string.lyric_service_action_hide), PendingIntent.getService(this, 1, hideLyricsIntent, pendingIntentFlags)).build()
+        val notificationSettingsIntent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+        val fixAccessAction = NotificationCompat.Action.Builder(
+            R.drawable.ic_settings_24,
+            getString(R.string.lyric_service_action_fix_notification_access),
+            PendingIntent.getActivity(this, 3, notificationSettingsIntent, pendingIntentFlags)
+        ).build()
 
         val contentIntent = Intent(this, MainActivity::class.java).apply {
             this.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         val pContentIntent = PendingIntent.getActivity(this, 2, contentIntent, pendingIntentFlags)
 
-        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_notification_icon)
@@ -1786,7 +1909,10 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             .addAction(hideAction)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+        if (!hasNotificationAccess()) {
+            builder.addAction(fixAccessAction)
+        }
+        return builder.build()
     }
     private fun updatePersistentNotification(text: String) {
          if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) {
@@ -1797,8 +1923,150 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         notificationManager.notify(NOTIFICATION_ID, createPersistentNotification(text))
     }
 
+    private fun scheduleListenerHealthCheck(delayMs: Long, reason: String, preferSooner: Boolean = false) {
+        if (!isServiceManuallyStarted.get()) {
+            Log.d(TAG, "scheduleListenerHealthCheck: Skipping schedule because service is not manually started. Reason: $reason")
+            cancelListenerHealthChecks("scheduleListenerHealthCheck skipped")
+            return
+        }
+
+        val safeDelay = if (delayMs >= 0L) delayMs else LISTENER_HEALTH_SHORT_INTERVAL_MS
+        val now = SystemClock.elapsedRealtime()
+        val targetTime = now + safeDelay
+
+        while (true) {
+            val existingTarget = nextListenerHealthCheckAtMs.get()
+            if (existingTarget != 0L) {
+                if (preferSooner && existingTarget <= targetTime) {
+                    Log.d(TAG, "scheduleListenerHealthCheck: Existing check is sooner (${existingTarget - now}ms). Keeping current schedule. Reason: $reason")
+                    return
+                }
+                if (!preferSooner && existingTarget == targetTime) {
+                    Log.d(TAG, "scheduleListenerHealthCheck: Existing check already scheduled at same time. Reason: $reason")
+                    return
+                }
+            }
+
+            if (nextListenerHealthCheckAtMs.compareAndSet(existingTarget, targetTime)) {
+                listenerHealthHandler.removeCallbacks(listenerHealthCheckRunnable)
+                listenerHealthHandler.postDelayed(listenerHealthCheckRunnable, safeDelay)
+                Log.d(TAG, "scheduleListenerHealthCheck: Scheduled health check in ${safeDelay}ms (target=${targetTime - now}ms). Reason: $reason")
+                return
+            }
+        }
+    }
+
+    private fun cancelListenerHealthChecks(reason: String) {
+        listenerHealthHandler.removeCallbacks(listenerHealthCheckRunnable)
+        nextListenerHealthCheckAtMs.set(0L)
+        Log.d(TAG, "cancelListenerHealthChecks: Cancelled pending checks. Reason: $reason")
+    }
+
+    private fun evaluateListenerHealth() {
+        if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) {
+            Log.d(TAG, "evaluateListenerHealth: Service inactive. Cancelling health monitoring.")
+            cancelListenerHealthChecks("evaluateListenerHealth inactive")
+            return
+        }
+
+        nextListenerHealthCheckAtMs.set(0L)
+        val now = SystemClock.elapsedRealtime()
+        var nextDelay = LISTENER_HEALTH_LONG_INTERVAL_MS
+
+        if (!hasNotificationAccess()) {
+            handleMissingNotificationAccess("Health check detected missing notification access")
+            consecutiveListenerRecoveryAttempts.set(0)
+            nextDelay = LISTENER_HEALTH_SHORT_INTERVAL_MS
+        } else if (!_listenerEverConnected) {
+            maybeShowStatusInfo("Waiting for notification listener connection…")
+            updatePersistentNotification("Waiting for notification listener...")
+            requestNotificationListenerRebind("Health check: listener never connected")
+            tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
+            val attempts = consecutiveListenerRecoveryAttempts.incrementAndGet()
+            if (attempts >= MAX_CONSECUTIVE_RECOVERY_ATTEMPTS) {
+                scheduleServiceRestart("Listener never connected after $attempts health checks")
+                consecutiveListenerRecoveryAttempts.set(0)
+            }
+            nextDelay = LISTENER_HEALTH_SHORT_INTERVAL_MS
+        } else {
+            val heartbeat = lastListenerHeartbeatMs.get()
+            val elapsedSinceHeartbeat = if (heartbeat == 0L) Long.MAX_VALUE else now - heartbeat
+            if (elapsedSinceHeartbeat >= LISTENER_STALE_NOTIFICATION_THRESHOLD_MS) {
+                maybeShowStatusInfo("Refreshing notification listener…")
+                updatePersistentNotification("Refreshing notification listener...")
+                requestNotificationListenerRebind("Health check: listener idle for ${if (elapsedSinceHeartbeat == Long.MAX_VALUE) "unknown" else "$elapsedSinceHeartbeat ms"}")
+                tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
+                val attempts = consecutiveListenerRecoveryAttempts.incrementAndGet()
+                if (attempts >= MAX_CONSECUTIVE_RECOVERY_ATTEMPTS) {
+                    scheduleServiceRestart("Listener idle for ${if (elapsedSinceHeartbeat == Long.MAX_VALUE) "unknown" else "$elapsedSinceHeartbeat ms"} after $attempts recovery attempts")
+                    consecutiveListenerRecoveryAttempts.set(0)
+                }
+                nextDelay = LISTENER_HEALTH_SHORT_INTERVAL_MS
+            } else {
+                consecutiveListenerRecoveryAttempts.set(0)
+                nextDelay = LISTENER_HEALTH_LONG_INTERVAL_MS
+            }
+        }
+
+        scheduleListenerHealthCheck(nextDelay, "evaluateListenerHealth scheduled next", preferSooner = false)
+    }
+
+    private fun handleMissingNotificationAccess(reason: String) {
+        Log.w(TAG, "handleMissingNotificationAccess: Notification access missing. Reason: $reason")
+        updatePersistentNotification("Notification access missing. Tap to fix.")
+        maybeShowStatusInfo("Notification access missing. Tap the notification to re-enable.")
+    }
+
+    private fun maybeShowStatusInfo(message: String) {
+        if (!isServiceManuallyStarted.get()) return
+
+        val currentData = currentLyricsData
+        if (currentData is LyricsData.Info && currentData.message == message) {
+            return
+        }
+
+        val isWindowVisible = lyricsView?.isVisible == true
+        val shouldShowInfo = currentData == null || currentData is LyricsData.Info || isWindowVisible
+        if (shouldShowInfo) {
+            showLyricsWindow(
+                LyricsData.Info(
+                    lastDetectedSongTitle,
+                    lastDetectedSongArtist,
+                    message,
+                    currentSongDurationMs
+                )
+            )
+        }
+    }
+
+    private fun scheduleServiceRestart(reason: String) {
+        if (!hasNotificationAccess()) {
+            Log.w(TAG, "scheduleServiceRestart: Skipping restart because notification access is missing. Reason: $reason")
+            handleMissingNotificationAccess("scheduleServiceRestart($reason)")
+            return
+        }
+
+        Handler(Looper.getMainLooper()).post {
+            try {
+                val restartIntent = Intent(applicationContext, LyricService::class.java).apply {
+                    action = ACTION_USER_INITIATED_START
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    applicationContext.startForegroundService(restartIntent)
+                } else {
+                    @Suppress("DEPRECATION")
+                    applicationContext.startService(restartIntent)
+                }
+                Log.i(TAG, "scheduleServiceRestart: Requested restart. Reason: $reason")
+            } catch (e: Exception) {
+                Log.e(TAG, "scheduleServiceRestart: Failed to restart service: ${e.message}", e)
+            }
+        }
+    }
+
     override fun onDestroy() {
-        Log.i(TAG, "Service onDestroy(). Instance: ${this.hashCode()}. isServiceManuallyStarted: ${isServiceManuallyStarted.get()}. Current token: $currentMediaSessionToken. ServiceJob Active: ${serviceJob.isActive}")
+        val wasManuallyStarted = isServiceManuallyStarted.get()
+        Log.i(TAG, "Service onDestroy(). Instance: ${this.hashCode()}. isServiceManuallyStarted: $wasManuallyStarted. Current token: $currentMediaSessionToken. ServiceJob Active: ${serviceJob.isActive}")
         isServiceManuallyStarted.set(false)
 
         if (serviceJob.isActive) { // Check if active before cancelling
@@ -1815,8 +2083,13 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         }
         currentMediaSessionToken = null
 
+        cancelListenerHealthChecks("onDestroy")
         Log.i(TAG, "Service fully destroyed. Instance: ${this.hashCode()}")
         super.onDestroy()
+
+        if (wasManuallyStarted) {
+            scheduleServiceRestart("Service destroyed while marked as manually started")
+        }
     }
 
     private inner class ViewMover : View.OnTouchListener {
