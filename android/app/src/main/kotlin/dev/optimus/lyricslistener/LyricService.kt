@@ -69,10 +69,10 @@ class LyricService : NotificationListenerService() {
     private val NOTIFICATION_ID = 1
     private val HIGHLIGHT_UPDATE_INTERVAL_MS = 200L
     private val CONNECT_RETRY_DELAY_MS = 3000L
-    private val MIN_REBIND_INTERVAL_MS = 10000L
+    private val MIN_REBIND_INTERVAL_MS = 8000L
     private val LISTENER_HEALTH_SHORT_INTERVAL_MS = TimeUnit.SECONDS.toMillis(15)
-    private val LISTENER_HEALTH_LONG_INTERVAL_MS = TimeUnit.MINUTES.toMillis(2)
-    private val LISTENER_STALE_NOTIFICATION_THRESHOLD_MS = TimeUnit.MINUTES.toMillis(3)
+    private val LISTENER_HEALTH_LONG_INTERVAL_MS = TimeUnit.MINUTES.toMillis(1)
+    private val LISTENER_STALE_NOTIFICATION_THRESHOLD_MS = TimeUnit.MINUTES.toMillis(1)
     private val MAX_CONSECUTIVE_RECOVERY_ATTEMPTS = 3
 
     @Volatile private var windowManager: WindowManager? = null
