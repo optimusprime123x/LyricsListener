@@ -2022,7 +2022,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     private fun handleMissingNotificationAccess(reason: String) {
         Log.w(TAG, "handleMissingNotificationAccess: Notification access missing. Reason: $reason")
         updatePersistentNotification("Notification access missing. Tap to fix.")
-        maybeShowStatusInfo("Notification access missing. Tap the notification to re-enable.")
+        maybeShowStatusInfo("Notification access missing. Tap the fix notification access button in the notification to re-enable. Then, re-launch the Lyric service from the app. ")
     }
 
     private fun maybeShowStatusInfo(message: String) {

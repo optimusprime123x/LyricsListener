@@ -364,121 +364,121 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     Color(0xFF556614),
   ];
 
-   static const List<Color> _lyricsWindowBackgroundOptions = [
-     Color(0xDD212121),
-     Color(0xF01C1B1F),
-     Color(0xE6421F7B),
-     Color(0xE6006D60),
-     Color(0xE61B5E20),
-     Color(0xE64A4458),
-     Color(0xF0F4EFF4),
-     Color(0xE6FFFFFF),
-     Color(0xE31F1F1F),
-     Color(0xE6000000),
-     Color(0xE6424242),
-     Color(0xE6006D60),
-     Color(0xE61B5E20),
-     Color(0xE64A4458),
-     Color(0xF0F4EFF4),
-     Color(0xE6FFFFFF),
-     Color(0xE31F1F1F),
-     Color(0xE6000000),
-     Color(0xE6424242),
-     Color(0xE6006D60),
-     Color(0xE61B5E20),
-     Color(0xE64A4458),
-     Color(0xF0F4EFF4),
-     Color(0xE6FFFFFF),
-     Color(0xE31F1F1F),
-     Color(0xE6000000),
-     Color(0xE6424242),
-     Color(0xE6006D60),
-     Color(0xE61B5E20),
-     Color(0xE64A4458),
-     Color(0xF0F4EFF4),
-     Color(0xE6FFFFFF),
-     Color(0xE31F1F1F),
-     Color(0xE6000000),
-     Color(0xE6424242),
-   ];
+  static const List<Color> _lyricsWindowBackgroundOptions = [
+    Color(0xDD1a1a2e),
+    Color(0xF02d5a27),
+    Color(0xE63f2d7d),
+    Color(0xE6006d60),
+    Color(0xE6bf360c),
+    Color(0xE64a4a4a),
+    Color(0xF0f5f5f5),
+    Color(0xE6ffffff),
+    Color(0xE3000000),
+    Color(0xE65d4037),
+    Color(0xE6001f3f),
+    Color(0xE6556b1f),
+    Color(0xE67d2020),
+    Color(0xE64a90e2),
+    Color(0xE67b68ee),
+    Color(0xE600ced1),
+    Color(0xE6ffa07a),
+    Color(0xE620b2aa),
+    Color(0xE687ceeb),
+    Color(0xE6daa520),
+    Color(0xE6ff6347),
+    Color(0xE640e0d0),
+    Color(0xE6ee82ee),
+    Color(0xE690ee90),
+    Color(0xE6ffb6c1),
+    Color(0xE6ffa500),
+    Color(0xE600ffff),
+    Color(0xE60000ff),
+    Color(0xE6ffff00),
+    Color(0xE6ff0000),
+    Color(0xE6800080),
+    Color(0xE6008000),
+    Color(0xE6008080),
+    Color(0xE6c0c0c0),
+    Color(0xE6f0f8ff),
+  ];
 
-   static const List<Color> _lyricsWindowTitleOptions = [
-     Color(0xFFFFFFFF),
-     Color(0xFFE0E0E0),
-     Color(0xFF1C1B1F),
-     Color(0xFF000000),
-     Color(0xFF6750A4),
-     Color(0xFF006D60),
-     Color(0xFFB3261E),
-     Color(0xFF4CAF50),
-     Color(0xFF2196F3),
-     Color(0xFFFF9800),
-     Color(0xFF9C27B0),
-     Color(0xFFF44336),
-     Color(0xFF607D8B),
-     Color(0xFF795548),
-     Color(0xFF00BCD4),
-     Color(0xFF8BC34A),
-     Color(0xFFE91E63),
-     Color(0xFF3F51B5),
-     Color(0xFFFF5722),
-     Color(0xFF009688),
-     Color(0xFFCDDC39),
-     Color(0xFFFFEB3B),
-     Color(0xFF4CAF50),
-     Color(0xFF03A9F4),
-     Color(0xFF9C27B0),
-     Color(0xFFFF9800),
-     Color(0xFF607D8B),
-     Color(0xFF795548),
-     Color(0xFF00BCD4),
-     Color(0xFF8BC34A),
-     Color(0xFFE91E63),
-     Color(0xFF3F51B5),
-     Color(0xFFFF5722),
-     Color(0xFF009688),
-     Color(0xFFCDDC39),
-     Color(0xFFFFEB3B),
-   ];
+  static const List<Color> _lyricsWindowTitleOptions = [
+    Color(0xFFFFFFFF),
+    Color(0xFFE0E0E0),
+    Color(0xFF1C1B1F),
+    Color(0xFF000000),
+    Color(0xFF6750A4),
+    Color(0xFF006D60),
+    Color(0xFFB3261E),
+    Color(0xFF4CAF50),
+    Color(0xFF2196F3),
+    Color(0xFFFF9800),
+    Color(0xFF9C27B0),
+    Color(0xFFF44336),
+    Color(0xFF607D8B),
+    Color(0xFF795548),
+    Color(0xFF00BCD4),
+    Color(0xFF8BC34A),
+    Color(0xFFE91E63),
+    Color(0xFF3F51B5),
+    Color(0xFFFF5722),
+    Color(0xFF009688),
+    Color(0xFFCDDC39),
+    Color(0xFFFFEB3B),
+    Color(0xFF4CAF50),
+    Color(0xFF03A9F4),
+    Color(0xFF9C27B0),
+    Color(0xFFFF9800),
+    Color(0xFF607D8B),
+    Color(0xFF795548),
+    Color(0xFF00BCD4),
+    Color(0xFF8BC34A),
+    Color(0xFFE91E63),
+    Color(0xFF3F51B5),
+    Color(0xFFFF5722),
+    Color(0xFF009688),
+    Color(0xFFCDDC39),
+    Color(0xFFFFEB3B),
+  ];
 
-   static const List<Color> _lyricsWindowHighlightOptions = [
-     Color(0x46C8C8C8),
-     Color(0x4DFFFFFF),
-     Color(0x4D000000),
-     Color(0x4D6750A4),
-     Color(0x4D006D60),
-     Color(0x4DB3261E),
-     Color(0x4D4CAF50),
-     Color(0x666750A4),
-     Color(0x4D2196F3),
-     Color(0x4DFF9800),
-     Color(0x4D9C27B0),
-     Color(0x4DF44336),
-     Color(0x4D607D8B),
-     Color(0x4D795548),
-     Color(0x4D00BCD4),
-     Color(0x4D8BC34A),
-     Color(0x4DE91E63),
-     Color(0x4D3F51B5),
-     Color(0x4DFF5722),
-     Color(0x4D009688),
-     Color(0x4DCDDC39),
-     Color(0x4DFFEB3B),
-     Color(0x4D4CAF50),
-     Color(0x4D03A9F4),
-     Color(0x4D9C27B0),
-     Color(0x4DFF9800),
-     Color(0x4D607D8B),
-     Color(0x4D795548),
-     Color(0x4D00BCD4),
-     Color(0x4D8BC34A),
-     Color(0x4DE91E63),
-     Color(0x4D3F51B5),
-     Color(0x4DFF5722),
-     Color(0x4D009688),
-     Color(0x4DCDDC39),
-     Color(0x4DFFEB3B),
-   ];
+  static const List<Color> _lyricsWindowHighlightOptions = [
+    Color(0x46C8C8C8),
+    Color(0x4DFFFFFF),
+    Color(0x4D000000),
+    Color(0x4D6750A4),
+    Color(0x4D006D60),
+    Color(0x4DB3261E),
+    Color(0x4D4CAF50),
+    Color(0x666750A4),
+    Color(0x4D2196F3),
+    Color(0x4DFF9800),
+    Color(0x4D9C27B0),
+    Color(0x4DF44336),
+    Color(0x4D607D8B),
+    Color(0x4D795548),
+    Color(0x4D00BCD4),
+    Color(0x4D8BC34A),
+    Color(0x4DE91E63),
+    Color(0x4D3F51B5),
+    Color(0x4DFF5722),
+    Color(0x4D009688),
+    Color(0x4DCDDC39),
+    Color(0x4DFFEB3B),
+    Color(0x4D4CAF50),
+    Color(0x4D03A9F4),
+    Color(0x4D9C27B0),
+    Color(0x4DFF9800),
+    Color(0x4D607D8B),
+    Color(0x4D795548),
+    Color(0x4D00BCD4),
+    Color(0x4D8BC34A),
+    Color(0x4DE91E63),
+    Color(0x4D3F51B5),
+    Color(0x4DFF5722),
+    Color(0x4D009688),
+    Color(0x4DCDDC39),
+    Color(0x4DFFEB3B),
+  ];
 
   @override
   void initState() {
@@ -497,16 +497,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _loadCustomizationPreferences() async {
     final prefs = await SharedPreferences.getInstance();
-    final rememberPosition =
-        prefs.getBool(_rememberWindowPositionKey) ?? false;
+    final rememberPosition = prefs.getBool(_rememberWindowPositionKey) ?? false;
     final dynamicLyricsColours =
         prefs.getBool(_dynamicLyricsWindowColorsKey) ?? true;
-    final storedTitleColor =
-        prefs.getInt(_lyricsWindowTitleColorKey);
-    final storedBackgroundColor =
-        prefs.getInt(_lyricsWindowBackgroundColorKey);
-    final storedHighlightColor =
-        prefs.getInt(_lyricsWindowHighlightColorKey);
+    final storedTitleColor = prefs.getInt(_lyricsWindowTitleColorKey);
+    final storedBackgroundColor = prefs.getInt(_lyricsWindowBackgroundColorKey);
+    final storedHighlightColor = prefs.getInt(_lyricsWindowHighlightColorKey);
     if (!mounted) return;
     setState(() {
       _rememberLyricsWindowPosition = rememberPosition;
@@ -1084,34 +1080,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             child: Wrap(
               spacing: 12,
               runSpacing: 12,
-              children: options.map((color) {
-                final isSelected = color.value == currentColor.value;
-                return GestureDetector(
-                  onTap: () => Navigator.of(dialogContext).pop(color),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: color,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color:
-                            isSelected ? colorScheme.primary : colorScheme.outlineVariant,
-                        width: isSelected ? 3 : 1.5,
-                      ),
-                      boxShadow: [
-                        if (isSelected)
-                          BoxShadow(
-                            color: colorScheme.primary.withOpacity(0.25),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
+              children:
+                  options.map((color) {
+                    final isSelected = color.value == currentColor.value;
+                    return GestureDetector(
+                      onTap: () => Navigator.of(dialogContext).pop(color),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color:
+                                isSelected
+                                    ? colorScheme.primary
+                                    : colorScheme.outlineVariant,
+                            width: isSelected ? 3 : 1.5,
                           ),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(),
+                          boxShadow: [
+                            if (isSelected)
+                              BoxShadow(
+                                color: colorScheme.primary.withOpacity(0.25),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
             ),
           ),
           actions: [
@@ -1195,7 +1194,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       decoration: BoxDecoration(
                         color: color,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: colorScheme.outlineVariant, width: 1.5),
+                        border: Border.all(
+                          color: colorScheme.outlineVariant,
+                          width: 1.5,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -1297,7 +1299,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           Padding(
             padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 4.0),
             child: Text(
-              'Album art tones will be used automatically when this is on.',
+              'Album art tones will be used automatically when this is on. Changes will apply from next song onwards.',
               style: textTheme.bodySmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -1307,50 +1309,52 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             duration: const Duration(milliseconds: 200),
             switchInCurve: Curves.easeOutCubic,
             switchOutCurve: Curves.easeInCubic,
-            child: _dynamicLyricsWindowColors
-                ? const SizedBox.shrink()
-                : Column(
-                    key: const ValueKey('static-lyrics-colours'),
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 16),
-                      Text(
-                        'Static lyrics window colours',
-                        style: textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
+            child:
+                _dynamicLyricsWindowColors
+                    ? const SizedBox.shrink()
+                    : Column(
+                      key: const ValueKey('static-lyrics-colours'),
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 16),
+                        Text(
+                          'Static lyrics window colours',
+                          style: textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      _buildLyricsWindowColorTile(
-                        context: context,
-                        title: 'Title & icons',
-                        subtitle: 'Applies to the song title and overlay controls',
-                        color: _lyricsWindowTitleColor,
-                        options: _lyricsWindowTitleOptions,
-                        defaultColor: _defaultLyricsWindowTitleColor,
-                        onColorChanged: _onLyricsWindowTitleColorChanged,
-                      ),
-                      _buildLyricsWindowColorTile(
-                        context: context,
-                        title: 'Background',
-                        subtitle: 'The floating lyrics window surface colour',
-                        color: _lyricsWindowBackgroundColor,
-                        options: _lyricsWindowBackgroundOptions,
-                        defaultColor: _defaultLyricsWindowBackgroundColor,
-                        onColorChanged: _onLyricsWindowBackgroundColorChanged,
-                      ),
-                      _buildLyricsWindowColorTile(
-                        context: context,
-                        title: 'Highlight',
-                        subtitle: 'Used behind the active lyric line',
-                        color: _lyricsWindowHighlightColor,
-                        options: _lyricsWindowHighlightOptions,
-                        defaultColor: _defaultLyricsWindowHighlightColor,
-                        onColorChanged: _onLyricsWindowHighlightColorChanged,
-                      ),
-                      const SizedBox(height: 4),
-                    ],
-                  ),
+                        const SizedBox(height: 12),
+                        _buildLyricsWindowColorTile(
+                          context: context,
+                          title: 'Title & icons',
+                          subtitle:
+                              'Applies to the song title and overlay controls',
+                          color: _lyricsWindowTitleColor,
+                          options: _lyricsWindowTitleOptions,
+                          defaultColor: _defaultLyricsWindowTitleColor,
+                          onColorChanged: _onLyricsWindowTitleColorChanged,
+                        ),
+                        _buildLyricsWindowColorTile(
+                          context: context,
+                          title: 'Background',
+                          subtitle: 'The floating lyrics window surface colour',
+                          color: _lyricsWindowBackgroundColor,
+                          options: _lyricsWindowBackgroundOptions,
+                          defaultColor: _defaultLyricsWindowBackgroundColor,
+                          onColorChanged: _onLyricsWindowBackgroundColorChanged,
+                        ),
+                        _buildLyricsWindowColorTile(
+                          context: context,
+                          title: 'Highlight',
+                          subtitle: 'Used behind the active lyric line',
+                          color: _lyricsWindowHighlightColor,
+                          options: _lyricsWindowHighlightOptions,
+                          defaultColor: _defaultLyricsWindowHighlightColor,
+                          onColorChanged: _onLyricsWindowHighlightColorChanged,
+                        ),
+                        const SizedBox(height: 4),
+                      ],
+                    ),
           ),
           const SizedBox(height: 12),
           SwitchListTile.adaptive(
@@ -1406,7 +1410,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 const TextSpan(
                   text:
-                      'The persistent notification shows those messages when Android has revoked notification access or is still starting the listener.\n\n',
+                      'The persistent notification shows those messages when Android(for whatever reason) has revoked notification access or is still starting the listener.\n\n',
                 ),
                 const TextSpan(
                   text: "What to do? ",
