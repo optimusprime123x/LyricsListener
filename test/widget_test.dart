@@ -11,20 +11,87 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:myapp/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('MyApp initializes with seed color', (WidgetTester tester) async {
+    const initialSeedColor = Color(0xFF6750A4);
+    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    // Verify app builds without errors and MaterialApp is present
+    expect(find.byType(MaterialApp), findsOneWidget);
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+  testWidgets('HomeScreen displays welcome section', (WidgetTester tester) async {
+    const initialSeedColor = Color(0xFF6750A4);
+    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
+    await tester.pumpAndSettle(); // Wait for async loading to settle
+
+    // Check for welcome text in HomeScreen
+    expect(find.text('Welcome to Lyric Listener!'), findsOneWidget);
+    expect(find.text('A purr-fectly synced lyric experience for your favorite tunes!'), findsOneWidget);
+  });
+
+  testWidgets('Theme toggle button works', (WidgetTester tester) async {
+    const initialSeedColor = Color(0xFF6750A4);
+    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
+    await tester.pumpAndSettle(); // Wait for async loading to settle
+
+    // Find and tap theme toggle button in AppBar
+    final themeButton = find.byIcon(Icons.dark_mode_rounded);
+    expect(themeButton, findsOneWidget);
+    await tester.tap(themeButton);
     await tester.pump();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // Verify theme change (icon should switch to light mode)
+    expect(find.byIcon(Icons.light_mode_rounded), findsOneWidget);
+  });
+
+  testWidgets('Permission status icons display correctly', (WidgetTester tester) async {
+    const initialSeedColor = Color(0xFF6750A4);
+    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
+    await tester.pumpAndSettle(); // Wait for async loading to settle
+
+    // Check for permission status icons (assuming some are present based on state)
+    expect(find.byIcon(Icons.check_circle_rounded), findsWidgets); // Granted permissions
+    expect(find.byIcon(Icons.error_outline_rounded), findsWidgets); // Missing permissions
+  });
+
+  testWidgets('Service control buttons are present', (WidgetTester tester) async {
+    const initialSeedColor = Color(0xFF6750A4);
+    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
+    await tester.pumpAndSettle(); // Wait for async loading to settle
+
+    // Check for service control elements
+    expect(find.text('Launch Lyric Service'), findsOneWidget);
+    expect(find.text('Stop Lyric Service'), findsOneWidget);
+  });
+
+  testWidgets('Customization section expands', (WidgetTester tester) async {
+    const initialSeedColor = Color(0xFF6750A4);
+    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
+    await tester.pumpAndSettle(); // Wait for async loading to settle
+
+    // Find and tap customization expansion tile
+    final customizationTile = find.text('Customization & Appearance');
+    expect(customizationTile, findsOneWidget);
+    await tester.tap(customizationTile);
+    await tester.pump();
+
+    // Check for expanded content
+    expect(find.text('Theme Color'), findsOneWidget);
+    expect(find.text('Dynamic lyrics window colours'), findsOneWidget);
+  });
+
+  testWidgets('Help section is accessible', (WidgetTester tester) async {
+    const initialSeedColor = Color(0xFF6750A4);
+    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
+    await tester.pumpAndSettle(); // Wait for async loading to settle
+
+    // Find and tap help expansion tile
+    final helpTile = find.text('Help and Support');
+    expect(helpTile, findsOneWidget);
+    await tester.tap(helpTile);
+    await tester.pump();
+
+    // Check for FAQ items
+    expect(find.text('Lyrics popup is not shown'), findsOneWidget);
   });
 }
