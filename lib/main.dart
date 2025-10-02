@@ -1398,7 +1398,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             _buildFaqItem(
               context,
               question:
-                  'Lyrics popup is not shown, and the notification says "Waiting for song..." or "Waiting for media app..."',
+                  'Lyrics popup is not shown, and the notification says "Waiting for notification listener…" or "Notification access missing. Tap to fix."',
               answerParts: [
                 const TextSpan(
                   text: "Why this happens? ",
@@ -1406,7 +1406,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 const TextSpan(
                   text:
-                      "Certain devices have aggressive task killers that stop this app's processes, leading to problems when the service tries to restart.\n\n",
+                      'The persistent notification shows those messages when Android has revoked notification access or is still starting the listener.\n\n',
                 ),
                 const TextSpan(
                   text: "What to do? ",
@@ -1414,7 +1414,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 const TextSpan(
                   text:
-                      "First, try stopping and restarting the Lyric Service using the button above. If the issue persists, follow these steps:\n1. Stop the Lyric Service.\n2. Click ",
+                      'Open the persistent Lyrics Listener notification and tap the Fix notification access action. This usually restores access immediately. If the shortcut does not work, follow these steps:\n1. Stop the Lyric Service.\n2. Tap ',
                 ),
                 TextSpan(
                   text: 'here',
@@ -1427,7 +1427,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 const TextSpan(
                   text:
-                      " to go to Notification Access settings.\n3. Turn OFF access for 'Lyric Listener'.\n4. Return to this app.\n5. Re-grant 'Notification Access' above.\n6. Launch the Lyric Service again.",
+                      " to open the system Notification Access settings only if the notification shortcut fails.\n3. Turn OFF access for 'Lyric Listener'.\n4. Return to this app.\n5. Re-grant 'Notification Access' above.\n6. Launch the Lyric Service again.",
                 ),
               ],
             ),

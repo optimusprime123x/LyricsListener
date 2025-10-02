@@ -860,9 +860,17 @@ class LyricService : NotificationListenerService() {
                     }
                 }
 
-                val newSbnIsPlaying = newSbnPlaybackState?.state == PlaybackState.STATE_PLAYING
-                val currentServiceIsPlaying = this.currentPlaybackState?.state == PlaybackState.STATE_PLAYING
-                val shouldSwitch = newSbnIsPlaying || (!newSbnIsPlaying && !currentServiceIsPlaying)
+                val newSbnIsActive = newSbnPlaybackState?.state == PlaybackState.STATE_PLAYING ||
+                        newSbnPlaybackState?.state == PlaybackState.STATE_BUFFERING
+                val currentServiceIsActive = this.currentPlaybackState?.state == PlaybackState.STATE_PLAYING ||
+                        this.currentPlaybackState?.state == PlaybackState.STATE_BUFFERING
+
+                val shouldSwitch = when {
+                    newSbnIsActive -> true
+                    currentServiceIsActive -> false
+                    currentMediaSessionToken == null -> true
+                    else -> false
+                }
 
 
                 if (shouldSwitch) {
