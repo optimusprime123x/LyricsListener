@@ -69,7 +69,7 @@ class LyricService : NotificationListenerService() {
     private val NOTIFICATION_ID = 1
     private val HIGHLIGHT_UPDATE_INTERVAL_MS = 200L
     private val CONNECT_RETRY_DELAY_MS = 3000L
-    private val MIN_REBIND_INTERVAL_MS = 8000L
+    private val MIN_REBIND_INTERVAL_MS = 9000L
     private val LISTENER_HEALTH_SHORT_INTERVAL_MS = TimeUnit.SECONDS.toMillis(15)
     private val LISTENER_HEALTH_LONG_INTERVAL_MS = TimeUnit.MINUTES.toMillis(1)
     private val LISTENER_STALE_NOTIFICATION_THRESHOLD_MS = TimeUnit.MINUTES.toMillis(1)
@@ -2000,7 +2000,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             val heartbeat = lastListenerHeartbeatMs.get()
             val elapsedSinceHeartbeat = if (heartbeat == 0L) Long.MAX_VALUE else now - heartbeat
             if (elapsedSinceHeartbeat >= LISTENER_STALE_NOTIFICATION_THRESHOLD_MS) {
-                maybeShowStatusInfo("Refreshing notification listener…")
+                maybeShowStatusInfo("Refreshing notification listener… Feel free to close this window")
                 updatePersistentNotification("Refreshing notification listener...")
                 requestNotificationListenerRebind("Health check: listener idle for ${if (elapsedSinceHeartbeat == Long.MAX_VALUE) "unknown" else "$elapsedSinceHeartbeat ms"}")
                 tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)

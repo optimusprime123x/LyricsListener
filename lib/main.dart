@@ -21,7 +21,6 @@ const Color _defaultLyricsWindowTitleColor = Color(0xFFE0E0E0);
 const Color _defaultLyricsWindowBackgroundColor = Color(0xDD212121);
 const Color _defaultLyricsWindowHighlightColor = Color(0x46C8C8C8);
 
-// MODIFIED: main is now async to await loading the color
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
@@ -1328,7 +1327,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           context: context,
                           title: 'Title & icons',
                           subtitle:
-                              'Applies to the song title and overlay controls',
+                              'The song title, artist name and lyrics window controls',
                           color: _lyricsWindowTitleColor,
                           options: _lyricsWindowTitleOptions,
                           defaultColor: _defaultLyricsWindowTitleColor,
@@ -1337,7 +1336,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         _buildLyricsWindowColorTile(
                           context: context,
                           title: 'Background',
-                          subtitle: 'The floating lyrics window surface colour',
+                          subtitle:
+                              'The floating lyrics window background colour',
                           color: _lyricsWindowBackgroundColor,
                           options: _lyricsWindowBackgroundOptions,
                           defaultColor: _defaultLyricsWindowBackgroundColor,
@@ -1346,7 +1346,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         _buildLyricsWindowColorTile(
                           context: context,
                           title: 'Highlight',
-                          subtitle: 'Used behind the active lyric line',
+                          subtitle: 'Used for the active lyric line',
                           color: _lyricsWindowHighlightColor,
                           options: _lyricsWindowHighlightOptions,
                           defaultColor: _defaultLyricsWindowHighlightColor,
