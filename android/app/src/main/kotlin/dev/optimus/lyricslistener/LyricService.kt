@@ -2000,8 +2000,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             val heartbeat = lastListenerHeartbeatMs.get()
             val elapsedSinceHeartbeat = if (heartbeat == 0L) Long.MAX_VALUE else now - heartbeat
             if (elapsedSinceHeartbeat >= LISTENER_STALE_NOTIFICATION_THRESHOLD_MS) {
-                maybeShowStatusInfo("Refreshing notification listener… Feel free to close this window")
-                updatePersistentNotification("Refreshing notification listener...")
+                // maybeShowStatusInfo("Refreshing notification listener… Feel free to close this window")
+                updatePersistentNotification("Waiting for songs..")
                 requestNotificationListenerRebind("Health check: listener idle for ${if (elapsedSinceHeartbeat == Long.MAX_VALUE) "unknown" else "$elapsedSinceHeartbeat ms"}")
                 tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
                 val attempts = consecutiveListenerRecoveryAttempts.incrementAndGet()
