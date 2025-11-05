@@ -1986,7 +1986,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             consecutiveListenerRecoveryAttempts.set(0)
             nextDelay = LISTENER_HEALTH_SHORT_INTERVAL_MS
         } else if (!_listenerEverConnected) {
-            maybeShowStatusInfo("Waiting for notification listener connection…")
+            maybeShowStatusInfo("Waiting for notification listener connection… If stuck here, Go to the app's help and support section and follow the steps under question 1. ")
             updatePersistentNotification("Waiting for notification listener...")
             requestNotificationListenerRebind("Health check: listener never connected")
             tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
@@ -2022,7 +2022,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     private fun handleMissingNotificationAccess(reason: String) {
         Log.w(TAG, "handleMissingNotificationAccess: Notification access missing. Reason: $reason")
         updatePersistentNotification("Notification access missing. Tap to fix.")
-        maybeShowStatusInfo("Notification access missing. Tap the fix notification access button in the notification to re-enable. Then, re-launch the Lyric service from the app. ")
+        maybeShowStatusInfo("Notification access missing. If stuck here, Go to the app's help and support section and follow the steps under question 1. ")
     }
 
     private fun maybeShowStatusInfo(message: String) {

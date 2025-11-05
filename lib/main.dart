@@ -976,7 +976,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               width: double.infinity,
               child: FilledButton.tonalIcon(
                 icon: const Icon(Icons.favorite_rounded),
-                label: const Text('Donate'),
+                label: const Text('Support Me'),
                 onPressed: _launchDonateUrl,
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 12),
