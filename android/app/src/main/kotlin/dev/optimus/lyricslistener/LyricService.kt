@@ -228,7 +228,7 @@ class LyricService : NotificationListenerService() {
         private const val MUSIXMATCH_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
         private const val MUSIXMATCH_COOKIE = "mxm_bab=AB"
         const val MUSIXMATCH_ATTRIBUTION = "Lyrics provided by Musixmatch"
-        const val MUSIXMATCH_ATTRIBUTION_CACHE = "Lyrics provided by Musixmatch (cache)"
+        const val MUSIXMATCH_ATTRIBUTION_CACHE = "Lyrics provided by Musixmatch (cached)"
 
 
         var isServiceManuallyStarted = AtomicBoolean(false)
@@ -1001,7 +1001,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                     val cachedLyrics = cacheManager.get(artistForThisFetch, titleForThisFetch, durationFromMediaMs)
                     if (cachedLyrics != null) {
                         Log.d(TAG, "Cache hit for '$titleForThisFetch' by '$artistForThisFetch'")
-                        // Update attribution to include "(cache)" and update artist to match current request
+                        // Update attribution to include "(cached)" and update artist to match current request
                         fetchedLyricsDataLocal = updateCachedLyricsForDisplay(cachedLyrics, artistForThisFetch)
                         fromCache = true
                     }
