@@ -1596,7 +1596,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         if (lyricsView == null) return
 
         val prefs = getSharedPreferences("LyricServicePrefs", Context.MODE_PRIVATE)
-        val dynamicColoursEnabled = prefs.getBoolean(PREF_DYNAMIC_COLOURS_ENABLED, true)
+        val dynamicColoursEnabled = prefs.getBoolean(PREF_DYNAMIC_LYRICS_WINDOW_COLORS, true)
 
         if (!dynamicColoursEnabled) {
             Log.d(TAG, "Dynamic colours disabled, skipping color update")
