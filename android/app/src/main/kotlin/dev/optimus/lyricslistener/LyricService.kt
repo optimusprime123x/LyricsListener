@@ -169,34 +169,6 @@ class LyricService : NotificationListenerService() {
         val syncedLyrics: String? = null
     )
 
-    sealed class LyricsData {
-        abstract val durationMs: Long
-
-        data class Plain(val title: String, val artist: String?, val lyrics: String, override val durationMs: Long) : LyricsData()
-        data class Synced(
-            val title: String,
-            val artist: String?,
-            val lines: List<TimedLyricLine>,
-            val translatedLines: List<TimedLyricLine>? = null,
-            override val durationMs: Long
-        ) : LyricsData()
-        data class Info(val title: String?, val artist: String?, val message: String, override val durationMs: Long) : LyricsData()
-        data class MismatchInfo(
-            val title: String?,
-            val artist: String?,
-            val originalLyricsData: LyricsData?
-        ) : LyricsData() {
-            override val durationMs: Long
-                get() = originalLyricsData?.durationMs ?: 0L
-        }
-    }
-
-
-    data class TimedLyricLine(
-        val timestamp: Long,
-        val text: String
-    )
-
     private val httpClient = HttpClient(Android) {
         install(ContentNegotiation) {
             // We must explicitly register the JSON converter for both the standard
