@@ -1425,6 +1425,10 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                         ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
 
                     if (albumArtBitmap != null) {
+                        // Apply default colors immediately to avoid flash/uninitialized state
+                        applyThemeToOverlayElements(finalOverlayBackgroundColor, finalTitleAndIconColor, finalLyricsTextColor, finalLyricsHighlightBgColor)
+
+                        // Extract palette colors asynchronously and update when ready
                         Palette.from(albumArtBitmap).generate { palette ->
                             palette?.let { p ->
                                 var selectedBackgroundColorRgb: Int? = p.dominantSwatch?.rgb
@@ -1435,21 +1439,23 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
 
                                 val opaqueChosenBgColor = selectedBackgroundColorRgb ?: Color.parseColor("#FF212121")
 
-                                finalOverlayBackgroundColor = selectedBackgroundColorRgb?.let {
+                                val paletteOverlayBgColor = selectedBackgroundColorRgb?.let {
                                     ColorUtils.setAlphaComponent(it, 221)
                                 } ?: DEFAULT_STATIC_BACKGROUND_COLOR
 
                                 val isBackgroundLight = ColorUtils.calculateLuminance(opaqueChosenBgColor) > 0.5
-                                finalTitleAndIconColor = if (isBackgroundLight) {
+                                val paletteTitleColor = if (isBackgroundLight) {
                                     p.darkVibrantSwatch?.rgb ?: p.darkMutedSwatch?.rgb ?: p.mutedSwatch?.rgb ?: Color.BLACK
                                 } else {
                                     p.lightVibrantSwatch?.rgb ?: p.lightMutedSwatch?.rgb ?: p.vibrantSwatch?.rgb ?: Color.WHITE
                                 }
 
-                                val contrastTitleBg = ColorUtils.calculateContrast(finalTitleAndIconColor, opaqueChosenBgColor)
-                                if (contrastTitleBg < 5.0) {
-                                    Log.w(TAG, "Low contrast ($contrastTitleBg) between title color (${Integer.toHexString(finalTitleAndIconColor)}) and OPAQUE BG (${Integer.toHexString(opaqueChosenBgColor)}). Forcing default title color.")
-                                    finalTitleAndIconColor = if (isBackgroundLight) Color.BLACK else Color.WHITE
+                                val contrastTitleBg = ColorUtils.calculateContrast(paletteTitleColor, opaqueChosenBgColor)
+                                val finalPaletteTitleColor = if (contrastTitleBg < 5.0) {
+                                    Log.w(TAG, "Low contrast ($contrastTitleBg) between title color (${Integer.toHexString(paletteTitleColor)}) and OPAQUE BG (${Integer.toHexString(opaqueChosenBgColor)}). Forcing default title color.")
+                                    if (isBackgroundLight) Color.BLACK else Color.WHITE
+                                } else {
+                                    paletteTitleColor
                                 }
 
                                 val highlightSwatch = if (isBackgroundLight) {
@@ -1457,13 +1463,15 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                                 } else {
                                     p.lightMutedSwatch ?: p.lightVibrantSwatch ?: p.vibrantSwatch ?: p.mutedSwatch
                                 }
-                                highlightSwatch?.rgb?.let {
-                                    finalLyricsHighlightBgColor = ColorUtils.setAlphaComponent(it, 70)
-                                }
+                                val paletteHighlightColor = highlightSwatch?.rgb?.let {
+                                    ColorUtils.setAlphaComponent(it, 70)
+                                } ?: finalLyricsHighlightBgColor
 
-                                Log.d(TAG, "Palette applied. BG Light: $isBackgroundLight. OverlayBG (translucent): #${Integer.toHexString(finalOverlayBackgroundColor)}, Title/Icon: #${Integer.toHexString(finalTitleAndIconColor)}, LyricHighlightBG: #${Integer.toHexString(finalLyricsHighlightBgColor)}")
-                            } ?: Log.d(TAG, "Palette object was null. Using defaults.")
-                            applyThemeToOverlayElements(finalOverlayBackgroundColor, finalTitleAndIconColor, finalLyricsTextColor, finalLyricsHighlightBgColor)
+                                Log.d(TAG, "Palette applied. BG Light: $isBackgroundLight. OverlayBG (translucent): #${Integer.toHexString(paletteOverlayBgColor)}, Title/Icon: #${Integer.toHexString(finalPaletteTitleColor)}, LyricHighlightBG: #${Integer.toHexString(paletteHighlightColor)}")
+
+                                // Update with palette colors (this will smoothly transition from defaults to palette colors)
+                                applyThemeToOverlayElements(paletteOverlayBgColor, finalPaletteTitleColor, finalLyricsTextColor, paletteHighlightColor)
+                            } ?: Log.d(TAG, "Palette object was null. Keeping defaults.")
                         }
                     } else {
                         Log.d(TAG, "No album art bitmap. Applying default theme.")
