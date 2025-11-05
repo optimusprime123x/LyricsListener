@@ -2087,7 +2087,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     private fun handleMissingNotificationAccess(reason: String) {
         Log.w(TAG, "handleMissingNotificationAccess: Notification access missing. Reason: $reason")
         updatePersistentNotification("Notification access missing. Tap to fix.")
-        maybeShowStatusInfo("Notification access missing. If stuck here, Go to the app's help and support section and follow the steps under question 1. ")
+        //maybeShowStatusInfo("Notification access missing. If stuck here, Go to the app's help and support section and follow the steps under question 1. ")
     }
 
     private fun maybeShowStatusInfo(message: String) {
