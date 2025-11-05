@@ -202,7 +202,7 @@ class LyricsCacheManager(context: Context) {
                 val cachedTitle = normalizeString(json.optString("title", ""))
                 val cachedDuration = json.optLong("durationMs", 0L)
 
-                val artistMatch = cachedArtist == artist
+                val artistMatch = fuzzyArtistMatch(cachedArtist, artist)
                 val titleMatch = cachedTitle == title
                 val durationMatch = Math.abs(cachedDuration - durationMs) <= DURATION_TOLERANCE_MS
 
@@ -212,6 +212,56 @@ class LyricsCacheManager(context: Context) {
                 false
             }
         }
+    }
+
+    /**
+     * Checks if two artist strings match, allowing for variations like:
+     * - "The Chainsmoker, Ship Wrek" vs "The Chainsmokers"
+     * - "Artist (feat. Other)" vs "Artist"
+     * - Minor spelling differences
+     */
+    private fun fuzzyArtistMatch(artist1: String, artist2: String): Boolean {
+        // Exact match
+        if (artist1 == artist2) return true
+
+        // Empty check
+        if (artist1.isEmpty() || artist2.isEmpty()) return false
+
+        // Extract primary artist (before comma, feat, &, etc.)
+        val primary1 = extractPrimaryArtist(artist1)
+        val primary2 = extractPrimaryArtist(artist2)
+
+        // Check if primary artists match
+        if (primary1 == primary2) return true
+
+        // Check if one contains the other (for "chainsmoker" vs "chainsmokers")
+        if (primary1.contains(primary2) || primary2.contains(primary1)) return true
+
+        // Calculate word overlap percentage
+        val words1 = primary1.split(Regex("\\s+")).filter { it.length > 2 }.toSet()
+        val words2 = primary2.split(Regex("\\s+")).filter { it.length > 2 }.toSet()
+
+        if (words1.isEmpty() || words2.isEmpty()) return false
+
+        val overlap = words1.intersect(words2).size
+        val minSize = minOf(words1.size, words2.size)
+        val overlapPercentage = overlap.toDouble() / minSize
+
+        // Match if at least 70% of words overlap
+        return overlapPercentage >= 0.7
+    }
+
+    /**
+     * Extracts the primary artist name before collaborators/features.
+     * "artist feat other" -> "artist"
+     * "artist, other" -> "artist"
+     */
+    private fun extractPrimaryArtist(artist: String): String {
+        return artist
+            .split(Regex(",|feat|ft|featuring|&|\\||x(?=\\s)", RegexOption.IGNORE_CASE))
+            .firstOrNull()
+            ?.trim()
+            ?: artist
     }
 
     private fun parseLyricsFromJson(json: JSONObject): LyricsData? {

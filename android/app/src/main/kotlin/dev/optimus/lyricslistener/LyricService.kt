@@ -1812,25 +1812,47 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         }
     }
     /**
-     * Updates attribution text in cached lyrics to include "(cache)" suffix.
+     * Adds attribution text to cached lyrics with "(cache)" suffix.
      */
     private fun updateAttributionForCache(lyrics: LyricsData): LyricsData {
         return when (lyrics) {
             is LyricsData.Synced -> {
-                val updatedLines = lyrics.lines.map { line ->
-                    if (line.timestamp == ATTRIBUTION_TIMESTAMP && line.text == MUSIXMATCH_ATTRIBUTION) {
-                        line.copy(text = MUSIXMATCH_ATTRIBUTION_CACHE)
-                    } else {
-                        line
+                // Check if attribution already exists (shouldn't happen, but be safe)
+                val hasAttribution = lyrics.lines.any { it.timestamp == ATTRIBUTION_TIMESTAMP }
+
+                val updatedLines = if (hasAttribution) {
+                    // Update existing attribution
+                    lyrics.lines.map { line ->
+                        if (line.timestamp == ATTRIBUTION_TIMESTAMP && line.text == MUSIXMATCH_ATTRIBUTION) {
+                            line.copy(text = MUSIXMATCH_ATTRIBUTION_CACHE)
+                        } else {
+                            line
+                        }
+                    }
+                } else {
+                    // Add new attribution line
+                    lyrics.lines.toMutableList().apply {
+                        add(TimedLyricLine(ATTRIBUTION_TIMESTAMP, MUSIXMATCH_ATTRIBUTION_CACHE))
                     }
                 }
-                val updatedTranslatedLines = lyrics.translatedLines?.map { line ->
-                    if (line.timestamp == ATTRIBUTION_TIMESTAMP && line.text == MUSIXMATCH_ATTRIBUTION) {
-                        line.copy(text = MUSIXMATCH_ATTRIBUTION_CACHE)
+
+                val updatedTranslatedLines = lyrics.translatedLines?.let { translatedLines ->
+                    val hasTranslatedAttribution = translatedLines.any { it.timestamp == ATTRIBUTION_TIMESTAMP }
+                    if (hasTranslatedAttribution) {
+                        translatedLines.map { line ->
+                            if (line.timestamp == ATTRIBUTION_TIMESTAMP && line.text == MUSIXMATCH_ATTRIBUTION) {
+                                line.copy(text = MUSIXMATCH_ATTRIBUTION_CACHE)
+                            } else {
+                                line
+                            }
+                        }
                     } else {
-                        line
+                        translatedLines.toMutableList().apply {
+                            add(TimedLyricLine(ATTRIBUTION_TIMESTAMP, MUSIXMATCH_ATTRIBUTION_CACHE))
+                        }
                     }
                 }
+
                 lyrics.copy(lines = updatedLines, translatedLines = updatedTranslatedLines)
             }
             is LyricsData.Plain -> {
