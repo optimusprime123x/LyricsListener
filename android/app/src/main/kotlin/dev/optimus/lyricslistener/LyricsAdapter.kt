@@ -12,7 +12,7 @@ import androidx.recyclerview.widget.RecyclerView
 
 class LyricsAdapter(
     private val context: Context,
-    private var lyricLines: List<LyricService.TimedLyricLine>
+    private var lyricLines: List<TimedLyricLine>
 ) : RecyclerView.Adapter<LyricsAdapter.ViewHolder>() {
 
     private var highlightedPosition = -1
@@ -100,7 +100,7 @@ class LyricsAdapter(
 
     override fun getItemCount(): Int = lyricLines.size
 
-    fun updateLyrics(newLines: List<LyricService.TimedLyricLine>, synced: Boolean) {
+    fun updateLyrics(newLines: List<TimedLyricLine>, synced: Boolean) {
         this.lyricLines = newLines
         this.isSyncedMode = synced
         this.highlightedPosition = -1

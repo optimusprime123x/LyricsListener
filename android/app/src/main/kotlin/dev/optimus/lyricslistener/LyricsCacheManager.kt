@@ -78,7 +78,7 @@ class LyricsCacheManager(context: Context) {
         try {
             if (source.lowercase() != "musixmatch") {
                 Log.d(TAG, "Skipping cache for non-Musixmatch source: $source")
-                return
+                return@write
             }
 
             val normalizedArtist = normalizeString(artist ?: "")
@@ -86,7 +86,7 @@ class LyricsCacheManager(context: Context) {
 
             if (normalizedTitle.isEmpty()) {
                 Log.d(TAG, "Cannot cache: title is empty")
-                return
+                return@write
             }
 
             val cacheKey = generateCacheKey(normalizedArtist, normalizedTitle, durationMs)
@@ -96,7 +96,7 @@ class LyricsCacheManager(context: Context) {
                 put("type", when (lyrics) {
                     is LyricsData.Synced -> "synced"
                     is LyricsData.Plain -> "plain"
-                    else -> return // Don't cache Info or MismatchInfo
+                    else -> return@write // Don't cache Info or MismatchInfo
                 })
                 put("title", title ?: "")
                 put("artist", artist ?: "")

@@ -1321,7 +1321,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             translateButton = lyricsView?.findViewById(R.id.translateButton)
             val closeButton = lyricsView?.findViewById<ImageButton>(R.id.closeButton)
 
-            lyricsAdapter = LyricsAdapter(this, emptyList())
+            lyricsAdapter = LyricsAdapter(this, emptyList<TimedLyricLine>())
             linearLayoutManager = LinearLayoutManager(this)
 
             lyricsRecyclerView?.layoutManager = linearLayoutManager
