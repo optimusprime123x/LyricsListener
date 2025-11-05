@@ -175,6 +175,17 @@ class MainActivity : FlutterActivity() {
                         result.success(true) // Not applicable for older versions
                     }
                 }
+                "clearLyricsCache" -> {
+                    try {
+                        val cacheManager = LyricsCacheManager(this)
+                        val clearedCount = cacheManager.clearAll()
+                        Log.d("MainActivity", "Cleared $clearedCount cached lyrics")
+                        result.success(clearedCount)
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Error clearing lyrics cache: ${e.message}")
+                        result.error("ERROR_CLEAR_CACHE", e.message, null)
+                    }
+                }
                 else -> {
                     result.notImplemented()
                 }

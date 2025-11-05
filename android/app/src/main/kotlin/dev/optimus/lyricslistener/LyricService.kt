@@ -120,6 +120,9 @@ class LyricService : NotificationListenerService() {
     private var isShowingTranslatedLyrics = false
     private var currentLyricsHasTranslation = false
 
+    // Lyrics cache manager
+    private lateinit var cacheManager: LyricsCacheManager
+
 
     // Musixmatch API Data Classes
     @Serializable data class MusixmatchTokenResponse(val message: MusixmatchTokenMessage)
@@ -164,34 +167,6 @@ class LyricService : NotificationListenerService() {
         val instrumental: Boolean,
         val plainLyrics: String?,
         val syncedLyrics: String? = null
-    )
-
-    sealed class LyricsData {
-        abstract val durationMs: Long
-
-        data class Plain(val title: String, val artist: String?, val lyrics: String, override val durationMs: Long) : LyricsData()
-        data class Synced(
-            val title: String,
-            val artist: String?,
-            val lines: List<TimedLyricLine>,
-            val translatedLines: List<TimedLyricLine>? = null,
-            override val durationMs: Long
-        ) : LyricsData()
-        data class Info(val title: String?, val artist: String?, val message: String, override val durationMs: Long) : LyricsData()
-        data class MismatchInfo(
-            val title: String?,
-            val artist: String?,
-            val originalLyricsData: LyricsData?
-        ) : LyricsData() {
-            override val durationMs: Long
-                get() = originalLyricsData?.durationMs ?: 0L
-        }
-    }
-
-
-    data class TimedLyricLine(
-        val timestamp: Long,
-        val text: String
     )
 
     private val httpClient = HttpClient(Android) {
@@ -253,6 +228,7 @@ class LyricService : NotificationListenerService() {
         private const val MUSIXMATCH_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
         private const val MUSIXMATCH_COOKIE = "mxm_bab=AB"
         const val MUSIXMATCH_ATTRIBUTION = "Lyrics provided by Musixmatch"
+        const val MUSIXMATCH_ATTRIBUTION_CACHE = "Lyrics provided by Musixmatch (cache)"
 
 
         var isServiceManuallyStarted = AtomicBoolean(false)
@@ -274,6 +250,9 @@ class LyricService : NotificationListenerService() {
         _isAttemptingConnection = false
         consecutiveListenerRecoveryAttempts.set(0)
         lastListenerHeartbeatMs.set(SystemClock.elapsedRealtime())
+
+        // Initialize lyrics cache
+        cacheManager = LyricsCacheManager(this)
 
         initializeMusixmatchToken()
     }
@@ -1003,12 +982,24 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             Log.d(TAG, "Fetching lyrics for '$titleForThisFetch' by '$artistForThisFetch' (Token: $tokenForThisFetch, Media Duration: ${durationFromMediaMs}ms)")
 
             var fetchedLyricsDataLocal: LyricsData? = null
+            var fromCache = false
 
             val useYouTubeLogic = isYouTubeBasedPlayer(activeMediaController?.packageName)
 
             try {
-                // Try Musixmatch first, unless it's a YouTube-based player or token is missing
-                if (!useYouTubeLogic && musixmatchUserToken != null) {
+                // Check cache first (only for non-YouTube players)
+                if (!useYouTubeLogic) {
+                    val cachedLyrics = cacheManager.get(artistForThisFetch, titleForThisFetch, durationFromMediaMs)
+                    if (cachedLyrics != null) {
+                        Log.d(TAG, "Cache hit for '$titleForThisFetch' by '$artistForThisFetch'")
+                        // Update attribution to include "(cache)"
+                        fetchedLyricsDataLocal = updateAttributionForCache(cachedLyrics)
+                        fromCache = true
+                    }
+                }
+
+                // Try Musixmatch if not in cache, unless it's a YouTube-based player or token is missing
+                if (fetchedLyricsDataLocal == null && !useYouTubeLogic && musixmatchUserToken != null) {
                     Log.d(TAG, "Attempting Musixmatch search for '$titleForThisFetch'")
                     fetchedLyricsDataLocal = searchWithMusixmatch(titleForThisFetch, artistForThisFetch, durationFromMediaMs)
                 }
@@ -1092,7 +1083,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 val timedLines = parseSyncedLyrics(syncedLrc)
                 val translatedLines = if (!translatedLrc.isNullOrBlank()) parseSyncedLyrics(translatedLrc) else null
 
-                return if (timedLines.isNotEmpty()) {
+                if (timedLines.isNotEmpty()) {
                     val linesWithAttribution = timedLines.toMutableList().apply {
                         add(TimedLyricLine(ATTRIBUTION_TIMESTAMP, MUSIXMATCH_ATTRIBUTION))
                     }
@@ -1100,14 +1091,27 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                         add(TimedLyricLine(ATTRIBUTION_TIMESTAMP, MUSIXMATCH_ATTRIBUTION))
                     }
                     Log.d(TAG, "Found ${timedLines.size} synced lines from Musixmatch for '$title'. Translation available: ${translatedLines != null}")
-                    LyricsData.Synced(title, artist, linesWithAttribution, translatedWithAttribution, durationFromMediaMs)
-                } else null
+                    val syncedData = LyricsData.Synced(title, artist, linesWithAttribution, translatedWithAttribution, durationFromMediaMs)
+
+                    // Cache the synced lyrics (without attribution for storage)
+                    val lyricsToCache = LyricsData.Synced(title, artist, timedLines, translatedLines, durationFromMediaMs)
+                    cacheManager.put(artist, title, durationFromMediaMs, lyricsToCache, "musixmatch")
+
+                    return syncedData
+                } else {
+                    return null
+                }
             }
 
             val plainLyrics = lyricsGet?.lyrics?.lyrics_body
             if (!plainLyrics.isNullOrBlank()) {
                 Log.d(TAG, "Found plain lyrics from Musixmatch for '$title'")
-                return LyricsData.Plain(title, artist, plainLyrics, durationFromMediaMs)
+                val plainData = LyricsData.Plain(title, artist, plainLyrics, durationFromMediaMs)
+
+                // Cache the plain lyrics
+                cacheManager.put(artist, title, durationFromMediaMs, plainData, "musixmatch")
+
+                return plainData
             }
 
             Log.d(TAG, "No lyrics found on Musixmatch for '$title'")
@@ -1317,7 +1321,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             translateButton = lyricsView?.findViewById(R.id.translateButton)
             val closeButton = lyricsView?.findViewById<ImageButton>(R.id.closeButton)
 
-            lyricsAdapter = LyricsAdapter(this, emptyList())
+            lyricsAdapter = LyricsAdapter(this, emptyList<TimedLyricLine>())
             linearLayoutManager = LinearLayoutManager(this)
 
             lyricsRecyclerView?.layoutManager = linearLayoutManager
@@ -1807,6 +1811,36 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             Log.e(TAG, "Failed to persist lyrics window position.", e)
         }
     }
+    /**
+     * Updates attribution text in cached lyrics to include "(cache)" suffix.
+     */
+    private fun updateAttributionForCache(lyrics: LyricsData): LyricsData {
+        return when (lyrics) {
+            is LyricsData.Synced -> {
+                val updatedLines = lyrics.lines.map { line ->
+                    if (line.timestamp == ATTRIBUTION_TIMESTAMP && line.text == MUSIXMATCH_ATTRIBUTION) {
+                        line.copy(text = MUSIXMATCH_ATTRIBUTION_CACHE)
+                    } else {
+                        line
+                    }
+                }
+                val updatedTranslatedLines = lyrics.translatedLines?.map { line ->
+                    if (line.timestamp == ATTRIBUTION_TIMESTAMP && line.text == MUSIXMATCH_ATTRIBUTION) {
+                        line.copy(text = MUSIXMATCH_ATTRIBUTION_CACHE)
+                    } else {
+                        line
+                    }
+                }
+                lyrics.copy(lines = updatedLines, translatedLines = updatedTranslatedLines)
+            }
+            is LyricsData.Plain -> {
+                // Plain lyrics don't have attribution lines in the same way
+                lyrics
+            }
+            else -> lyrics
+        }
+    }
+
     private fun parseSyncedLyrics(syncedLyricsText: String?): List<TimedLyricLine> {
         if (syncedLyricsText.isNullOrBlank()) return emptyList()
         val lines = mutableListOf<TimedLyricLine>()
@@ -1986,7 +2020,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             consecutiveListenerRecoveryAttempts.set(0)
             nextDelay = LISTENER_HEALTH_SHORT_INTERVAL_MS
         } else if (!_listenerEverConnected) {
-            maybeShowStatusInfo("Waiting for notification listener connection… If stuck here, Go to the app's help and support section and follow the steps under question 1. ")
+            // Don't show floating window for status messages - only use persistent notification
+            // maybeShowStatusInfo("Waiting for notification listener connection… If stuck here, Go to the app's help and support section and follow the steps under question 1. ")
             updatePersistentNotification("Waiting for notification listener...")
             requestNotificationListenerRebind("Health check: listener never connected")
             tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)

@@ -866,6 +866,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _clearLyricsCache() async {
+    try {
+      final int? clearedCount = await platform.invokeMethod<int>('clearLyricsCache');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              clearedCount != null && clearedCount > 0
+                  ? 'Cleared $clearedCount cached lyrics'
+                  : 'Cache cleared',
+            ),
+          ),
+        );
+      }
+    } on PlatformException catch (e) {
+      print('_clearLyricsCache: Failed - ${e.message}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Failed to clear cache: ${e.message ?? "Unknown error"}',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   Widget _buildPermissionStatusIcon(bool isGranted, {bool optional = false}) {
     final colorScheme = Theme.of(context).colorScheme;
     final Color iconColor;
@@ -1224,7 +1252,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       color: Theme.of(context).colorScheme.surfaceContainer,
       margin: EdgeInsets.zero,
       child: ExpansionTile(
-        title: Text('Customization & Appearance', style: textTheme.titleMedium),
+        title: Text('Settings', style: textTheme.titleMedium),
         initiallyExpanded: false,
         childrenPadding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
         children: <Widget>[
@@ -1372,6 +1400,38 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 4.0),
             child: Text(
               'When enabled, the floating lyrics window reopens where you last placed it.',
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+          Text(
+            'Cache Management',
+            style: textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _clearLyricsCache,
+              icon: const Icon(Icons.delete_outline_rounded),
+              label: const Text('Clear Lyrics Cache'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                side: BorderSide(color: colorScheme.error),
+                foregroundColor: colorScheme.error,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 8.0),
+            child: Text(
+              'Clears all cached lyrics. Cached lyrics load faster and reduce network usage.',
               style: textTheme.bodySmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
