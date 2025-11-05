@@ -1001,8 +1001,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                     val cachedLyrics = cacheManager.get(artistForThisFetch, titleForThisFetch, durationFromMediaMs)
                     if (cachedLyrics != null) {
                         Log.d(TAG, "Cache hit for '$titleForThisFetch' by '$artistForThisFetch'")
-                        // Update attribution to include "(cache)"
-                        fetchedLyricsDataLocal = updateAttributionForCache(cachedLyrics)
+                        // Update attribution to include "(cache)" and update artist to match current request
+                        fetchedLyricsDataLocal = updateCachedLyricsForDisplay(cachedLyrics, artistForThisFetch)
                         fromCache = true
                     }
                 }
@@ -1907,6 +1907,23 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             Log.e(TAG, "Failed to persist lyrics window position.", e)
         }
     }
+    /**
+     * Updates cached lyrics for display: changes artist to match current request and adds "(cache)" attribution.
+     * This prevents artist mismatch rejections when fuzzy matching finds cached lyrics with different artist variants.
+     */
+    private fun updateCachedLyricsForDisplay(lyrics: LyricsData, currentArtist: String): LyricsData {
+        // First update the artist to match current request
+        val lyricsWithUpdatedArtist = when (lyrics) {
+            is LyricsData.Synced -> lyrics.copy(artist = currentArtist.ifEmpty { null })
+            is LyricsData.Plain -> lyrics.copy(artist = currentArtist.ifEmpty { null })
+            is LyricsData.Info -> lyrics.copy(artist = currentArtist.ifEmpty { null })
+            else -> lyrics
+        }
+
+        // Then add cache attribution
+        return updateAttributionForCache(lyricsWithUpdatedArtist)
+    }
+
     /**
      * Adds attribution text to cached lyrics with "(cache)" suffix.
      */
