@@ -38,6 +38,7 @@ class LyricsCacheManager(context: Context) {
     /**
      * Retrieves cached lyrics for the given song.
      * @return LyricsData if found in cache, null otherwise
+     * Always returns null on any error to ensure fallback to network fetch
      */
     fun get(artist: String?, title: String?, durationMs: Long): LyricsData? = lock.read {
         try {
@@ -49,23 +50,34 @@ class LyricsCacheManager(context: Context) {
                 return null
             }
 
-            // Find matching cache file with duration tolerance
+            Log.d(TAG, "Cache lookup for: '$normalizedArtist' - '$normalizedTitle' (original: '${artist ?: ""}' - '${title ?: ""}')")
+
+            // Find matching cache file with duration tolerance and fuzzy artist matching
             val matchingFile = findMatchingCacheFile(normalizedArtist, normalizedTitle, durationMs)
             if (matchingFile == null) {
-                Log.d(TAG, "Cache miss for: $normalizedArtist - $normalizedTitle")
+                Log.d(TAG, "Cache miss for: '$normalizedArtist' - '$normalizedTitle'. Will fallback to network fetch.")
                 return null
             }
 
             val json = JSONObject(matchingFile.readText())
             val cachedData = parseLyricsFromJson(json)
 
-            // Update last accessed time
-            updateAccessTime(matchingFile.nameWithoutExtension)
+            if (cachedData == null) {
+                Log.w(TAG, "Cache file found but parsing failed for: '$normalizedArtist' - '$normalizedTitle'. Will fallback to network fetch.")
+                return null
+            }
 
-            Log.d(TAG, "Cache hit for: $normalizedArtist - $normalizedTitle")
+            // Update last accessed time (best effort, don't fail if this errors)
+            try {
+                updateAccessTime(matchingFile.nameWithoutExtension)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to update access time, continuing anyway", e)
+            }
+
+            Log.d(TAG, "Cache hit successfully loaded for: '$normalizedArtist' - '$normalizedTitle'")
             return cachedData
         } catch (e: Exception) {
-            Log.e(TAG, "Error reading from cache", e)
+            Log.e(TAG, "Error reading from cache for '${artist ?: ""}' - '${title ?: ""}'. Will fallback to network fetch.", e)
             return null
         }
     }
@@ -206,9 +218,15 @@ class LyricsCacheManager(context: Context) {
                 val titleMatch = cachedTitle == title
                 val durationMatch = Math.abs(cachedDuration - durationMs) <= DURATION_TOLERANCE_MS
 
-                artistMatch && titleMatch && durationMatch
+                val matches = artistMatch && titleMatch && durationMatch
+
+                if (matches) {
+                    Log.d(TAG, "Cache match found: '$cachedArtist' - '$cachedTitle' (normalized) matches query '$artist' - '$title'")
+                }
+
+                matches
             } catch (e: Exception) {
-                Log.e(TAG, "Error reading cache file ${file.name}", e)
+                Log.e(TAG, "Error reading cache file ${file.name}, skipping", e)
                 false
             }
         }
@@ -255,10 +273,11 @@ class LyricsCacheManager(context: Context) {
      * Extracts the primary artist name before collaborators/features.
      * "artist feat other" -> "artist"
      * "artist, other" -> "artist"
+     * "artist and other" -> "artist"
      */
     private fun extractPrimaryArtist(artist: String): String {
         return artist
-            .split(Regex(",|feat|ft|featuring|&|\\||x(?=\\s)", RegexOption.IGNORE_CASE))
+            .split(Regex(",|feat|ft|featuring|&|\\||x(?=\\s)|\\band\\b|\\bwith\\b|\\bvs\\.?\\b", RegexOption.IGNORE_CASE))
             .firstOrNull()
             ?.trim()
             ?: artist
@@ -373,7 +392,14 @@ class LyricsCacheManager(context: Context) {
     private fun normalizeString(str: String): String {
         return str.trim()
             .lowercase()
-            .replace(Regex("[^a-z0-9\\s]"), "") // Remove special chars
+            // Normalize common artist separators to spaces before removing special chars
+            .replace(Regex("\\s+and\\s+"), " ") // " and " -> " "
+            .replace(Regex("\\s+with\\s+"), " ") // " with " -> " "
+            .replace(Regex("\\s+x\\s+"), " ") // " x " -> " "
+            .replace(Regex("\\s+vs\\.?\\s+"), " ") // " vs " or " vs. " -> " "
+            .replace(Regex("\\s*&\\s*"), " ") // " & " -> " "
+            .replace(Regex("\\s*,\\s*"), " ") // " , " or "," -> " "
+            .replace(Regex("[^a-z0-9\\s]"), "") // Remove remaining special chars
             .replace(Regex("\\s+"), " ") // Normalize whitespace
             .trim()
     }

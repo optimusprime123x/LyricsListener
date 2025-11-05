@@ -772,6 +772,15 @@ class LyricService : NotificationListenerService() {
                 this.currentPlaybackState = playbackState
             }
 
+            // Re-apply colors when metadata changes (e.g., album art loads after cached lyrics shown)
+            if (lyricsView != null && currentLyricsData != null && metadata != null) {
+                val albumArt = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+                    ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
+                if (albumArt != null) {
+                    Log.d(TAG, "Album art available, re-applying colors for already-shown lyrics")
+                    updateLyricsWindowColors()
+                }
+            }
 
             if (lyricsView != null && currentLyricsData is LyricsData.Synced &&
                 playbackState?.state == PlaybackState.STATE_PLAYING &&
@@ -1567,7 +1576,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         }
 
         songInfoTextView?.setTextColor(titleIconColor)
-        
+
         translateButton?.setColorFilter(titleIconColor, PorterDuff.Mode.SRC_IN)
         expandCollapseButton?.setColorFilter(titleIconColor, PorterDuff.Mode.SRC_IN)
         lyricsView?.findViewById<ImageButton>(R.id.closeButton)?.setColorFilter(titleIconColor, PorterDuff.Mode.SRC_IN)
@@ -1577,6 +1586,85 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             highlightedLineTextColor = lyricTextColor,
             highlightedLineBackgroundColor = lyricHighlightBgColor
         )
+    }
+
+    /**
+     * Updates lyrics window colors from current metadata album art.
+     * Used to apply colors when album art loads after lyrics are already showing (e.g., cached lyrics).
+     */
+    private fun updateLyricsWindowColors() {
+        if (lyricsView == null) return
+
+        val prefs = getSharedPreferences("LyricServicePrefs", Context.MODE_PRIVATE)
+        val dynamicColoursEnabled = prefs.getBoolean(PREF_DYNAMIC_COLOURS_ENABLED, true)
+
+        if (!dynamicColoursEnabled) {
+            Log.d(TAG, "Dynamic colours disabled, skipping color update")
+            return
+        }
+
+        val currentActiveMc = activeMediaController
+        if (currentActiveMc == null || currentActiveMc.sessionToken != currentMediaSessionToken) {
+            Log.d(TAG, "No active media controller or token mismatch, skipping color update")
+            return
+        }
+
+        currentActiveMc.metadata?.let { metadata ->
+            val albumArtBitmap = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+                ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
+
+            if (albumArtBitmap != null) {
+                val finalLyricsTextColor = Color.WHITE
+
+                // Extract palette colors asynchronously and update when ready
+                Palette.from(albumArtBitmap).generate { palette ->
+                    palette?.let { p ->
+                        var selectedBackgroundColorRgb: Int? = p.dominantSwatch?.rgb
+                        if (selectedBackgroundColorRgb == null) {
+                            val fallbackBgSwatch = p.darkVibrantSwatch ?: p.vibrantSwatch ?: p.darkMutedSwatch ?: p.mutedSwatch
+                            selectedBackgroundColorRgb = fallbackBgSwatch?.rgb
+                        }
+
+                        val opaqueChosenBgColor = selectedBackgroundColorRgb ?: Color.parseColor("#FF212121")
+
+                        val paletteOverlayBgColor = selectedBackgroundColorRgb?.let {
+                            ColorUtils.setAlphaComponent(it, 221)
+                        } ?: DEFAULT_STATIC_BACKGROUND_COLOR
+
+                        val isBackgroundLight = ColorUtils.calculateLuminance(opaqueChosenBgColor) > 0.5
+                        val paletteTitleColor = if (isBackgroundLight) {
+                            p.darkVibrantSwatch?.rgb ?: p.darkMutedSwatch?.rgb ?: p.mutedSwatch?.rgb ?: Color.BLACK
+                        } else {
+                            p.lightVibrantSwatch?.rgb ?: p.lightMutedSwatch?.rgb ?: p.vibrantSwatch?.rgb ?: Color.WHITE
+                        }
+
+                        val contrastTitleBg = ColorUtils.calculateContrast(paletteTitleColor, opaqueChosenBgColor)
+                        val finalPaletteTitleColor = if (contrastTitleBg < 5.0) {
+                            Log.w(TAG, "updateLyricsWindowColors: Low contrast ($contrastTitleBg). Forcing default title color.")
+                            if (isBackgroundLight) Color.BLACK else Color.WHITE
+                        } else {
+                            paletteTitleColor
+                        }
+
+                        val highlightSwatch = if (isBackgroundLight) {
+                            p.darkMutedSwatch ?: p.darkVibrantSwatch ?: p.mutedSwatch ?: p.vibrantSwatch
+                        } else {
+                            p.lightMutedSwatch ?: p.lightVibrantSwatch ?: p.vibrantSwatch ?: p.mutedSwatch
+                        }
+                        val paletteHighlightColor = highlightSwatch?.rgb?.let {
+                            ColorUtils.setAlphaComponent(it, 70)
+                        } ?: DEFAULT_STATIC_HIGHLIGHT_COLOR
+
+                        Log.d(TAG, "updateLyricsWindowColors: Palette colors extracted and applied. BG: #${Integer.toHexString(paletteOverlayBgColor)}, Title: #${Integer.toHexString(finalPaletteTitleColor)}, Highlight: #${Integer.toHexString(paletteHighlightColor)}")
+
+                        // Update with palette colors
+                        applyThemeToOverlayElements(paletteOverlayBgColor, finalPaletteTitleColor, finalLyricsTextColor, paletteHighlightColor)
+                    } ?: Log.d(TAG, "updateLyricsWindowColors: Palette object was null")
+                }
+            } else {
+                Log.d(TAG, "updateLyricsWindowColors: No album art bitmap available")
+            }
+        } ?: Log.d(TAG, "updateLyricsWindowColors: No metadata available")
     }
     
     private fun toggleTranslation() {
