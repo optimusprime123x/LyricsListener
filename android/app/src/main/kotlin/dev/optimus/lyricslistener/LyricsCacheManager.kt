@@ -12,7 +12,7 @@ import kotlin.concurrent.write
 
 /**
  * Manages disk-based caching of lyrics data.
- * - Only caches Musixmatch lyrics (never LRCLib)
+ * - Caches Musixmatch and LRCLib lyrics
  * - Max cache size: 100MB
  * - LRU eviction when limit reached
  * - Duration tolerance: ±3 seconds for matching
@@ -83,13 +83,14 @@ class LyricsCacheManager(context: Context) {
     }
 
     /**
-     * Saves lyrics to cache (only Musixmatch).
-     * @param source Must be "musixmatch" - other sources are ignored
+     * Saves lyrics to cache (Musixmatch and LRCLib).
+     * @param source Must be "musixmatch" or "lrclib" - other sources are ignored
      */
     fun put(artist: String?, title: String?, durationMs: Long, lyrics: LyricsData, source: String) = lock.write {
         try {
-            if (source.lowercase() != "musixmatch") {
-                Log.d(TAG, "Skipping cache for non-Musixmatch source: $source")
+            val lowercaseSource = source.lowercase()
+            if (lowercaseSource != "musixmatch" && lowercaseSource != "lrclib") {
+                Log.d(TAG, "Skipping cache for unsupported source: $source")
                 return@write
             }
 

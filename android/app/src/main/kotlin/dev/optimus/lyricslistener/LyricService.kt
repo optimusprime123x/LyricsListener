@@ -1189,6 +1189,13 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                         val linesWithAttribution = timedLines.toMutableList().apply {
                             add(TimedLyricLine(ATTRIBUTION_TIMESTAMP, "Lyrics provided by LRCLib"))
                         }
+
+                        // Cache synced lyrics from LRCLib (only on full match first try, not potential mismatches)
+                        if (!potentialMismatch) {
+                            val lyricsToCache = LyricsData.Synced(title, artist.ifEmpty { null }, timedLines, null, finalDurationMs)
+                            cacheManager.put(artist.ifEmpty { null }, title, finalDurationMs, lyricsToCache, "lrclib")
+                        }
+
                         LyricsData.Synced(title, artist.ifEmpty { null }, linesWithAttribution, null, finalDurationMs)
                     } else {
                         LyricsData.Plain(title, artist.ifEmpty { null }, chosenLyricResult.plainLyrics ?: "", finalDurationMs)
