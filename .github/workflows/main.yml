@@ -24,12 +24,12 @@ jobs:
           echo "version=$(grep 'version:' pubspec.yaml | sed 's/version: //' | tr -d '[:space:]')" >> $GITHUB_OUTPUT
       
       - name: Build APK
-        run: flutter build apk --release
+        run: flutter build apk --debug
       
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: build/app/outputs/apk/release/app-release.apk
+          files: build/app/outputs/apk/debug/app-debug.apk
           tag_name: v${{ steps.get_version.outputs.version }}
           name: Release v${{ steps.get_version.outputs.version }}
         env:
