@@ -59,6 +59,7 @@ android {
             isShrinkResources = false
         }
         debug {
+            applicationIdSuffix = ".debug"
             ndk {
                 abiFilters.clear()
                 abiFilters.addAll(listOf("arm64-v8a"))
