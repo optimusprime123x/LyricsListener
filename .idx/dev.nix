@@ -2,14 +2,16 @@
 # see: https://firebase.google.com/docs/studio/customize-workspace
 { pkgs, ... }: {
   # Which nixpkgs channel to use.
-  channel = "stable-24.05";
+  channel = "stable-24.05"; # or "unstable"
   # Use https://search.nixos.org/packages to find packages
   packages = [
-    pkgs.jdk17
+    pkgs.jdk21
     pkgs.unzip
   ];
   # Sets environment variables in the workspace
-  env = {};
+  env = {
+    GROQ_KEY = "abcd";
+  };
   idx = {
     # Search for the extensions you want on https://open-vsx.org/ and use "publisher.id"
     extensions = [
@@ -26,7 +28,7 @@
       enable = true;
       previews = {
         android = {
-          command = ["flutter" "run" "--machine" "-d" "android" "-d" "localhost:5555"];
+          command = ["flutter" "run" "--machine" "-d" "android" "-d" "localhost:5555" "--dart-define" "GROQ_KEY=$GROQ_KEY"];
           manager = "flutter";
         };
       };
