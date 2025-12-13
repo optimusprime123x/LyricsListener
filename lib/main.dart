@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -370,7 +371,19 @@ class _DebugScreenState extends State<DebugScreen> {
     });
 
     try {
+      if (!Platform.isAndroid) {
+        throw PlatformException(
+          code: 'UNAVAILABLE',
+          message: 'Debug session is only available on Android devices.',
+        );
+      }
+
       await _platformChannel.invokeMethod('startDebugActiveMediaNotification');
+    } on MissingPluginException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Debug channel not available: ${e.message ?? e.toString()}';
+      });
     } on PlatformException catch (e) {
       if (!mounted) return;
       setState(() {
