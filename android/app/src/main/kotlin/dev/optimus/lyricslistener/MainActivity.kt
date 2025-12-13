@@ -8,6 +8,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
@@ -218,6 +220,7 @@ class MainActivity : FlutterActivity() {
     private class LogStreamHandler : EventChannel.StreamHandler {
         private var logcatProcess: Process? = null
         private var readerThread: Thread? = null
+        private val mainHandler = Handler(Looper.getMainLooper())
 
         override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
             try {
@@ -241,11 +244,18 @@ class MainActivity : FlutterActivity() {
                     BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
                         var line: String?
                         while (reader.readLine().also { line = it } != null) {
-                            events?.success(line)
+                            val message = line
+                            if (message != null) {
+                                mainHandler.post {
+                                    events?.success(message)
+                                }
+                            }
                         }
                     }
                 } catch (e: Exception) {
-                    events?.error("LOG_STREAM_ERROR", e.message, null)
+                    mainHandler.post {
+                        events?.error("LOG_STREAM_ERROR", e.message, null)
+                    }
                 }
             }.also { it.start() }
         }
