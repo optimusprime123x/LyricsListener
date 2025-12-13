@@ -191,6 +191,7 @@ class LyricService : NotificationListenerService() {
         const val ACTION_HIDE_LYRICS = "dev.optimus.lyricslistener.ACTION_HIDE_LYRICS"
         const val ACTION_USER_INITIATED_START = "dev.optimus.lyricslistener.ACTION_USER_INITIATED_START"
         const val ACTION_USER_INITIATED_STOP = "dev.optimus.lyricslistener.ACTION_USER_INITIATED_STOP"
+        const val ACTION_DEBUG_ACTIVE_NOTIFICATION = "dev.optimus.lyricslistener.ACTION_DEBUG_ACTIVE_NOTIFICATION"
         const val ATTRIBUTION_TIMESTAMP = -999L
 
         private const val LYRIC_API_BASE_URL = "https://lrclib.net/api/search"
@@ -331,6 +332,14 @@ class LyricService : NotificationListenerService() {
             ACTION_HIDE_LYRICS -> {
                 Log.d(TAG, "ACTION_HIDE_LYRICS received.")
                 hideLyricsWindow()
+            }
+            ACTION_DEBUG_ACTIVE_NOTIFICATION -> {
+                Log.i(TAG, "ACTION_DEBUG_ACTIVE_NOTIFICATION received. Running active media scan for debug.")
+                startForeground(
+                    NOTIFICATION_ID,
+                    createPersistentNotification("Debugging media notification...")
+                )
+                tryToConnectToActiveMediaSessions(delayMs = 0L)
             }
             else -> {
                 Log.i(TAG, "Service (re)started with null or unhandled action (Intent: $intent, Action: ${intent?.action}). _listenerEverConnected: $_listenerEverConnected")

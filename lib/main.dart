@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,6 +7,11 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+const MethodChannel _platformChannel =
+    MethodChannel('dev.optimus.lyricslistener/permissions');
+const EventChannel _debugLogChannel =
+    EventChannel('dev.optimus.lyricslistener/debugLogs');
 
 const int _android13ApiLevel = 33;
 
@@ -313,6 +320,175 @@ class _MyAppState extends State<MyApp> {
   }
 }
 
+class DebugScreen extends StatefulWidget {
+  const DebugScreen({super.key});
+
+  @override
+  State<DebugScreen> createState() => _DebugScreenState();
+}
+
+class _DebugScreenState extends State<DebugScreen> {
+  final List<String> _logs = [];
+  StreamSubscription<dynamic>? _logSubscription;
+  String? _errorMessage;
+  bool _isStarting = true;
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _startDebugSession();
+  }
+
+  @override
+  void dispose() {
+    _logSubscription?.cancel();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _startDebugSession() async {
+    setState(() {
+      _logs.clear();
+      _errorMessage = null;
+      _isStarting = true;
+    });
+
+    await _logSubscription?.cancel();
+    _logSubscription =
+        _debugLogChannel.receiveBroadcastStream().listen((event) {
+      if (!mounted) return;
+      setState(() {
+        _logs.add(event.toString());
+      });
+      _scrollToBottom();
+    }, onError: (error) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = error.toString();
+      });
+    });
+
+    try {
+      await _platformChannel.invokeMethod('startDebugActiveMediaNotification');
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = e.message ?? e.code;
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isStarting = false;
+        });
+      }
+    }
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Debug: Media Notification'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Fetches the currently active media notification and streams service logs so you can follow the parsing flow.',
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _isStarting ? null : _startDebugSession,
+                  icon: const Icon(Icons.bug_report_outlined),
+                  label: Text(_isStarting ? 'Starting...' : 'Rescan now'),
+                ),
+                const SizedBox(width: 12),
+                if (_isStarting)
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 3),
+                  ),
+              ],
+            ),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Error: $_errorMessage',
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.error,
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainer,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: colorScheme.outlineVariant),
+                ),
+                child: _logs.isEmpty
+                    ? Center(
+                        child: Text(
+                          _isStarting
+                              ? 'Listening for debug logs...'
+                              : 'No logs yet. Try rescanning.',
+                          style: textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.all(12),
+                        itemCount: _logs.length,
+                        itemBuilder: (context, index) {
+                          final line = _logs[index];
+                          return Padding(
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 4.0),
+                            child: Text(
+                              line,
+                              style: textTheme.bodySmall?.copyWith(
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
@@ -330,9 +506,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
-  static const platform = MethodChannel(
-    'dev.optimus.lyricslistener/permissions',
-  );
   int? _androidSdkInt;
   bool _isLoadingAppStatus = true; // Initial state is loading
 
@@ -346,6 +519,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _isServiceActionInProgress = false;
   bool _supportCardVisible = false;
   bool _welcomeVisible = false;
+  int _cacheManagementTapCount = 0;
+  Timer? _cacheManagementResetTimer;
 
   bool _rememberLyricsWindowPosition = false;
   bool _dynamicLyricsWindowColors = true;
@@ -595,6 +770,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     print("HomeScreen dispose: Called");
+    _cacheManagementResetTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -627,7 +803,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (!mounted) return;
     print("HomeScreen _getAndroidVersion: Starting");
     try {
-      final int? version = await platform.invokeMethod('getAndroidVersion');
+      final int? version = await _platformChannel.invokeMethod('getAndroidVersion');
       if (mounted) {
         print("HomeScreen _getAndroidVersion: Received version: $version");
         _androidSdkInt = version;
@@ -652,23 +828,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     try {
       final results = await Future.wait([
-        platform.invokeMethod('isNotificationAccessGranted').catchError((e) {
+        _platformChannel.invokeMethod('isNotificationAccessGranted').catchError((e) {
           print("Error isNotificationAccessGranted: $e");
           return false;
         }),
-        platform.invokeMethod('canDrawOverlays').catchError((e) {
+        _platformChannel.invokeMethod('canDrawOverlays').catchError((e) {
           print("Error canDrawOverlays: $e");
           return false;
         }),
         (_androidSdkInt != null && _androidSdkInt! >= _android13ApiLevel)
-            ? platform.invokeMethod('isPostNotificationsGranted').catchError((
+            ? _platformChannel.invokeMethod('isPostNotificationsGranted').catchError((
               e,
             ) {
               print("Error isPostNotificationsGranted: $e");
               return false;
             })
             : Future.value(tempPostNotifications),
-        platform.invokeMethod('isIgnoringBatteryOptimizations').catchError((e) {
+        _platformChannel.invokeMethod('isIgnoringBatteryOptimizations').catchError((e) {
           print("Error isIgnoringBatteryOptimizations: $e");
           return false;
         }),
@@ -708,7 +884,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     print("HomeScreen _checkServiceStatus: Starting");
     bool tempIsServiceRunning = false;
     try {
-      final bool? isRunning = await platform.invokeMethod<bool>(
+      final bool? isRunning = await _platformChannel.invokeMethod<bool>(
         'isLyricServiceRunning',
       );
       if (isRunning != null) {
@@ -763,7 +939,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
 
     try {
-      await platform.invokeMethod('startLyricService');
+      await _platformChannel.invokeMethod('startLyricService');
       await Future.delayed(const Duration(milliseconds: 1500));
       if (mounted) await _checkServiceStatus();
     } on PlatformException catch (e) {
@@ -796,7 +972,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
 
     try {
-      await platform.invokeMethod('stopLyricService');
+      await _platformChannel.invokeMethod('stopLyricService');
       await Future.delayed(const Duration(milliseconds: 1500));
       if (mounted) await _checkServiceStatus();
     } on PlatformException catch (e) {
@@ -822,7 +998,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _requestNotificationAccess() async {
     await _handlePermissionRequest(
-      () => platform.invokeMethod('requestNotificationAccess'),
+      () => _platformChannel.invokeMethod('requestNotificationAccess'),
       operationName: "Notification Access",
     );
   }
@@ -830,7 +1006,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _openNotificationSettings() async {
     print("HomeScreen _openNotificationSettings: Attempting to open.");
     try {
-      await platform.invokeMethod('openNotificationSettings');
+      await _platformChannel.invokeMethod('openNotificationSettings');
     } on PlatformException catch (e) {
       print('HomeScreen _openNotificationSettings: Failed - ${e.message}');
       if (mounted) {
@@ -847,28 +1023,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _requestOverlayPermission() async {
     await _handlePermissionRequest(
-      () => platform.invokeMethod('requestOverlayPermission'),
+      () => _platformChannel.invokeMethod('requestOverlayPermission'),
       operationName: "Overlay Permission",
     );
   }
 
   Future<void> _requestPostNotificationsPermission() async {
     await _handlePermissionRequest(
-      () => platform.invokeMethod('requestPostNotifications'),
+      () => _platformChannel.invokeMethod('requestPostNotifications'),
       operationName: "Post Notifications Permission",
     );
   }
 
   Future<void> _requestDisableBatteryOptimization() async {
     await _handlePermissionRequest(
-      () => platform.invokeMethod('requestDisableBatteryOptimization'),
+      () => _platformChannel.invokeMethod('requestDisableBatteryOptimization'),
       operationName: "Battery Optimization",
     );
   }
 
   Future<void> _clearLyricsCache() async {
     try {
-      final int? clearedCount = await platform.invokeMethod<int>('clearLyricsCache');
+      final int? clearedCount = await _platformChannel.invokeMethod<int>('clearLyricsCache');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -892,6 +1068,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         );
       }
     }
+  }
+
+  void _onCacheManagementTapped() {
+    _cacheManagementResetTimer?.cancel();
+    _cacheManagementResetTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          _cacheManagementTapCount = 0;
+        });
+      }
+    });
+
+    setState(() {
+      _cacheManagementTapCount++;
+      if (_cacheManagementTapCount >= 7) {
+        _cacheManagementTapCount = 0;
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const DebugScreen()),
+        );
+      }
+    });
   }
 
   Widget _buildPermissionStatusIcon(bool isGranted, {bool optional = false}) {
@@ -1408,10 +1605,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           const SizedBox(height: 24),
           const Divider(height: 1),
           const SizedBox(height: 16),
-          Text(
-            'Cache Management',
-            style: textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
+          GestureDetector(
+            onTap: _onCacheManagementTapped,
+            child: Text(
+              'Cache Management',
+              style: textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
           const SizedBox(height: 12),

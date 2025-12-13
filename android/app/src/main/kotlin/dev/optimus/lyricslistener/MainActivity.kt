@@ -15,14 +15,20 @@ import androidx.annotation.NonNull
 import androidx.core.app.NotificationManagerCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
+import java.io.BufferedReader
+import java.io.InputStreamReader
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "dev.optimus.lyricslistener/permissions"
+    private val DEBUG_LOG_CHANNEL = "dev.optimus.lyricslistener/debugLogs"
     private val POST_NOTIFICATIONS_REQUEST_CODE = 101
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, DEBUG_LOG_CHANNEL)
+            .setStreamHandler(LogStreamHandler())
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "getAndroidVersion" -> {
@@ -186,10 +192,72 @@ class MainActivity : FlutterActivity() {
                         result.error("ERROR_CLEAR_CACHE", e.message, null)
                     }
                 }
+                "startDebugActiveMediaNotification" -> {
+                    try {
+                        val intent = Intent(this, LyricService::class.java).apply {
+                            action = LyricService.ACTION_DEBUG_ACTIVE_NOTIFICATION
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            startForegroundService(intent)
+                        } else {
+                            startService(intent)
+                        }
+                        result.success(null)
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Error starting debug action: ${e.message}")
+                        result.error("ERROR_START_DEBUG", e.message, null)
+                    }
+                }
                 else -> {
                     result.notImplemented()
                 }
             }
+        }
+    }
+
+    private class LogStreamHandler : EventChannel.StreamHandler {
+        private var logcatProcess: Process? = null
+        private var readerThread: Thread? = null
+
+        override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+            try {
+                ProcessBuilder("logcat", "-c").start().waitFor()
+            } catch (ignored: Exception) {
+            }
+
+            val processBuilder = ProcessBuilder(
+                "logcat",
+                "-v",
+                "time",
+                "LyricService:D",
+                "MainActivity:D",
+                "*:S"
+            )
+
+            readerThread = Thread {
+                try {
+                    logcatProcess = processBuilder.start()
+                    val process = logcatProcess ?: return@Thread
+                    BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
+                        var line: String?
+                        while (reader.readLine().also { line = it } != null) {
+                            events?.success(line)
+                        }
+                    }
+                } catch (e: Exception) {
+                    events?.error("LOG_STREAM_ERROR", e.message, null)
+                }
+            }.also { it.start() }
+        }
+
+        override fun onCancel(arguments: Any?) {
+            try {
+                logcatProcess?.destroy()
+            } catch (ignored: Exception) {
+            }
+            readerThread?.interrupt()
+            logcatProcess = null
+            readerThread = null
         }
     }
 
