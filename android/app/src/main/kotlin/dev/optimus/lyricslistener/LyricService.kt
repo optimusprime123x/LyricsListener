@@ -94,6 +94,24 @@ class LyricService : NotificationListenerService() {
     private var serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
     private var lyricsHighlightingJob: Job? = null
 
+    private fun normalizeSongStringForComparison(value: String?): String {
+        return value?.trim()?.lowercase()?.replace(Regex("\\s+"), " ") ?: ""
+    }
+
+    private fun matchesCurrentSongContext(title: String?, artist: String?): Boolean {
+        val normalizedCurrentTitle = normalizeSongStringForComparison(lastDetectedSongTitle)
+        if (normalizedCurrentTitle.isEmpty()) return false
+
+        val normalizedIncomingTitle = normalizeSongStringForComparison(title)
+        if (normalizedIncomingTitle.isEmpty()) return false
+
+        val normalizedCurrentArtist = normalizeSongStringForComparison(lastDetectedSongArtist)
+        val normalizedIncomingArtist = normalizeSongStringForComparison(artist)
+
+        return normalizedIncomingTitle == normalizedCurrentTitle &&
+                normalizedIncomingArtist == normalizedCurrentArtist
+    }
+
     private val lastListenerRebindAttempt = AtomicLong(0L)
     private val lastListenerHeartbeatMs = AtomicLong(0L)
     private val consecutiveListenerRecoveryAttempts = AtomicInteger(0)
@@ -1274,7 +1292,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             is LyricsData.MismatchInfo -> data.artist
         }
 
-        if (data !is LyricsData.Info && (dataTitle != lastDetectedSongTitle || dataArtist != lastDetectedSongArtist)) {
+        if (data !is LyricsData.Info && !matchesCurrentSongContext(dataTitle, dataArtist)) {
              Log.w(TAG, "showLyricsWindow (MainThread): Called for '$dataTitle'/'$dataArtist', but current song is '$lastDetectedSongTitle'/'$lastDetectedSongArtist'. Aborting show.")
              if (lyricsView != null && lyricsView?.isAttachedToWindow == true) {
                  val actualCurrentData = currentLyricsData
@@ -1720,7 +1738,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             Log.d(TAG, "Not starting highlighter: Conditions not met. MC Valid: ${controllerForHighlighting != null}, Token Match: ${controllerForHighlighting?.sessionToken == tokenForHighlighting}, Data is Synced: ${dataForHighlighting is LyricsData.Synced}")
             return
         }
-        if (dataForHighlighting.title != lastDetectedSongTitle || dataForHighlighting.artist != lastDetectedSongArtist) {
+        if (!matchesCurrentSongContext(dataForHighlighting.title, dataForHighlighting.artist)) {
             Log.w(TAG, "Highlighting attempted for '${dataForHighlighting.title}/${dataForHighlighting.artist}' but current song context is '$lastDetectedSongTitle/$lastDetectedSongArtist'. Aborting.")
             return
         }
