@@ -464,35 +464,37 @@ class _DebugScreenState extends State<DebugScreen> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: colorScheme.outlineVariant),
                 ),
-                child: _logs.isEmpty
-                    ? Center(
-                        child: Text(
-                          _isStarting
-                              ? 'Listening for debug logs...'
-                              : 'No logs yet. Try rescanning.',
-                          style: textTheme.bodyMedium?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      )
-                    : ListView.builder(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.all(12),
-                        itemCount: _logs.length,
-                        itemBuilder: (context, index) {
-                          final line = _logs[index];
-                          return Padding(
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 4.0),
-                            child: Text(
-                              line,
-                              style: textTheme.bodySmall?.copyWith(
-                                fontFamily: 'monospace',
-                              ),
+                child: SelectionArea(
+                  child: _logs.isEmpty
+                      ? Center(
+                          child: Text(
+                            _isStarting
+                                ? 'Listening for debug logs...'
+                                : 'No logs yet. Try rescanning.',
+                            style: textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
                             ),
-                          );
-                        },
-                      ),
+                          ),
+                        )
+                      : ListView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.all(12),
+                          itemCount: _logs.length,
+                          itemBuilder: (context, index) {
+                            final line = _logs[index];
+                            return Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 4.0),
+                              child: SelectableText(
+                                line,
+                                style: textTheme.bodySmall?.copyWith(
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
               ),
             ),
           ],
