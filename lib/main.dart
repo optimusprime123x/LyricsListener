@@ -495,7 +495,7 @@ class _DebugScreenState extends State<DebugScreen> {
                           child: Text(
                             _isStarting
                                 ? 'Listening for debug logs...'
-                                : 'No logs yet. Try starting the stream.',
+                                : 'No logs yet. Start the stream.',
                             style: textTheme.bodyMedium?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
