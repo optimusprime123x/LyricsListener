@@ -333,6 +333,7 @@ class _DebugScreenState extends State<DebugScreen> {
   StreamSubscription<dynamic>? _logSubscription;
   String? _errorMessage;
   bool _isStarting = true;
+  bool _isStreaming = false;
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -348,11 +349,22 @@ class _DebugScreenState extends State<DebugScreen> {
     super.dispose();
   }
 
+  Future<void> _stopDebugSession() async {
+    await _logSubscription?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _logSubscription = null;
+      _isStreaming = false;
+      _isStarting = false;
+    });
+  }
+
   Future<void> _startDebugSession() async {
     setState(() {
       _logs.clear();
       _errorMessage = null;
       _isStarting = true;
+      _isStreaming = true;
     });
 
     await _logSubscription?.cancel();
@@ -383,11 +395,13 @@ class _DebugScreenState extends State<DebugScreen> {
       if (!mounted) return;
       setState(() {
         _errorMessage = 'Debug channel not available: ${e.message ?? e.toString()}';
+        _isStreaming = false;
       });
     } on PlatformException catch (e) {
       if (!mounted) return;
       setState(() {
         _errorMessage = e.message ?? e.code;
+        _isStreaming = false;
       });
     } finally {
       if (mounted) {
@@ -436,7 +450,18 @@ class _DebugScreenState extends State<DebugScreen> {
                 ElevatedButton.icon(
                   onPressed: _isStarting ? null : _startDebugSession,
                   icon: const Icon(Icons.bug_report_outlined),
-                  label: Text(_isStarting ? 'Starting...' : 'Rescan now'),
+                  label: Text(_isStarting
+                      ? 'Starting...'
+                      : _isStreaming
+                          ? 'Rescan & start'
+                          : 'Start log stream'),
+                ),
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  onPressed:
+                      _isStarting || !_isStreaming ? null : _stopDebugSession,
+                  icon: const Icon(Icons.stop_circle_outlined),
+                  label: const Text('Stop stream'),
                 ),
                 const SizedBox(width: 12),
                 if (_isStarting)
@@ -470,29 +495,21 @@ class _DebugScreenState extends State<DebugScreen> {
                           child: Text(
                             _isStarting
                                 ? 'Listening for debug logs...'
-                                : 'No logs yet. Try rescanning.',
+                                : 'No logs yet. Try starting the stream.',
                             style: textTheme.bodyMedium?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
                           ),
                         )
-                      : ListView.builder(
+                      : SingleChildScrollView(
                           controller: _scrollController,
                           padding: const EdgeInsets.all(12),
-                          itemCount: _logs.length,
-                          itemBuilder: (context, index) {
-                            final line = _logs[index];
-                            return Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 4.0),
-                              child: SelectableText(
-                                line,
-                                style: textTheme.bodySmall?.copyWith(
-                                  fontFamily: 'monospace',
-                                ),
-                              ),
-                            );
-                          },
+                          child: SelectableText(
+                            _logs.join('\n'),
+                            style: textTheme.bodySmall?.copyWith(
+                              fontFamily: 'monospace',
+                            ),
+                          ),
                         ),
                 ),
               ),
