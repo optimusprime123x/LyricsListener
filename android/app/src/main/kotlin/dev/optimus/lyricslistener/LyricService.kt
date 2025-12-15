@@ -1629,11 +1629,28 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     private fun updateLyricsWindowColors() {
         if (lyricsView == null) return
 
-        val prefs = getSharedPreferences("LyricServicePrefs", Context.MODE_PRIVATE)
+        val prefs = applicationContext.getSharedPreferences(FLUTTER_SHARED_PREFERENCES, Context.MODE_PRIVATE)
         val dynamicColoursEnabled = prefs.getBoolean(PREF_DYNAMIC_LYRICS_WINDOW_COLORS, true)
 
         if (!dynamicColoursEnabled) {
             Log.d(TAG, "Dynamic colours disabled, skipping color update")
+            // Apply the stored static colors when dynamic colors are disabled
+            val storedBackgroundColor = getStoredColorPreference(
+                prefs,
+                PREF_LYRICS_WINDOW_BACKGROUND_COLOR,
+                DEFAULT_STATIC_BACKGROUND_COLOR
+            )
+            val storedTitleColor = getStoredColorPreference(
+                prefs,
+                PREF_LYRICS_WINDOW_TITLE_COLOR,
+                DEFAULT_STATIC_TITLE_COLOR
+            )
+            val storedHighlightColor = getStoredColorPreference(
+                prefs,
+                PREF_LYRICS_WINDOW_HIGHLIGHT_COLOR,
+                DEFAULT_STATIC_HIGHLIGHT_COLOR
+            )
+            applyThemeToOverlayElements(storedBackgroundColor, storedTitleColor, Color.WHITE, storedHighlightColor)
             return
         }
 
@@ -2277,8 +2294,18 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     }
 
     override fun onDestroy() {
+        // Capture restart decision state FIRST, before any cleanup
         val wasManuallyStarted = isServiceManuallyStarted.get()
         Log.i(TAG, "Service onDestroy(). Instance: ${this.hashCode()}. isServiceManuallyStarted: $wasManuallyStarted. Current token: $currentMediaSessionToken. ServiceJob Active: ${serviceJob.isActive}")
+        
+        // Schedule restart BEFORE cleanup and super.onDestroy() to ensure reliable restart
+        // on all Android builds, including OEM-modified ones that may clear state early
+        if (wasManuallyStarted) {
+            Log.i(TAG, "onDestroy: Service was manually started, scheduling restart before cleanup.")
+            scheduleServiceRestart("Service destroyed while marked as manually started")
+        }
+        
+        // Now proceed with cleanup
         isServiceManuallyStarted.set(false)
 
         if (serviceJob.isActive) { // Check if active before cancelling
@@ -2298,10 +2325,6 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         cancelListenerHealthChecks("onDestroy")
         Log.i(TAG, "Service fully destroyed. Instance: ${this.hashCode()}")
         super.onDestroy()
-
-        if (wasManuallyStarted) {
-            scheduleServiceRestart("Service destroyed while marked as manually started")
-        }
     }
 
     private inner class ViewMover : View.OnTouchListener {
