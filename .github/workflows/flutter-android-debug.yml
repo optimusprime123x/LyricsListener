@@ -5,6 +5,9 @@ on:
     branches: ["**"]
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -53,5 +56,26 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
+          name: app-debug.apk
           path: build/app/outputs/flutter-apk/app-debug.apk
+
+      - name: Prepare release metadata
+        id: release_meta
+        if: github.event_name == 'push'
+        run: |
+          message_lower="$(jq -r '.head_commit.message // ""' "$GITHUB_EVENT_PATH" | tr '[:upper:]' '[:lower:]')"
+          if [[ "$message_lower" =~ (^|[^[:alnum:]_])(release|stable)($|[^[:alnum:]_]) ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "release_timestamp=$(date -u +'%Y%m%d%H%M%S')" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        if: github.event_name == 'push' && steps.release_meta.outputs.should_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: app-debug-${{ steps.release_meta.outputs.release_timestamp }}
+          name: Debug APK ${{ steps.release_meta.outputs.release_timestamp }}
+          target_commitish: ${{ github.sha }}
+          files: build/app/outputs/flutter-apk/app-debug.apk
