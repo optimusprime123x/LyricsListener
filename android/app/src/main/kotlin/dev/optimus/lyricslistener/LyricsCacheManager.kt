@@ -364,15 +364,8 @@ class LyricsCacheManager(context: Context) {
             it.isFile && it.name.endsWith(".json") && it.name != "metadata.json"
         } ?: return
 
-        val filesWithAccessTime = files.mapNotNull { file ->
-            try {
-                val json = JSONObject(file.readText())
-                val lastAccessed = json.optLong("lastAccessed", 0L)
-                Pair(file, lastAccessed)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error reading file ${file.name}", e)
-                null
-            }
+        val filesWithAccessTime = files.map { file ->
+            Pair(file, file.lastModified())
         }.sortedBy { it.second } // Sort by access time (oldest first)
 
         // Delete oldest files until we're under the limit
