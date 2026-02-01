@@ -341,11 +341,9 @@ class LyricsCacheManager(context: Context) {
     private fun updateAccessTime(cacheKey: String) {
         try {
             val cacheFile = File(cacheDir, "$cacheKey.json")
-            if (!cacheFile.exists()) return
-
-            val json = JSONObject(cacheFile.readText())
-            json.put("lastAccessed", System.currentTimeMillis())
-            cacheFile.writeText(json.toString())
+            if (cacheFile.exists()) {
+                cacheFile.setLastModified(System.currentTimeMillis())
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error updating access time", e)
         }
