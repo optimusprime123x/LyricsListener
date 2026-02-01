@@ -364,6 +364,10 @@ class LyricsCacheManager(context: Context) {
             it.isFile && it.name.endsWith(".json") && it.name != "metadata.json"
         } ?: return
 
+        // Note: We intentionally rely on File.lastModified() here. For problematic or
+        // unreadable files it will typically return 0L, which makes them appear as the
+        // "oldest" entries and therefore they are evicted first. This replaces the older
+        // implementation that used mapNotNull with explicit exception handling.
         val filesWithAccessTime = files.map { file ->
             Pair(file, file.lastModified())
         }.sortedBy { it.second } // Sort by access time (oldest first)
