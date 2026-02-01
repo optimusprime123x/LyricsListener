@@ -23,6 +23,10 @@
       # Runs when a workspace is first created with this `dev.nix` file
       onCreate = { };
       # To run something each time the workspace is (re)started, use the `onStart` hook
+      onStart = {
+        start-server = "python3 -m http.server 8000 &";
+        start-tunnel = "./cloudflared tunnel --url http://localhost:8000 2>&1 | tee cloudflared.log";
+      };
     };
     # Enable previews and customize configuration
     previews = {
