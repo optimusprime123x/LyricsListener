@@ -52,7 +52,7 @@ void main() {
     await tester.pump(); // Start _startDebugSession
     await tester.pump(const Duration(milliseconds: 100)); // Allow async completions
 
-    // It should be streaming now.
+    // The EventChannel subscription should be active now (UI no longer in "starting" state).
     // Verify we are not in starting state
     expect(find.text('Starting...'), findsNothing);
 
