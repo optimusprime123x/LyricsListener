@@ -325,14 +325,15 @@ class LyricService : NotificationListenerService() {
                 startForeground(NOTIFICATION_ID, createPersistentNotification("Service starting..."))
                 _listenerEverConnected = false
                 _isAttemptingConnection = false
+                lastListenerRebindAttempt.set(0L)
                 clearSongContextAndHideLyrics()
-                requestNotificationListenerRebind("User initiated start")
+                requestNotificationListenerRebind("User initiated start", force = true)
                 if(musixmatchUserToken == null) initializeMusixmatchToken()
                 tryToConnectToActiveMediaSessions(delayMs = 0L)
             }
             ACTION_SHOW_LYRICS -> {
                 Log.d(TAG, "ACTION_SHOW_LYRICS received.")
-                startForeground(NOTIFICATION_ID, createPersistentNotification("Lyric Service Active"))
+                startForeground(NOTIFICATION_ID, createPersistentNotification(buildStatusNotificationText()))
                 val dataToShow = currentLyricsData ?: LyricsData.Info(
                     lastDetectedSongTitle, lastDetectedSongArtist,
                     if (lastDetectedSongTitle != null) "Loading lyrics..." else if (_listenerEverConnected) "Waiting for song..." else "Connecting listener...",
@@ -350,6 +351,7 @@ class LyricService : NotificationListenerService() {
             ACTION_HIDE_LYRICS -> {
                 Log.d(TAG, "ACTION_HIDE_LYRICS received.")
                 hideLyricsWindow()
+                updatePersistentNotification(buildStatusNotificationText())
             }
             ACTION_DEBUG_ACTIVE_NOTIFICATION -> {
                 Log.i(TAG, "ACTION_DEBUG_ACTIVE_NOTIFICATION received. Running active media scan for debug.")
@@ -583,7 +585,10 @@ class LyricService : NotificationListenerService() {
 
         if (activeNotificationsInternal.isEmpty()) {
             Log.d(TAG, "No active media notifications found (list is empty).")
-            updatePersistentNotification(if (_listenerEverConnected) "Waiting for song..." else "Listener connected, waiting for media app...")
+            if (!_listenerEverConnected) {
+                requestNotificationListenerRebind("activeNotifications empty while listener never connected")
+            }
+            updatePersistentNotification(buildStatusNotificationText())
 
             if (currentMediaSessionToken != null) {
                 Log.d(TAG, "executeFindActiveMediaSessions: activeNotifications empty, clearing existing song context for token $currentMediaSessionToken.")
@@ -626,7 +631,7 @@ class LyricService : NotificationListenerService() {
             _onNotificationPosted(sbn, "From executeFindActiveMediaSessions")
         } ?: run {
             Log.d(TAG, "No suitable media notifications found to process.")
-            updatePersistentNotification(if (_listenerEverConnected) "Waiting for song..." else "Listener connected, waiting for media app...")
+            updatePersistentNotification(buildStatusNotificationText())
 
             if (currentMediaSessionToken != null) {
                 clearSongContextAndHideLyrics()
@@ -954,7 +959,7 @@ class LyricService : NotificationListenerService() {
         this.currentMediaSessionToken = null
         this.currentPlaybackState = null
         if(isServiceManuallyStarted.get()){
-            updatePersistentNotification(if (_listenerEverConnected) "Waiting for song..." else "Listener connected, waiting for media app...")
+            updatePersistentNotification(buildStatusNotificationText())
         }
         hideLyricsWindow()
         Log.i(TAG, "Song context cleared. currentMediaSessionToken is now null. Last active token was $tokenThatWasActive.")
@@ -1919,6 +1924,10 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         } else {
             Log.d(TAG, "hideLyricsWindow: lyricsView or windowManager was already null. No action needed.")
         }
+
+        if (isServiceManuallyStarted.get()) {
+            updatePersistentNotification(buildStatusNotificationText())
+        }
     }
 
     private fun loadSavedWindowPosition(): Pair<Int, Int>? {
@@ -2149,6 +2158,25 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         }
         Log.d(TAG, "Updating persistent notification: $text")
         notificationManager.notify(NOTIFICATION_ID, createPersistentNotification(text))
+    }
+
+    private fun buildStatusNotificationText(): String {
+        if (!hasNotificationAccess()) {
+            return "Notification access missing. Tap to fix."
+        }
+
+        if (!_listenerEverConnected) {
+            return "Waiting for notification listener..."
+        }
+
+        val title = lastDetectedSongTitle
+        val artist = lastDetectedSongArtist
+        return if (title.isNullOrBlank()) {
+            "Waiting for song..."
+        } else {
+            val songInfoForDisplay = artist?.takeIf { it.isNotBlank() }?.let { "$title by $it" } ?: title
+            "Lyrics for: $songInfoForDisplay"
+        }
     }
 
     private fun scheduleListenerHealthCheck(delayMs: Long, reason: String, preferSooner: Boolean = false) {
