@@ -501,15 +501,18 @@ class _DebugScreenState extends State<DebugScreen> {
                             ),
                           ),
                         )
-                      : SingleChildScrollView(
+                      : ListView.builder(
                           controller: _scrollController,
                           padding: const EdgeInsets.all(12),
-                          child: SelectableText(
-                            _logs.join('\n'),
-                            style: textTheme.bodySmall?.copyWith(
-                              fontFamily: 'monospace',
-                            ),
-                          ),
+                          itemCount: _logs.length,
+                          itemBuilder: (context, index) {
+                            return Text(
+                              _logs[index],
+                              style: textTheme.bodySmall?.copyWith(
+                                fontFamily: 'monospace',
+                              ),
+                            );
+                          },
                         ),
                 ),
               ),
