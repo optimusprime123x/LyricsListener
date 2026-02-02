@@ -620,6 +620,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     Color(0xFF416FDF),
     Color(0xFF556614),
   ];
+  static const double _seedColorChipSize = 44;
+  static const double _seedColorChipRadius = 22;
 
   static const List<Color> _lyricsWindowBackgroundOptions = [
     Color(0xDD1a1a2e),
@@ -1533,9 +1535,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ],
           ),
           const SizedBox(height: 12),
-          const double seedColorChipSize = 44;
-          const double seedColorChipRadius = seedColorChipSize / 2;
-
           Wrap(
             spacing: 16.0,
             runSpacing: 12.0,
@@ -1543,20 +1542,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 _predefinedSeedColors.map((color) {
                   final isSelected = widget.seedColor == color;
                   return InkWell(
-                    borderRadius: BorderRadius.circular(seedColorChipRadius),
+                    borderRadius: BorderRadius.circular(_seedColorChipRadius),
                     onTap: () => widget.onSeedColorChanged(color),
                     child: Tooltip(
                       message:
                           'Set theme color to #${color.value.toRadixString(16).substring(2).toUpperCase()}',
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
-                        width: seedColorChipSize,
-                        height: seedColorChipSize,
+                        width: _seedColorChipSize,
+                        height: _seedColorChipSize,
                         decoration: BoxDecoration(
                           color: color,
-                          borderRadius: BorderRadius.circular(
-                            seedColorChipRadius,
-                          ),
+                          shape: BoxShape.circle,
                           border: Border.all(
                             color: Theme.of(context).colorScheme.outlineVariant,
                             width: isSelected ? 2.5 : 1.5,
