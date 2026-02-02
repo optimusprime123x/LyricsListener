@@ -618,8 +618,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   bool _isServiceActionInProgress = false;
   bool _supportCardVisible = false;
   bool _welcomeVisible = false;
-  int _cacheManagementTapCount = 0;
-  Timer? _cacheManagementResetTimer;
+  int _debugTriggerTapCount = 0;
+  Timer? _debugTriggerResetTimer;
   expressive_refresh.RefreshIndicatorStatus? _refreshStatus;
 
   bool _rememberLyricsWindowPosition = false;
@@ -882,7 +882,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     print("MainScreen dispose: Called");
-    _cacheManagementResetTimer?.cancel();
+    _debugTriggerResetTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -1196,20 +1196,20 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _onCacheManagementTapped() {
-    _cacheManagementResetTimer?.cancel();
-    _cacheManagementResetTimer = Timer(const Duration(seconds: 3), () {
+  void _onDebugTriggerTapped() {
+    _debugTriggerResetTimer?.cancel();
+    _debugTriggerResetTimer = Timer(const Duration(seconds: 3), () {
       if (mounted) {
         setState(() {
-          _cacheManagementTapCount = 0;
+          _debugTriggerTapCount = 0;
         });
       }
     });
 
     setState(() {
-      _cacheManagementTapCount++;
-      if (_cacheManagementTapCount >= 7) {
-        _cacheManagementTapCount = 0;
+      _debugTriggerTapCount++;
+      if (_debugTriggerTapCount >= 7) {
+        _debugTriggerTapCount = 0;
         Navigator.of(
           context,
         ).push(MaterialPageRoute(builder: (_) => const DebugScreen()));
@@ -2373,7 +2373,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               Icon(Icons.lyrics_rounded, color: colorScheme.primary),
               const SizedBox(width: 12),
             ],
-            Text(appBarTitle),
+            GestureDetector(
+              onTap: _selectedIndex == 1 ? _onDebugTriggerTapped : null,
+              child: Text(appBarTitle),
+            ),
           ],
         ),
         actions: [
