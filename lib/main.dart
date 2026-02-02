@@ -1,11 +1,15 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 
+import 'package:expressive_refresh/expressive_refresh.dart'
+    as expressive_refresh;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:material_new_shapes/material_new_shapes.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -103,6 +107,7 @@ class _MyAppState extends State<MyApp> {
       textTheme: lightTextTheme,
       cardTheme: CardThemeData(
         elevation: 1,
+        shadowColor: baseLightColorScheme.primary.withValues(alpha: 0.16),
         margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(28),
@@ -217,6 +222,7 @@ class _MyAppState extends State<MyApp> {
       textTheme: darkTextTheme,
       cardTheme: CardThemeData(
         elevation: 1,
+        shadowColor: baseDarkColorScheme.primary.withValues(alpha: 0.24),
         margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(28),
@@ -605,8 +611,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _isServiceActionInProgress = false;
   bool _supportCardVisible = false;
   bool _welcomeVisible = false;
+  bool _statusHeaderVisible = false;
   int _cacheManagementTapCount = 0;
   Timer? _cacheManagementResetTimer;
+  expressive_refresh.RefreshIndicatorStatus? _refreshStatus;
 
   bool _rememberLyricsWindowPosition = false;
   bool _dynamicLyricsWindowColors = true;
@@ -741,6 +749,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     Color(0x4DCDDC39),
     Color(0x4DFFEB3B),
   ];
+  static const double _statusBadgeWidth = 176;
+  static const double _statusBadgeHeight = 64;
+  static final List<RoundedPolygon> _refreshPolygons = [
+    MaterialShapes.circle,
+    MaterialShapes.softBurst,
+    MaterialShapes.gem,
+    MaterialShapes.flower,
+  ];
 
   @override
   void initState() {
@@ -753,6 +769,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() {
         _supportCardVisible = true;
         _welcomeVisible = true;
+        _statusHeaderVisible = true;
       });
     });
   }
@@ -1273,41 +1290,62 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       elevation: 0,
       color: colorScheme.secondaryContainer,
       margin: const EdgeInsets.only(bottom: 16.0),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Support Lyric Listener!',
-              style: textTheme.titleLarge?.copyWith(
-                color: colorScheme.onSecondaryContainer,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'If you like this app, please consider supporting my work! Every little bit helps me continue to work on this, and keep it ad-free ♥',
-              style: textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSecondaryContainer,
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.tonalIcon(
-                icon: const Icon(Icons.favorite_rounded),
-                label: const Text('Support Me'),
-                onPressed: _launchDonateUrl,
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  textStyle: textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 40, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Support Lyric Listener!',
+                  style: textTheme.titleLarge?.copyWith(
+                    color: colorScheme.onSecondaryContainer,
                   ),
                 ),
+                const SizedBox(height: 8),
+                Text(
+                  'If you like this app, please consider supporting my work! Every little bit helps me continue to work on this, and keep it ad-free ♥',
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSecondaryContainer,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    icon: const Icon(Icons.favorite_rounded),
+                    label: const Text('Support Me'),
+                    onPressed: _launchDonateUrl,
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      textStyle: textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            top: -28,
+            left: 0,
+            right: 0,
+            child: AnimatedSlide(
+              offset: _statusHeaderVisible ? Offset.zero : const Offset(0, -0.25),
+              duration: const Duration(milliseconds: 650),
+              curve: expressiveSpringCurve,
+              child: AnimatedOpacity(
+                opacity: _statusHeaderVisible ? 1 : 0,
+                duration: const Duration(milliseconds: 450),
+                curve: expressiveStandardCurve,
+                child: Center(child: _buildServiceStatusBadge(context)),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1318,11 +1356,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     return Column(
       children: [
-        Icon(Icons.music_note_rounded, size: 64, color: colorScheme.primary),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: colorScheme.primaryContainer,
+            borderRadius: BorderRadius.circular(32),
+            boxShadow: [
+              BoxShadow(
+                color: colorScheme.primary.withValues(alpha: 0.25),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Icon(
+            Icons.music_note_rounded,
+            size: 52,
+            color: colorScheme.onPrimaryContainer,
+          ),
+        ),
         const SizedBox(height: 16),
         Text(
           'Welcome to Lyric Listener!',
-          style: textTheme.headlineSmall?.copyWith(color: colorScheme.primary),
+          style: textTheme.headlineSmall?.copyWith(
+            color: colorScheme.primary,
+            fontWeight: FontWeight.w700,
+            fontVariations: const [
+              FontVariation('wght', 760),
+              FontVariation('wdth', 110),
+            ],
+          ),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 8),
@@ -1371,7 +1434,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       padding: const EdgeInsets.fromLTRB(8, 24, 8, 12),
       child: Text(
         title,
-        style: textTheme.titleLarge?.copyWith(color: colorScheme.primary),
+        style: textTheme.titleLarge?.copyWith(
+          color: colorScheme.primary,
+          fontWeight: FontWeight.w700,
+          fontVariations: const [
+            FontVariation('wght', 700),
+            FontVariation('wdth', 108),
+          ],
+        ),
         textAlign: TextAlign.center,
       ),
     );
@@ -1508,7 +1578,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Container(
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 600),
+                      curve: expressiveSpringCurve,
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
@@ -1518,6 +1590,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           color: colorScheme.outlineVariant,
                           width: 1.5,
                         ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: colorScheme.primary.withValues(alpha: 0.18),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -1912,6 +1991,95 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  Widget _buildServiceStatusBadge(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final isActive = _isServiceRunning;
+    final status = _refreshStatus;
+    final isDragging =
+        status == expressive_refresh.RefreshIndicatorStatus.drag ||
+        status == expressive_refresh.RefreshIndicatorStatus.armed;
+    final isRefreshing =
+        status == expressive_refresh.RefreshIndicatorStatus.refresh ||
+        status == expressive_refresh.RefreshIndicatorStatus.snap;
+    final scale = isRefreshing ? 1.06 : (isDragging ? 1.02 : 1.0);
+    final shadowElevation = isRefreshing ? 14.0 : 9.0;
+    final badgeColor =
+        isActive ? colorScheme.primary : colorScheme.surfaceContainerHighest;
+    final onBadgeColor =
+        isActive ? colorScheme.onPrimary : colorScheme.onSurfaceVariant;
+    final headline = isActive ? 'Active' : 'Not active';
+    final subtitle =
+        isActive
+            ? 'Enjoy synced lyrics :)'
+            : 'Launch service below to enjoy synced lyrics!';
+
+    return SizedBox(
+      width: _statusBadgeWidth,
+      height: _statusBadgeHeight,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          AnimatedScale(
+            scale: scale,
+            duration: const Duration(milliseconds: 600),
+            curve: expressiveSpringCurve,
+            child: CustomPaint(
+              size: const Size(_statusBadgeWidth, _statusBadgeHeight),
+              painter: _PolygonBadgePainter(
+                polygon: MaterialShapes.pill,
+                fillColor: badgeColor,
+                strokeColor: colorScheme.primary.withValues(
+                  alpha: isActive ? 0.3 : 0.2,
+                ),
+                shadowColor: colorScheme.primary.withValues(
+                  alpha: isActive ? 0.35 : 0.2,
+                ),
+                shadowElevation: shadowElevation,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.center,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    headline,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.titleSmall?.copyWith(
+                      color: onBadgeColor,
+                      fontWeight: FontWeight.w700,
+                      fontVariations: const [
+                        FontVariation('wght', 720),
+                        FontVariation('wdth', 110),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.labelSmall?.copyWith(
+                      color: onBadgeColor.withValues(alpha: 0.85),
+                      fontWeight: FontWeight.w500,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     print(
@@ -1937,17 +2105,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
       );
     } else {
-      screenContent = RefreshIndicator(
+      screenContent = expressive_refresh.ExpressiveRefreshIndicator.contained(
         onRefresh: _loadInitialData,
+        onStatusChange: (status) {
+          if (!mounted || _refreshStatus == status) return;
+          setState(() {
+            _refreshStatus = status;
+          });
+        },
+        color: colorScheme.primary,
+        backgroundColor: colorScheme.surfaceContainerHighest,
+        polygons: _refreshPolygons,
+        indicatorConstraints: const BoxConstraints(
+          minWidth: 56,
+          minHeight: 56,
+          maxWidth: 56,
+          maxHeight: 56,
+        ),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+          padding: const EdgeInsets.fromLTRB(16.0, 36.0, 16.0, 12.0),
           children: <Widget>[
             AnimatedOpacity(
               opacity: _supportCardVisible ? 1.0 : 0.0,
-              duration: const Duration(milliseconds: 600),
+              duration: const Duration(milliseconds: 700),
               curve: expressiveStandardCurve,
               child: _buildSupportCard(),
             ),
@@ -2200,5 +2383,64 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
       body: SafeArea(child: Center(child: screenContent)),
     );
+  }
+}
+
+class _PolygonBadgePainter extends CustomPainter {
+  _PolygonBadgePainter({
+    required this.polygon,
+    required this.fillColor,
+    required this.strokeColor,
+    required this.shadowColor,
+    required this.shadowElevation,
+  });
+
+  final RoundedPolygon polygon;
+  final Color fillColor;
+  final Color strokeColor;
+  final Color shadowColor;
+  final double shadowElevation;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bounds = polygon.calculateBounds();
+    final width = bounds[2] - bounds[0];
+    final height = bounds[3] - bounds[1];
+    final scale = size.height / height;
+    final translatedPath =
+        polygon.toPath().shift(Offset(-bounds[0], -bounds[1]));
+    final scaledPath = translatedPath.transform(
+      Matrix4.diagonal3Values(scale, scale, 1).storage,
+    );
+    final scaledBounds = scaledPath.getBounds();
+    final centeredPath = scaledPath.shift(
+      Offset(
+        (size.width - scaledBounds.width) / 2 - scaledBounds.left,
+        (size.height - scaledBounds.height) / 2 - scaledBounds.top,
+      ),
+    );
+
+    final paint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = fillColor
+      ..isAntiAlias = true;
+    canvas.drawShadow(centeredPath, shadowColor, shadowElevation, true);
+    canvas.drawPath(centeredPath, paint);
+
+    final strokePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..color = strokeColor
+      ..isAntiAlias = true;
+    canvas.drawPath(centeredPath, strokePaint);
+  }
+
+  @override
+  bool shouldRepaint(_PolygonBadgePainter oldDelegate) {
+    return oldDelegate.polygon != polygon ||
+        oldDelegate.fillColor != fillColor ||
+        oldDelegate.strokeColor != strokeColor ||
+        oldDelegate.shadowColor != shadowColor ||
+        oldDelegate.shadowElevation != shadowElevation;
   }
 }

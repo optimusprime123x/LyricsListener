@@ -94,6 +94,16 @@ void main() {
     expect(find.byIcon(Icons.light_mode_rounded), findsOneWidget);
   });
 
+  testWidgets('Service status badge shows inactive state', (WidgetTester tester) async {
+    registerMock(tester);
+    const initialSeedColor = Color(0xFF6750A4);
+    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Not active'), findsOneWidget);
+    expect(find.text('Launch service below to enjoy synced lyrics!'), findsOneWidget);
+  });
+
   testWidgets('Expressive theme shapes are applied', (WidgetTester tester) async {
     registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
