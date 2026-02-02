@@ -483,24 +483,21 @@ class ExpressiveRefreshIndicatorState extends State<ExpressiveRefreshIndicator>
                         if (widget.subtitleText != null) ...[
                           const SizedBox(height: 12),
                           AnimatedOpacity(
-                            duration: const Duration(milliseconds: 300),
+                            duration: Duration.zero,
                             opacity: (_status == RefreshIndicatorStatus.drag ||
                                     _status == RefreshIndicatorStatus.armed ||
                                     _status == RefreshIndicatorStatus.refresh ||
                                     _status == RefreshIndicatorStatus.snap)
                                 ? 1.0
                                 : 0.0,
-                            child: FractionalTranslation(
-                              translation: Offset(0.0, 1.0 - _positionFactor.value),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 24),
-                                child: Text(
-                                  widget.subtitleText!,
-                                  textAlign: TextAlign.center,
-                                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 24),
+                              child: Text(
+                                widget.subtitleText!,
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
                             ),
@@ -816,33 +813,27 @@ class _ExpressiveLoadingIndicatorImplState extends State<_ExpressiveLoadingIndic
                   children: [
                     Transform.rotate(
                       angle: totalRotationRadians,
-                      child: FractionalTranslation(
-                        translation: Offset(0.0, 1.0 - widget.positionFactor.value),
-                        child: CustomPaint(
-                          painter: _MorphPainter(
-                            morph: _morphSequence[_currentMorphIndex],
-                            progress: morphProgress,
-                            color: widget.color,
-                            scaleFactor: shapesScaleFactor,
-                            // Add key to prevent flickering
-                            morphIndex: _currentMorphIndex,
-                          ),
-                          child: const SizedBox.expand(),
+                      child: CustomPaint(
+                        painter: _MorphPainter(
+                          morph: _morphSequence[_currentMorphIndex],
+                          progress: morphProgress,
+                          color: widget.color,
+                          scaleFactor: shapesScaleFactor,
+                          // Add key to prevent flickering
+                          morphIndex: _currentMorphIndex,
                         ),
+                        child: const SizedBox.expand(),
                       ),
                     ),
                     if (widget.statusText != null)
-                      FractionalTranslation(
-                        translation: Offset(0.0, 1.0 - widget.positionFactor.value),
-                        child: Text(
-                          widget.statusText!,
-                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: ThemeData.estimateBrightnessForColor(widget.color) == Brightness.dark
-                                ? Colors.white
-                                : Colors.black,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 9,
-                          ),
+                      Text(
+                        widget.statusText!,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: ThemeData.estimateBrightnessForColor(widget.color) == Brightness.dark
+                              ? Colors.white
+                              : Colors.black,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 9,
                         ),
                       ),
                   ],
@@ -931,31 +922,25 @@ class _DragExpressiveIndicator extends StatelessWidget {
                   children: [
                     Transform.rotate(
                       angle: rotation,
-                      child: FractionalTranslation(
-                        translation: Offset(0.0, 1.0 - positionFactor.value),
-                        child: CustomPaint(
-                          painter: _MorphPainter(
-                            morph: morphSequence[activeMorphIndex],
-                            progress: adjustedProgress,
-                            color: color,
-                            scaleFactor: 0.8, // Scale factor for drag state
-                          ),
-                          child: const SizedBox.expand(),
+                      child: CustomPaint(
+                        painter: _MorphPainter(
+                          morph: morphSequence[activeMorphIndex],
+                          progress: adjustedProgress,
+                          color: color,
+                          scaleFactor: 0.8, // Scale factor for drag state
                         ),
+                        child: const SizedBox.expand(),
                       ),
                     ),
                     if (statusText != null)
-                      FractionalTranslation(
-                        translation: Offset(0.0, 1.0 - positionFactor.value),
-                        child: Text(
-                          statusText!,
-                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: ThemeData.estimateBrightnessForColor(color) == Brightness.dark
-                                ? Colors.white
-                                : Colors.black,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 9,
-                          ),
+                      Text(
+                        statusText!,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+                              ? Colors.white
+                              : Colors.black,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 9,
                         ),
                       ),
                   ],
@@ -1214,36 +1199,30 @@ class _ContainedExpressiveLoadingIndicatorState extends State<_ContainedExpressi
                   return Stack(
                     alignment: Alignment.center,
                     children: [
-                      Transform.rotate(
-                        angle: totalRotationRadians,
-                        child: FractionalTranslation(
-                          translation: Offset(0.0, 1.0 - widget.positionFactor.value),
-                          child: CustomPaint(
-                            painter: _MorphPainter(
-                              morph: _morphSequence[_currentMorphIndex],
-                              progress: morphProgress,
-                              color: widget.color,
-                              scaleFactor: shapesScaleFactor,
-                              morphIndex: _currentMorphIndex,
-                            ),
-                            child: const SizedBox.expand(),
-                          ),
+                    Transform.rotate(
+                      angle: totalRotationRadians,
+                      child: CustomPaint(
+                        painter: _MorphPainter(
+                          morph: _morphSequence[_currentMorphIndex],
+                          progress: morphProgress,
+                          color: widget.color,
+                          scaleFactor: shapesScaleFactor,
+                          morphIndex: _currentMorphIndex,
+                        ),
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
+                    if (widget.statusText != null)
+                      Text(
+                        widget.statusText!,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: ThemeData.estimateBrightnessForColor(widget.color) == Brightness.dark
+                              ? Colors.white
+                              : Colors.black,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 9,
                         ),
                       ),
-                      if (widget.statusText != null)
-                        FractionalTranslation(
-                          translation: Offset(0.0, 1.0 - widget.positionFactor.value),
-                          child: Text(
-                            widget.statusText!,
-                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: ThemeData.estimateBrightnessForColor(widget.color) == Brightness.dark
-                                  ? Colors.white
-                                  : Colors.black,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 9,
-                            ),
-                          ),
-                        ),
                     ],
                   );
                 },
@@ -1332,36 +1311,30 @@ class _ContainedDragExpressiveIndicator extends StatelessWidget {
                   return Stack(
                     alignment: Alignment.center,
                     children: [
-                      Transform.rotate(
-                        angle: rotation,
-                        child: FractionalTranslation(
-                          translation: Offset(0.0, 1.0 - positionFactor.value),
-                          child: CustomPaint(
-                            painter: _MorphPainter(
-                              morph: morphSequence[activeMorphIndex],
-                              progress: adjustedProgress.clamp(0.0, 1.0),
-                              color: color,
-                              scaleFactor: 0.8,
-                              morphIndex: activeMorphIndex,
-                            ),
-                            child: const SizedBox.expand(),
-                          ),
+                    Transform.rotate(
+                      angle: rotation,
+                      child: CustomPaint(
+                        painter: _MorphPainter(
+                          morph: morphSequence[activeMorphIndex],
+                          progress: adjustedProgress.clamp(0.0, 1.0),
+                          color: color,
+                          scaleFactor: 0.8,
+                          morphIndex: activeMorphIndex,
+                        ),
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
+                    if (statusText != null)
+                      Text(
+                        statusText!,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+                              ? Colors.white
+                              : Colors.black,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 9,
                         ),
                       ),
-                      if (statusText != null)
-                        FractionalTranslation(
-                          translation: Offset(0.0, 1.0 - positionFactor.value),
-                          child: Text(
-                            statusText!,
-                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: ThemeData.estimateBrightnessForColor(color) == Brightness.dark
-                                  ? Colors.white
-                                  : Colors.black,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 9,
-                            ),
-                          ),
-                        ),
                     ],
                   );
                 }

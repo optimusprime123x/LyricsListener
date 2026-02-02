@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lyricslistener/main.dart';
+import 'package:lyricslistener/widgets/expressive_refresh_indicator.dart'
+    as expressive_refresh;
 
 void main() {
   const MethodChannel channel = MethodChannel('dev.optimus.lyricslistener/permissions');
@@ -173,5 +177,48 @@ void main() {
 
     // Check for FAQ items.
     expect(find.textContaining('Lyrics popup is not shown'), findsOneWidget);
+  });
+
+  testWidgets('Refresh subtitle appears immediately', (WidgetTester tester) async {
+    final refreshKey = GlobalKey<expressive_refresh.ExpressiveRefreshIndicatorState>();
+    final completer = Completer<void>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: expressive_refresh.ExpressiveRefreshIndicator.contained(
+          key: refreshKey,
+          onRefresh: () => completer.future,
+          statusText: 'Inactive',
+          subtitleText: 'Launch service below to enjoy synced lyrics!',
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: const [SizedBox(height: 400)],
+          ),
+        ),
+      ),
+    );
+
+    refreshKey.currentState!.show();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    final subtitleFinder = find.text('Launch service below to enjoy synced lyrics!');
+    expect(subtitleFinder, findsOneWidget);
+
+    final opacityWidget = tester.widget<AnimatedOpacity>(
+      find.ancestor(of: subtitleFinder, matching: find.byType(AnimatedOpacity)),
+    );
+    expect(opacityWidget.duration, Duration.zero);
+
+    expect(
+      find.descendant(
+        of: find.byType(expressive_refresh.ExpressiveRefreshIndicator),
+        matching: find.byType(FractionalTranslation),
+      ),
+      findsNothing,
+    );
+
+    completer.complete();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 }
