@@ -1304,7 +1304,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                  if (actualCurrentData != null && actualCurrentData != data) {
                     showLyricsWindow(actualCurrentData)
                  } else if (actualCurrentData == null) {
-                    showLyricsWindow(LyricsData.Info(null, null, if (_listenerEverConnected) "Waiting for song..." else "Connecting listener...", 0L))
+                    showLyricsWindow(LyricsData.Info(null, null, if (_listenerEverConnected) "Waiting for song..." else "Connecting listener... If stuck here, see the help section in the app", 0L))
                  }
              }
              return

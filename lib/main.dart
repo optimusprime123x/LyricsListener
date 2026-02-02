@@ -13,10 +13,12 @@ import 'package:material_new_shapes/material_new_shapes.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const MethodChannel _platformChannel =
-    MethodChannel('dev.optimus.lyricslistener/permissions');
-const EventChannel _debugLogChannel =
-    EventChannel('dev.optimus.lyricslistener/debugLogs');
+const MethodChannel _platformChannel = MethodChannel(
+  'dev.optimus.lyricslistener/permissions',
+);
+const EventChannel _debugLogChannel = EventChannel(
+  'dev.optimus.lyricslistener/debugLogs',
+);
 
 const int _android13ApiLevel = 33;
 
@@ -40,8 +42,9 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
   final int? savedColorValue = prefs.getInt(_seedColorKey);
-  final Color initialSeedColor =
-      savedColorValue != null ? Color(savedColorValue) : _defaultSeedColor;
+  final Color initialSeedColor = savedColorValue != null
+      ? Color(savedColorValue)
+      : _defaultSeedColor;
 
   runApp(MyApp(initialSeedColor: initialSeedColor));
 }
@@ -67,8 +70,9 @@ class _MyAppState extends State<MyApp> {
 
   void _toggleTheme() {
     setState(() {
-      _themeMode =
-          _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
+      _themeMode = _themeMode == ThemeMode.light
+          ? ThemeMode.dark
+          : ThemeMode.light;
     });
   }
 
@@ -425,19 +429,21 @@ class _DebugScreenState extends State<DebugScreen> {
     });
 
     await _logSubscription?.cancel();
-    _logSubscription =
-        _debugLogChannel.receiveBroadcastStream().listen((event) {
-      if (!mounted) return;
-      setState(() {
-        _logs.add(event.toString());
-      });
-      _scrollToBottom();
-    }, onError: (error) {
-      if (!mounted) return;
-      setState(() {
-        _errorMessage = error.toString();
-      });
-    });
+    _logSubscription = _debugLogChannel.receiveBroadcastStream().listen(
+      (event) {
+        if (!mounted) return;
+        setState(() {
+          _logs.add(event.toString());
+        });
+        _scrollToBottom();
+      },
+      onError: (error) {
+        if (!mounted) return;
+        setState(() {
+          _errorMessage = error.toString();
+        });
+      },
+    );
 
     try {
       if (!Platform.isAndroid) {
@@ -451,7 +457,8 @@ class _DebugScreenState extends State<DebugScreen> {
     } on MissingPluginException catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = 'Debug channel not available: ${e.message ?? e.toString()}';
+        _errorMessage =
+            'Debug channel not available: ${e.message ?? e.toString()}';
         _isStreaming = false;
       });
     } on PlatformException catch (e) {
@@ -487,9 +494,7 @@ class _DebugScreenState extends State<DebugScreen> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Debug: Media Notification'),
-      ),
+      appBar: AppBar(title: const Text('Debug: Media Notification')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -507,16 +512,19 @@ class _DebugScreenState extends State<DebugScreen> {
                 FilledButton.icon(
                   onPressed: _isStarting ? null : _startDebugSession,
                   icon: const Icon(Icons.bug_report_outlined),
-                  label: Text(_isStarting
-                      ? 'Starting...'
-                      : _isStreaming
-                          ? 'Rescan & start'
-                          : 'Start log stream'),
+                  label: Text(
+                    _isStarting
+                        ? 'Starting...'
+                        : _isStreaming
+                        ? 'Rescan & start'
+                        : 'Start log stream',
+                  ),
                 ),
                 const SizedBox(width: 12),
                 OutlinedButton.icon(
-                  onPressed:
-                      _isStarting || !_isStreaming ? null : _stopDebugSession,
+                  onPressed: _isStarting || !_isStreaming
+                      ? null
+                      : _stopDebugSession,
                   icon: const Icon(Icons.stop_circle_outlined),
                   label: const Text('Stop stream'),
                 ),
@@ -533,9 +541,7 @@ class _DebugScreenState extends State<DebugScreen> {
               const SizedBox(height: 8),
               Text(
                 'Error: $_errorMessage',
-                style: textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.error,
-                ),
+                style: textTheme.bodyMedium?.copyWith(color: colorScheme.error),
               ),
             ],
             const SizedBox(height: 12),
@@ -915,7 +921,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     if (!mounted) return;
     print("MainScreen _getAndroidVersion: Starting");
     try {
-      final int? version = await _platformChannel.invokeMethod('getAndroidVersion');
+      final int? version = await _platformChannel.invokeMethod(
+        'getAndroidVersion',
+      );
       if (mounted) {
         print("MainScreen _getAndroidVersion: Received version: $version");
         _androidSdkInt = version;
@@ -940,26 +948,30 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
     try {
       final results = await Future.wait([
-        _platformChannel.invokeMethod('isNotificationAccessGranted').catchError((e) {
-          print("Error isNotificationAccessGranted: $e");
-          return false;
-        }),
+        _platformChannel.invokeMethod('isNotificationAccessGranted').catchError(
+          (e) {
+            print("Error isNotificationAccessGranted: $e");
+            return false;
+          },
+        ),
         _platformChannel.invokeMethod('canDrawOverlays').catchError((e) {
           print("Error canDrawOverlays: $e");
           return false;
         }),
         (_androidSdkInt != null && _androidSdkInt! >= _android13ApiLevel)
-            ? _platformChannel.invokeMethod('isPostNotificationsGranted').catchError((
-              e,
-            ) {
-              print("Error isPostNotificationsGranted: $e");
-              return false;
-            })
+            ? _platformChannel
+                  .invokeMethod('isPostNotificationsGranted')
+                  .catchError((e) {
+                    print("Error isPostNotificationsGranted: $e");
+                    return false;
+                  })
             : Future.value(tempPostNotifications),
-        _platformChannel.invokeMethod('isIgnoringBatteryOptimizations').catchError((e) {
-          print("Error isIgnoringBatteryOptimizations: $e");
-          return false;
-        }),
+        _platformChannel
+            .invokeMethod('isIgnoringBatteryOptimizations')
+            .catchError((e) {
+              print("Error isIgnoringBatteryOptimizations: $e");
+              return false;
+            }),
       ]);
 
       tempNotificationAccess = results[0] as bool;
@@ -1156,7 +1168,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   Future<void> _clearLyricsCache() async {
     try {
-      final int? clearedCount = await _platformChannel.invokeMethod<int>('clearLyricsCache');
+      final int? clearedCount = await _platformChannel.invokeMethod<int>(
+        'clearLyricsCache',
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1196,9 +1210,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _cacheManagementTapCount++;
       if (_cacheManagementTapCount >= 7) {
         _cacheManagementTapCount = 0;
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const DebugScreen()),
-        );
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const DebugScreen()));
       }
     });
   }
@@ -1218,8 +1232,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       isGranted
           ? Icons.check_circle_rounded
           : (optional
-              ? Icons.info_outline_rounded
-              : Icons.error_outline_rounded),
+                ? Icons.info_outline_rounded
+                : Icons.error_outline_rounded),
       color: iconColor,
       size: 28,
     );
@@ -1460,38 +1474,36 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             child: Wrap(
               spacing: 12,
               runSpacing: 12,
-              children:
-                  options.map((color) {
-                    final isSelected = color.value == currentColor.value;
-                    return GestureDetector(
-                      onTap: () => Navigator.of(dialogContext).pop(color),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 600),
-                        curve: expressiveSpringCurve,
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: color,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color:
-                                isSelected
-                                    ? colorScheme.primary
-                                    : colorScheme.outlineVariant,
-                            width: isSelected ? 3 : 1.5,
-                          ),
-                          boxShadow: [
-                            if (isSelected)
-                              BoxShadow(
-                                color: colorScheme.primary.withOpacity(0.25),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              ),
-                          ],
-                        ),
+              children: options.map((color) {
+                final isSelected = color.value == currentColor.value;
+                return GestureDetector(
+                  onTap: () => Navigator.of(dialogContext).pop(color),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 600),
+                    curve: expressiveSpringCurve,
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isSelected
+                            ? colorScheme.primary
+                            : colorScheme.outlineVariant,
+                        width: isSelected ? 3 : 1.5,
                       ),
-                    );
-                  }).toList(),
+                      boxShadow: [
+                        if (isSelected)
+                          BoxShadow(
+                            color: colorScheme.primary.withOpacity(0.25),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
             ),
           ),
           actions: [
@@ -1633,70 +1645,65 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   Wrap(
                     spacing: 16.0,
                     runSpacing: 12.0,
-                    children:
-                        _predefinedSeedColors.map((color) {
-                          final isSelected = widget.seedColor == color;
-                          return InkWell(
-                            borderRadius: BorderRadius.circular(
-                              _seedColorChipRadius,
-                            ),
-                            onTap: () => widget.onSeedColorChanged(color),
-                            child: Tooltip(
-                              message:
-                                  'Set theme color to #${color.value.toRadixString(16).substring(2).toUpperCase()}',
-                              child: AnimatedScale(
-                                duration: const Duration(milliseconds: 700),
-                                curve: const ElasticOutCurve(0.8),
-                                scale: isSelected ? 1.15 : 1.0,
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 700),
-                                  curve: const ElasticOutCurve(0.8),
-                                  width: _seedColorChipSize,
-                                  height: _seedColorChipSize,
-                                  decoration: BoxDecoration(
-                                    color: color,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color:
-                                          Theme.of(
-                                            context,
-                                          ).colorScheme.outlineVariant,
-                                      width: isSelected ? 2.5 : 1.5,
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .primary
-                                            .withValues(
-                                              alpha: isSelected ? 0.35 : 0.15,
-                                            ),
-                                        blurRadius: isSelected ? 12 : 8,
-                                        offset: const Offset(0, 4),
-                                      ),
-                                    ],
-                                  ),
-                                  child:
-                                      isSelected
-                                          ? Center(
-                                            child: Icon(
-                                              Icons.check_rounded,
-                                              color:
-                                                  ThemeData.estimateBrightnessForColor(
-                                                            color,
-                                                          ) ==
-                                                          Brightness.dark
-                                                      ? Colors.white
-                                                      : Colors.black,
-                                              size: 24,
-                                            ),
-                                          )
-                                          : null,
+                    children: _predefinedSeedColors.map((color) {
+                      final isSelected = widget.seedColor == color;
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(
+                          _seedColorChipRadius,
+                        ),
+                        onTap: () => widget.onSeedColorChanged(color),
+                        child: Tooltip(
+                          message:
+                              'Set theme color to #${color.value.toRadixString(16).substring(2).toUpperCase()}',
+                          child: AnimatedScale(
+                            duration: const Duration(milliseconds: 700),
+                            curve: const ElasticOutCurve(0.8),
+                            scale: isSelected ? 1.15 : 1.0,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 700),
+                              curve: const ElasticOutCurve(0.8),
+                              width: _seedColorChipSize,
+                              height: _seedColorChipSize,
+                              decoration: BoxDecoration(
+                                color: color,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.outlineVariant,
+                                  width: isSelected ? 2.5 : 1.5,
                                 ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Theme.of(context).colorScheme.primary
+                                        .withValues(
+                                          alpha: isSelected ? 0.35 : 0.15,
+                                        ),
+                                    blurRadius: isSelected ? 12 : 8,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
                               ),
+                              child: isSelected
+                                  ? Center(
+                                      child: Icon(
+                                        Icons.check_rounded,
+                                        color:
+                                            ThemeData.estimateBrightnessForColor(
+                                                  color,
+                                                ) ==
+                                                Brightness.dark
+                                            ? Colors.white
+                                            : Colors.black,
+                                        size: 24,
+                                      ),
+                                    )
+                                  : null,
                             ),
-                          );
-                        }).toList(),
+                          ),
+                        ),
+                      );
+                    }).toList(),
                   ),
                 ],
               ),
@@ -1726,64 +1733,56 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               duration: const Duration(milliseconds: 600),
               switchInCurve: expressiveStandardCurve,
               switchOutCurve: Curves.easeInCubic,
-              child:
-                  _dynamicLyricsWindowColors
-                      ? const SizedBox.shrink()
-                      : Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          key: const ValueKey('static-lyrics-colours'),
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Static lyrics window colours',
-                              style: textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
+              child: _dynamicLyricsWindowColors
+                  ? const SizedBox.shrink()
+                  : Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        key: const ValueKey('static-lyrics-colours'),
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Static lyrics window colours',
+                            style: textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
                             ),
-                            const SizedBox(height: 12),
-                            _buildLyricsWindowColorTile(
-                              context: context,
-                              title: 'Title & icons',
-                              subtitle:
-                                  'The song title, artist name and lyrics window controls',
-                              color: _lyricsWindowTitleColor,
-                              options: _lyricsWindowTitleOptions,
-                              defaultColor: _defaultLyricsWindowTitleColor,
-                              onColorChanged: _onLyricsWindowTitleColorChanged,
-                            ),
-                            _buildLyricsWindowColorTile(
-                              context: context,
-                              title: 'Background',
-                              subtitle:
-                                  'The floating lyrics window background colour',
-                              color: _lyricsWindowBackgroundColor,
-                              options: _lyricsWindowBackgroundOptions,
-                              defaultColor: _defaultLyricsWindowBackgroundColor,
-                              onColorChanged:
-                                  _onLyricsWindowBackgroundColorChanged,
-                            ),
-                            _buildLyricsWindowColorTile(
-                              context: context,
-                              title: 'Highlight',
-                              subtitle: 'Used for the active lyric line',
-                              color: _lyricsWindowHighlightColor,
-                              options: _lyricsWindowHighlightOptions,
-                              defaultColor: _defaultLyricsWindowHighlightColor,
-                              onColorChanged:
-                                  _onLyricsWindowHighlightColorChanged,
-                            ),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildLyricsWindowColorTile(
+                            context: context,
+                            title: 'Title & icons',
+                            subtitle:
+                                'The song title, artist name and lyrics window controls',
+                            color: _lyricsWindowTitleColor,
+                            options: _lyricsWindowTitleOptions,
+                            defaultColor: _defaultLyricsWindowTitleColor,
+                            onColorChanged: _onLyricsWindowTitleColorChanged,
+                          ),
+                          _buildLyricsWindowColorTile(
+                            context: context,
+                            title: 'Background',
+                            subtitle:
+                                'The floating lyrics window background colour',
+                            color: _lyricsWindowBackgroundColor,
+                            options: _lyricsWindowBackgroundOptions,
+                            defaultColor: _defaultLyricsWindowBackgroundColor,
+                            onColorChanged:
+                                _onLyricsWindowBackgroundColorChanged,
+                          ),
+                          _buildLyricsWindowColorTile(
+                            context: context,
+                            title: 'Highlight',
+                            subtitle: 'Used for the active lyric line',
+                            color: _lyricsWindowHighlightColor,
+                            options: _lyricsWindowHighlightOptions,
+                            defaultColor: _defaultLyricsWindowHighlightColor,
+                            onColorChanged:
+                                _onLyricsWindowHighlightColorChanged,
+                          ),
+                        ],
                       ),
+                    ),
             ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        _buildExpressiveSection(
-          context,
-          title: 'Window Behavior',
-          children: [
             SwitchListTile.adaptive(
               value: _rememberLyricsWindowPosition,
               onChanged: _onRememberWindowPositionChanged,
@@ -1809,23 +1808,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         const SizedBox(height: 16),
         _buildExpressiveSection(
           context,
-          title: 'Data',
+          title: 'Lyrics',
           children: [
             Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  GestureDetector(
-                    onTap: _onCacheManagementTapped,
-                    child: Text(
-                      'Cache Management',
-                      style: textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
@@ -1872,7 +1861,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   _buildFaqItem(
                     context,
                     question:
-                        'Lyrics popup is not shown, and the notification says "Waiting for notification listener…" or "Notification access missing. Tap to fix."',
+                        'Lyrics popup is not shown while music is playing, and the notification says "Connecting listener…" or "Notification access missing. Tap to fix."',
                     answerParts: [
                       const TextSpan(
                         text: "Why this happens? ",
@@ -1880,7 +1869,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       ),
                       const TextSpan(
                         text:
-                            'The persistent notification shows those messages when Android(for whatever reason) has revoked notification access or is still starting the listener.\n\n',
+                            'The persistent notification shows those messages when Android(for whatever reason) has revoked notification access.\n\n',
                       ),
                       const TextSpan(
                         text: "What to do? ",
@@ -1896,9 +1885,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                           color: Theme.of(context).colorScheme.primary,
                           decoration: TextDecoration.underline,
                         ),
-                        recognizer:
-                            TapGestureRecognizer()
-                              ..onTap = _openNotificationSettings,
+                        recognizer: TapGestureRecognizer()
+                          ..onTap = _openNotificationSettings,
                       ),
                       const TextSpan(
                         text:
@@ -1964,29 +1952,27 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                           color: Theme.of(context).colorScheme.primary,
                           decoration: TextDecoration.underline,
                         ),
-                        recognizer:
-                            TapGestureRecognizer()
-                              ..onTap = () async {
-                                final Uri emailLaunchUri = Uri(
-                                  scheme: 'mailto',
-                                  path: 'adrestaia47@gmail.com',
-                                  queryParameters: {
-                                    'subject': 'LyricListener App Support',
-                                  },
-                                );
-                                if (await canLaunchUrl(emailLaunchUri)) {
-                                  await launchUrl(emailLaunchUri);
-                                } else {
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content:
-                                            Text('Could not open email app.'),
-                                      ),
-                                    );
-                                  }
-                                }
+                        recognizer: TapGestureRecognizer()
+                          ..onTap = () async {
+                            final Uri emailLaunchUri = Uri(
+                              scheme: 'mailto',
+                              path: 'adrestaia47@gmail.com',
+                              queryParameters: {
+                                'subject': 'LyricListener App Support',
                               },
+                            );
+                            if (await canLaunchUrl(emailLaunchUri)) {
+                              await launchUrl(emailLaunchUri);
+                            } else {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Could not open email app.'),
+                                  ),
+                                );
+                              }
+                            }
+                          },
                       ),
                     ],
                   ),
@@ -2046,10 +2032,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         });
       },
       statusText: _isServiceRunning ? 'Active' : 'Inactive',
-      subtitleText:
-          _isServiceRunning
-              ? 'Enjoy synced lyrics :)'
-              : 'Launch service below to enjoy synced lyrics!',
+      subtitleText: _isServiceRunning
+          ? 'Enjoy synced lyrics :)'
+          : 'Launch service below to enjoy synced lyrics!',
       color: colorScheme.primary,
       backgroundColor: colorScheme.surfaceContainerHighest,
       polygons: _refreshPolygons,
@@ -2081,7 +2066,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           const Divider(height: 24, indent: 16, endIndent: 16),
           _buildSectionHeader(context, 'App Setup & Permissions'),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 4.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 24.0,
+              vertical: 4.0,
+            ),
             child: Text(
               'Grant these required permissions for the app to function.',
               style: textTheme.bodyMedium?.copyWith(
@@ -2126,7 +2114,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 4.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 24.0,
+              vertical: 4.0,
+            ),
             child: Text(
               'Consider this for a more reliable experience on some devices.',
               style: textTheme.bodySmall?.copyWith(
@@ -2158,10 +2149,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   _isServiceRunning
                       ? Icons.rocket_launch_rounded
                       : Icons.rocket_outlined,
-                  color:
-                      _isServiceRunning
-                          ? colorScheme.primary
-                          : colorScheme.onSurfaceVariant,
+                  color: _isServiceRunning
+                      ? colorScheme.primary
+                      : colorScheme.onSurfaceVariant,
                   size: 24,
                 ),
                 const SizedBox(width: 6),
@@ -2170,14 +2160,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     _isServiceRunning
                         ? 'Active'
                         : (_canStartService
-                            ? 'Ready to Launch'
-                            : 'Awaiting Permissions'),
+                              ? 'Ready to Launch'
+                              : 'Awaiting Permissions'),
                     style: textTheme.bodyLarge?.copyWith(
                       fontWeight: FontWeight.bold,
-                      color:
-                          _isServiceRunning
-                              ? colorScheme.primary
-                              : colorScheme.onSurfaceVariant,
+                      color: _isServiceRunning
+                          ? colorScheme.primary
+                          : colorScheme.onSurfaceVariant,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -2188,36 +2177,34 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           const SizedBox(height: 8),
           Center(
             child: FilledButton(
-              onPressed:
-                  _isServiceActionInProgress
-                      ? null
-                      : (_isServiceRunning
-                          ? _stopLyricService
-                          : (_canStartService ? _startLyricService : null)),
-              style: FilledButton.styleFrom(
-                backgroundColor:
-                    _isServiceRunning
+              onPressed: _isServiceActionInProgress
+                  ? null
+                  : (_isServiceRunning
+                        ? _stopLyricService
+                        : (_canStartService ? _startLyricService : null)),
+              style:
+                  FilledButton.styleFrom(
+                    backgroundColor: _isServiceRunning
                         ? colorScheme.error
                         : (_canStartService
-                            ? colorScheme.primary
-                            : colorScheme.surfaceContainerHighest),
-                foregroundColor:
-                    _isServiceRunning
+                              ? colorScheme.primary
+                              : colorScheme.surfaceContainerHighest),
+                    foregroundColor: _isServiceRunning
                         ? colorScheme.onError
                         : (_canStartService
-                            ? colorScheme.onPrimary
-                            : colorScheme.onSurfaceVariant),
-              ).copyWith(
-                elevation: WidgetStateProperty.resolveWith<double?>((
-                  Set<WidgetState> states,
-                ) {
-                  if (states.contains(WidgetState.disabled) &&
-                      !_isServiceActionInProgress) {
-                    return 0;
-                  }
-                  return 4;
-                }),
-              ),
+                              ? colorScheme.onPrimary
+                              : colorScheme.onSurfaceVariant),
+                  ).copyWith(
+                    elevation: WidgetStateProperty.resolveWith<double?>((
+                      Set<WidgetState> states,
+                    ) {
+                      if (states.contains(WidgetState.disabled) &&
+                          !_isServiceActionInProgress) {
+                        return 0;
+                      }
+                      return 4;
+                    }),
+                  ),
               child: AnimatedScale(
                 scale: _isServiceActionInProgress ? 0.95 : 1.0,
                 duration: const Duration(milliseconds: 600),
@@ -2227,29 +2214,28 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   children: [
                     _isServiceActionInProgress
                         ? SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 3,
-                            color:
-                                _isServiceRunning
-                                    ? colorScheme.onError
-                                    : colorScheme.onPrimary,
-                          ),
-                        )
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 3,
+                              color: _isServiceRunning
+                                  ? colorScheme.onError
+                                  : colorScheme.onPrimary,
+                            ),
+                          )
                         : Icon(
-                          _isServiceRunning
-                              ? Icons.stop_circle_outlined
-                              : Icons.play_circle_outline_rounded,
-                          size: 28,
-                        ),
+                            _isServiceRunning
+                                ? Icons.stop_circle_outlined
+                                : Icons.play_circle_outline_rounded,
+                            size: 28,
+                          ),
                     const SizedBox(width: 8),
                     Text(
                       _isServiceActionInProgress
                           ? (_isServiceRunning ? 'Stopping...' : 'Starting...')
                           : (_isServiceRunning
-                              ? 'Stop Lyric Service'
-                              : 'Launch Lyric Service'),
+                                ? 'Stop Lyric Service'
+                                : 'Launch Lyric Service'),
                     ),
                   ],
                 ),
@@ -2359,10 +2345,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             ),
           );
         },
-        child: KeyedSubtree(
-          key: ValueKey<int>(_selectedIndex),
-          child: child,
-        ),
+        child: KeyedSubtree(key: ValueKey<int>(_selectedIndex), child: child),
       );
     }
 
@@ -2430,4 +2413,3 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     );
   }
 }
-
