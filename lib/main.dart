@@ -325,7 +325,7 @@ class _MyAppState extends State<MyApp> {
       theme: lightTheme,
       darkTheme: darkTheme,
       themeMode: _themeMode,
-      home: HomeScreen(
+      home: MainScreen(
         toggleTheme: _toggleTheme,
         seedColor: _seedColor,
         onSeedColorChanged: _changeSeedColor,
@@ -581,8 +581,8 @@ class _DebugScreenState extends State<DebugScreen> {
   }
 }
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({
+class MainScreen extends StatefulWidget {
+  const MainScreen({
     super.key,
     required this.toggleTheme,
     required this.seedColor,
@@ -594,10 +594,11 @@ class HomeScreen extends StatefulWidget {
   final ValueChanged<Color> onSeedColorChanged;
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<MainScreen> createState() => _MainScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
+  int _selectedIndex = 0;
   int? _androidSdkInt;
   bool _isLoadingAppStatus = true; // Initial state is loading
 
@@ -758,7 +759,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    print("HomeScreen initState: Called");
+    print("MainScreen initState: Called");
     WidgetsBinding.instance.addObserver(this);
     _loadCustomizationPreferences();
     _loadInitialData();
@@ -835,7 +836,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _loadInitialData({bool showLoading = true}) async {
-    print("HomeScreen _loadInitialData: Starting");
+    print("MainScreen _loadInitialData: Starting");
     if (!mounted) return;
 
     if (showLoading && !_isLoadingAppStatus) {
@@ -852,7 +853,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (mounted) await _checkServiceStatus();
     } catch (e, s) {
       print(
-        "HomeScreen _loadInitialData: Error during loading sequence: $e\n$s",
+        "MainScreen _loadInitialData: Error during loading sequence: $e\n$s",
       );
     } finally {
       if (mounted) {
@@ -862,7 +863,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           });
         }
         print(
-          "HomeScreen _loadInitialData: Finally block. _isLoadingAppStatus: $_isLoadingAppStatus (after potential setState)",
+          "MainScreen _loadInitialData: Finally block. _isLoadingAppStatus: $_isLoadingAppStatus (after potential setState)",
         );
       }
     }
@@ -874,7 +875,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    print("HomeScreen dispose: Called");
+    print("MainScreen dispose: Called");
     _cacheManagementResetTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -883,12 +884,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    print("HomeScreen didChangeAppLifecycleState: $state");
+    print("MainScreen didChangeAppLifecycleState: $state");
     if (state == AppLifecycleState.resumed) {
       if (!_isLoadingAppStatus && !_isServiceActionInProgress) {
         _loadInitialData();
       }
     }
+  }
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
   }
 
   Future<void> _launchDonateUrl() async {
@@ -906,15 +913,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _getAndroidVersion() async {
     if (!mounted) return;
-    print("HomeScreen _getAndroidVersion: Starting");
+    print("MainScreen _getAndroidVersion: Starting");
     try {
       final int? version = await _platformChannel.invokeMethod('getAndroidVersion');
       if (mounted) {
-        print("HomeScreen _getAndroidVersion: Received version: $version");
+        print("MainScreen _getAndroidVersion: Received version: $version");
         _androidSdkInt = version;
       }
     } on PlatformException catch (e) {
-      print('HomeScreen _getAndroidVersion: Failed - ${e.message}');
+      print('MainScreen _getAndroidVersion: Failed - ${e.message}');
       if (mounted) {
         _androidSdkInt = null;
       }
@@ -923,7 +930,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _checkPermissionsStatus() async {
     if (!mounted) return;
-    print("HomeScreen _checkPermissionsStatus: Starting");
+    print("MainScreen _checkPermissionsStatus: Starting");
 
     bool tempNotificationAccess = false;
     bool tempCanDrawOverlays = false;
@@ -961,10 +968,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       tempBatteryOptDisabled = results[3] as bool;
     } on PlatformException catch (e) {
       print(
-        'HomeScreen _checkPermissionsStatus: PlatformException - ${e.message}',
+        'MainScreen _checkPermissionsStatus: PlatformException - ${e.message}',
       );
     } catch (e) {
-      print('HomeScreen _checkPermissionsStatus: General Exception - $e');
+      print('MainScreen _checkPermissionsStatus: General Exception - $e');
     }
 
     if (mounted) {
@@ -986,7 +993,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _checkServiceStatus() async {
     if (!mounted) return;
-    print("HomeScreen _checkServiceStatus: Starting");
+    print("MainScreen _checkServiceStatus: Starting");
     bool tempIsServiceRunning = false;
     try {
       final bool? isRunning = await _platformChannel.invokeMethod<bool>(
@@ -996,9 +1003,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         tempIsServiceRunning = isRunning;
       }
     } on PlatformException catch (e) {
-      print('HomeScreen _checkServiceStatus: Failed - ${e.message}');
+      print('MainScreen _checkServiceStatus: Failed - ${e.message}');
     } catch (e) {
-      print('HomeScreen _checkServiceStatus: General Error - $e');
+      print('MainScreen _checkServiceStatus: General Error - $e');
     }
     if (mounted) {
       setState(() {
@@ -1013,15 +1020,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     String? operationName,
   }) async {
     String opName = operationName ?? "Operation";
-    print("HomeScreen _handlePermissionRequest: Starting $opName");
+    print("MainScreen _handlePermissionRequest: Starting $opName");
     try {
       await requestFunction();
       print(
-        "HomeScreen _handlePermissionRequest: $opName request sent. App will refresh on resume via _loadInitialData.",
+        "MainScreen _handlePermissionRequest: $opName request sent. App will refresh on resume via _loadInitialData.",
       );
     } on PlatformException catch (e) {
       print(
-        'HomeScreen _handlePermissionRequest: Failed during $opName - ${e.message}',
+        'MainScreen _handlePermissionRequest: Failed during $opName - ${e.message}',
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1036,7 +1043,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _startLyricService() async {
-    print("HomeScreen _startLyricService: Attempting to start.");
+    print("MainScreen _startLyricService: Attempting to start.");
     if (!mounted || _isServiceActionInProgress) return;
 
     setState(() {
@@ -1048,7 +1055,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       await Future.delayed(const Duration(milliseconds: 1500));
       if (mounted) await _checkServiceStatus();
     } on PlatformException catch (e) {
-      print('HomeScreen _startLyricService: Failed - ${e.message}');
+      print('MainScreen _startLyricService: Failed - ${e.message}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1069,7 +1076,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _stopLyricService() async {
-    print("HomeScreen _stopLyricService: Attempting to stop.");
+    print("MainScreen _stopLyricService: Attempting to stop.");
     if (!mounted || _isServiceActionInProgress) return;
 
     setState(() {
@@ -1081,7 +1088,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       await Future.delayed(const Duration(milliseconds: 1500));
       if (mounted) await _checkServiceStatus();
     } on PlatformException catch (e) {
-      print('HomeScreen _stopLyricService: Failed - ${e.message}');
+      print('MainScreen _stopLyricService: Failed - ${e.message}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1109,11 +1116,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _openNotificationSettings() async {
-    print("HomeScreen _openNotificationSettings: Attempting to open.");
+    print("MainScreen _openNotificationSettings: Attempting to open.");
     try {
       await _platformChannel.invokeMethod('openNotificationSettings');
     } on PlatformException catch (e) {
-      print('HomeScreen _openNotificationSettings: Failed - ${e.message}');
+      print('MainScreen _openNotificationSettings: Failed - ${e.message}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1600,368 +1607,672 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildCustomizationSection(BuildContext context) {
+  Widget _buildSettingsView(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Card(
-      color: Theme.of(context).colorScheme.surfaceContainer,
-      margin: EdgeInsets.zero,
-      child: ExpansionTile(
-        title: Text('Settings', style: textTheme.titleMedium),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-        collapsedShape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-        initiallyExpanded: false,
-        childrenPadding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-        children: <Widget>[
-          Row(
-            children: [
-              Text(
-                'Theme Color',
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      children: [
+        _buildExpressiveSection(
+          context,
+          title: 'Appearance',
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Theme Color',
+                    style: textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 16.0,
+                    runSpacing: 12.0,
+                    children:
+                        _predefinedSeedColors.map((color) {
+                          final isSelected = widget.seedColor == color;
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(
+                              _seedColorChipRadius,
+                            ),
+                            onTap: () => widget.onSeedColorChanged(color),
+                            child: Tooltip(
+                              message:
+                                  'Set theme color to #${color.value.toRadixString(16).substring(2).toUpperCase()}',
+                              child: AnimatedScale(
+                                duration: const Duration(milliseconds: 700),
+                                curve: const ElasticOutCurve(0.8),
+                                scale: isSelected ? 1.15 : 1.0,
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 700),
+                                  curve: const ElasticOutCurve(0.8),
+                                  width: _seedColorChipSize,
+                                  height: _seedColorChipSize,
+                                  decoration: BoxDecoration(
+                                    color: color,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color:
+                                          Theme.of(
+                                            context,
+                                          ).colorScheme.outlineVariant,
+                                      width: isSelected ? 2.5 : 1.5,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary
+                                            .withValues(
+                                              alpha: isSelected ? 0.35 : 0.15,
+                                            ),
+                                        blurRadius: isSelected ? 12 : 8,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child:
+                                      isSelected
+                                          ? Center(
+                                            child: Icon(
+                                              Icons.check_rounded,
+                                              color:
+                                                  ThemeData.estimateBrightnessForColor(
+                                                            color,
+                                                          ) ==
+                                                          Brightness.dark
+                                                      ? Colors.white
+                                                      : Colors.black,
+                                              size: 24,
+                                            ),
+                                          )
+                                          : null,
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(indent: 16, endIndent: 16),
+            SwitchListTile.adaptive(
+              value: _dynamicLyricsWindowColors,
+              onChanged: _onDynamicLyricsWindowColorsChanged,
+              title: Text(
+                'Dynamic lyrics window colours',
                 style: textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 16.0,
-            runSpacing: 12.0,
-            children:
-                _predefinedSeedColors.map((color) {
-                  final isSelected = widget.seedColor == color;
-          return InkWell(
-            borderRadius: BorderRadius.circular(_seedColorChipRadius),
-            onTap: () => widget.onSeedColorChanged(color),
-            child: Tooltip(
-              message:
-                  'Set theme color to #${color.value.toRadixString(16).substring(2).toUpperCase()}',
-              child: AnimatedScale(
-                duration: const Duration(milliseconds: 700),
-                curve: const ElasticOutCurve(0.8),
-                scale: isSelected ? 1.15 : 1.0,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 700),
-                  curve: const ElasticOutCurve(0.8),
-                  width: _seedColorChipSize,
-                  height: _seedColorChipSize,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                      width: isSelected ? 2.5 : 1.5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .primary
-                            .withValues(alpha: isSelected ? 0.35 : 0.15),
-                        blurRadius: isSelected ? 12 : 8,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child:
-                      isSelected
-                          ? Center(
-                            child: Icon(
-                              Icons.check_rounded,
-                              color:
-                                  ThemeData.estimateBrightnessForColor(
-                                            color,
-                                          ) ==
-                                          Brightness.dark
-                                      ? Colors.white
-                                      : Colors.black,
-                              size: 24,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Text(
+                'Album art tones will be used automatically when this is on. Changes will apply from next song onwards.',
+                style: textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 600),
+              switchInCurve: expressiveStandardCurve,
+              switchOutCurve: Curves.easeInCubic,
+              child:
+                  _dynamicLyricsWindowColors
+                      ? const SizedBox.shrink()
+                      : Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          key: const ValueKey('static-lyrics-colours'),
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Static lyrics window colours',
+                              style: textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
-                          )
-                          : null,
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-          ),
-          const SizedBox(height: 24),
-          SwitchListTile.adaptive(
-            value: _dynamicLyricsWindowColors,
-            onChanged: _onDynamicLyricsWindowColorsChanged,
-            title: Text(
-              'Dynamic lyrics window colours',
-              style: textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            contentPadding: EdgeInsets.zero,
-          ),
-          Padding(
-            padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 4.0),
-            child: Text(
-              'Album art tones will be used automatically when this is on. Changes will apply from next song onwards.',
-              style: textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 600),
-            switchInCurve: expressiveStandardCurve,
-            switchOutCurve: Curves.easeInCubic,
-            child:
-                _dynamicLyricsWindowColors
-                    ? const SizedBox.shrink()
-                    : Column(
-                      key: const ValueKey('static-lyrics-colours'),
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 16),
-                        Text(
-                          'Static lyrics window colours',
-                          style: textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+                            const SizedBox(height: 12),
+                            _buildLyricsWindowColorTile(
+                              context: context,
+                              title: 'Title & icons',
+                              subtitle:
+                                  'The song title, artist name and lyrics window controls',
+                              color: _lyricsWindowTitleColor,
+                              options: _lyricsWindowTitleOptions,
+                              defaultColor: _defaultLyricsWindowTitleColor,
+                              onColorChanged: _onLyricsWindowTitleColorChanged,
+                            ),
+                            _buildLyricsWindowColorTile(
+                              context: context,
+                              title: 'Background',
+                              subtitle:
+                                  'The floating lyrics window background colour',
+                              color: _lyricsWindowBackgroundColor,
+                              options: _lyricsWindowBackgroundOptions,
+                              defaultColor: _defaultLyricsWindowBackgroundColor,
+                              onColorChanged:
+                                  _onLyricsWindowBackgroundColorChanged,
+                            ),
+                            _buildLyricsWindowColorTile(
+                              context: context,
+                              title: 'Highlight',
+                              subtitle: 'Used for the active lyric line',
+                              color: _lyricsWindowHighlightColor,
+                              options: _lyricsWindowHighlightOptions,
+                              defaultColor: _defaultLyricsWindowHighlightColor,
+                              onColorChanged:
+                                  _onLyricsWindowHighlightColorChanged,
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 12),
-                        _buildLyricsWindowColorTile(
-                          context: context,
-                          title: 'Title & icons',
-                          subtitle:
-                              'The song title, artist name and lyrics window controls',
-                          color: _lyricsWindowTitleColor,
-                          options: _lyricsWindowTitleOptions,
-                          defaultColor: _defaultLyricsWindowTitleColor,
-                          onColorChanged: _onLyricsWindowTitleColorChanged,
-                        ),
-                        _buildLyricsWindowColorTile(
-                          context: context,
-                          title: 'Background',
-                          subtitle:
-                              'The floating lyrics window background colour',
-                          color: _lyricsWindowBackgroundColor,
-                          options: _lyricsWindowBackgroundOptions,
-                          defaultColor: _defaultLyricsWindowBackgroundColor,
-                          onColorChanged: _onLyricsWindowBackgroundColorChanged,
-                        ),
-                        _buildLyricsWindowColorTile(
-                          context: context,
-                          title: 'Highlight',
-                          subtitle: 'Used for the active lyric line',
-                          color: _lyricsWindowHighlightColor,
-                          options: _lyricsWindowHighlightOptions,
-                          defaultColor: _defaultLyricsWindowHighlightColor,
-                          onColorChanged: _onLyricsWindowHighlightColorChanged,
-                        ),
-                        const SizedBox(height: 4),
-                      ],
-                    ),
-          ),
-          const SizedBox(height: 12),
-          SwitchListTile.adaptive(
-            value: _rememberLyricsWindowPosition,
-            onChanged: _onRememberWindowPositionChanged,
-            title: Text(
-              'Remember lyrics window position',
-              style: textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            contentPadding: EdgeInsets.zero,
-          ),
-          Padding(
-            padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 4.0),
-            child: Text(
-              'When enabled, the floating lyrics window reopens where you last placed it.',
-              style: textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          const Divider(height: 1),
-          const SizedBox(height: 16),
-          GestureDetector(
-            onTap: _onCacheManagementTapped,
-            child: Text(
-              'Cache Management',
-              style: textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _clearLyricsCache,
-              icon: const Icon(Icons.delete_outline_rounded),
-              label: const Text('Clear Lyrics Cache'),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                side: BorderSide(color: colorScheme.error),
-                foregroundColor: colorScheme.error,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 8.0),
-            child: Text(
-              'Clears all cached lyrics. Cached lyrics load faster and reduce network usage.',
-              style: textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHelpAndSupportSection(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
-      child: Card(
-        color: colorScheme.surfaceContainer,
-        margin: EdgeInsets.zero,
-        child: ExpansionTile(
-          title: Text('Help and Support', style: textTheme.titleMedium),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-          collapsedShape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-          initiallyExpanded: false,
-          childrenPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 8,
-          ),
-          children: <Widget>[
-            _buildFaqItem(
-              context,
-              question:
-                  'Lyrics popup is not shown, and the notification says "Waiting for notification listener…" or "Notification access missing. Tap to fix."',
-              answerParts: [
-                const TextSpan(
-                  text: "Why this happens? ",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const TextSpan(
-                  text:
-                      'The persistent notification shows those messages when Android(for whatever reason) has revoked notification access or is still starting the listener.\n\n',
-                ),
-                const TextSpan(
-                  text: "What to do? ",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const TextSpan(
-                  text:
-                      'Open the persistent Lyrics Listener notification and tap the Fix notification access action. This usually restores access immediately. If the shortcut does not work, follow these steps:\n1. Stop the Lyric Service.\n2. Tap ',
-                ),
-                TextSpan(
-                  text: 'here',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.primary,
-                    decoration: TextDecoration.underline,
-                  ),
-                  recognizer:
-                      TapGestureRecognizer()..onTap = _openNotificationSettings,
-                ),
-                const TextSpan(
-                  text:
-                      " to open the system Notification Access settings only if the notification shortcut fails.\n3. Turn OFF access for 'Lyric Listener'.\n4. Return to this app.\n5. Re-grant 'Notification Access' above.\n6. Launch the Lyric Service again.",
-                ),
-              ],
-            ),
-            const Divider(height: 24),
-            _buildFaqItem(
-              context,
-              question:
-                  'Youtube videos show "Lyrics not found" or incorrect lyrics',
-              answerParts: [
-                const TextSpan(
-                  text: "Why this happens? ",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const TextSpan(
-                  text:
-                      "Youtube video notifications often don't have standard song titles, making it hard to find the right lyrics.\n\n",
-                ),
-                const TextSpan(
-                  text: "What to do? ",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const TextSpan(
-                  text:
-                      "This is being worked on. Later versions should be better, but synced lyrics may not be perfect if the video length differs from the actual song.",
-                ),
-              ],
-            ),
-            const Divider(height: 24),
-            _buildFaqItem(
-              context,
-              question: 'Incorrect (or no) lyrics are displayed',
-              answerParts: [
-                const TextSpan(
-                  text: "Why this happens? ",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const TextSpan(
-                  text:
-                      "The lyrics source(s) may not have lyrics for that particular song.\n\n",
-                ),
-                const TextSpan(
-                  text: "What to do? ",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const TextSpan(
-                  text:
-                      "You may try again after some days, or try a different song.",
-                ),
-              ],
-            ),
-            const Divider(height: 24),
-            _buildFaqItem(
-              context,
-              question: 'Need help with a different issue?',
-              answerParts: [
-                TextSpan(
-                  text: 'Contact Support',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.primary,
-                    decoration: TextDecoration.underline,
-                  ),
-                  recognizer:
-                      TapGestureRecognizer()
-                        ..onTap = () async {
-                          final Uri emailLaunchUri = Uri(
-                            scheme: 'mailto',
-                            path: 'adrestaia47@gmail.com',
-                            queryParameters: {
-                              'subject': 'LyricListener App Support',
-                            },
-                          );
-                          if (await canLaunchUrl(emailLaunchUri)) {
-                            await launchUrl(emailLaunchUri);
-                          } else {
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Could not open email app.'),
-                                ),
-                              );
-                            }
-                          }
-                        },
-                ),
-              ],
+                      ),
             ),
           ],
         ),
+        const SizedBox(height: 16),
+        _buildExpressiveSection(
+          context,
+          title: 'Window Behavior',
+          children: [
+            SwitchListTile.adaptive(
+              value: _rememberLyricsWindowPosition,
+              onChanged: _onRememberWindowPositionChanged,
+              title: Text(
+                'Remember lyrics window position',
+                style: textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Text(
+                'When enabled, the floating lyrics window reopens where you last placed it.',
+                style: textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _buildExpressiveSection(
+          context,
+          title: 'Data',
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GestureDetector(
+                    onTap: _onCacheManagementTapped,
+                    child: Text(
+                      'Cache Management',
+                      style: textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _clearLyricsCache,
+                      icon: const Icon(Icons.delete_outline_rounded),
+                      label: const Text('Clear Lyrics Cache'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        side: BorderSide(color: colorScheme.error),
+                        foregroundColor: colorScheme.error,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      'Clears all cached lyrics. Cached lyrics load faster and reduce network usage.',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHelpView(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      children: <Widget>[
+        _buildExpressiveSection(
+          context,
+          title: 'Frequently Asked Questions',
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  _buildFaqItem(
+                    context,
+                    question:
+                        'Lyrics popup is not shown, and the notification says "Waiting for notification listener…" or "Notification access missing. Tap to fix."',
+                    answerParts: [
+                      const TextSpan(
+                        text: "Why this happens? ",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const TextSpan(
+                        text:
+                            'The persistent notification shows those messages when Android(for whatever reason) has revoked notification access or is still starting the listener.\n\n',
+                      ),
+                      const TextSpan(
+                        text: "What to do? ",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const TextSpan(
+                        text:
+                            'Open the persistent Lyrics Listener notification and tap the Fix notification access action. This usually restores access immediately. If the shortcut does not work, follow these steps:\n1. Stop the Lyric Service.\n2. Tap ',
+                      ),
+                      TextSpan(
+                        text: 'here',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          decoration: TextDecoration.underline,
+                        ),
+                        recognizer:
+                            TapGestureRecognizer()
+                              ..onTap = _openNotificationSettings,
+                      ),
+                      const TextSpan(
+                        text:
+                            " to open the system Notification Access settings only if the notification shortcut fails.\n3. Turn OFF access for 'Lyric Listener'.\n4. Return to this app.\n5. Re-grant 'Notification Access' above.\n6. Launch the Lyric Service again.",
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  _buildFaqItem(
+                    context,
+                    question:
+                        'Youtube videos show "Lyrics not found" or incorrect lyrics',
+                    answerParts: [
+                      const TextSpan(
+                        text: "Why this happens? ",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const TextSpan(
+                        text:
+                            "Youtube video notifications often don't have standard song titles, making it hard to find the right lyrics.\n\n",
+                      ),
+                      const TextSpan(
+                        text: "What to do? ",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const TextSpan(
+                        text:
+                            "This is being worked on. Later versions should be better, but synced lyrics may not be perfect if the video length differs from the actual song.",
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  _buildFaqItem(
+                    context,
+                    question: 'Incorrect (or no) lyrics are displayed',
+                    answerParts: [
+                      const TextSpan(
+                        text: "Why this happens? ",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const TextSpan(
+                        text:
+                            "The lyrics source(s) may not have lyrics for that particular song.\n\n",
+                      ),
+                      const TextSpan(
+                        text: "What to do? ",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const TextSpan(
+                        text:
+                            "You may try again after some days, or try a different song.",
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  _buildFaqItem(
+                    context,
+                    question: 'Need help with a different issue?',
+                    answerParts: [
+                      TextSpan(
+                        text: 'Contact Support',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          decoration: TextDecoration.underline,
+                        ),
+                        recognizer:
+                            TapGestureRecognizer()
+                              ..onTap = () async {
+                                final Uri emailLaunchUri = Uri(
+                                  scheme: 'mailto',
+                                  path: 'adrestaia47@gmail.com',
+                                  queryParameters: {
+                                    'subject': 'LyricListener App Support',
+                                  },
+                                );
+                                if (await canLaunchUrl(emailLaunchUri)) {
+                                  await launchUrl(emailLaunchUri);
+                                } else {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content:
+                                            Text('Could not open email app.'),
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildExpressiveSection(
+    BuildContext context, {
+    required String title,
+    required List<Widget> children,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Text(
+            title,
+            style: textTheme.titleMedium?.copyWith(
+              color: colorScheme.primary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        Card(
+          elevation: 0,
+          color: colorScheme.surfaceContainerHigh,
+          margin: EdgeInsets.zero,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: children,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHomeView(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return expressive_refresh.ExpressiveRefreshIndicator.contained(
+      onRefresh: _handleRefresh,
+      onStatusChange: (status) {
+        if (!mounted || _refreshStatus == status) return;
+        setState(() {
+          _refreshStatus = status;
+        });
+      },
+      statusText: _isServiceRunning ? 'Active' : 'Inactive',
+      subtitleText:
+          _isServiceRunning
+              ? 'Enjoy synced lyrics :)'
+              : 'Launch service below to enjoy synced lyrics!',
+      color: colorScheme.primary,
+      backgroundColor: colorScheme.surfaceContainerHighest,
+      polygons: _refreshPolygons,
+      indicatorConstraints: const BoxConstraints(
+        minWidth: 56,
+        minHeight: 56,
+        maxWidth: 56,
+        maxHeight: 56,
+      ),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
+        ),
+        padding: const EdgeInsets.fromLTRB(16.0, 36.0, 16.0, 12.0),
+        children: <Widget>[
+          AnimatedOpacity(
+            opacity: _supportCardVisible ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 700),
+            curve: expressiveStandardCurve,
+            child: _buildSupportCard(),
+          ),
+          AnimatedOpacity(
+            opacity: _welcomeVisible ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 600),
+            curve: expressiveStandardCurve,
+            child: _buildWelcomeSection(context),
+          ),
+
+          const Divider(height: 24, indent: 16, endIndent: 16),
+          _buildSectionHeader(context, 'App Setup & Permissions'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 4.0),
+            child: Text(
+              'Grant these required permissions for the app to function.',
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          if (_androidSdkInt != null && _androidSdkInt! >= _android13ApiLevel)
+            _buildPermissionRequestTile(
+              title: 'Post Notifications (Android 13+)',
+              subtitle: 'Allows the app to show its persistent notification.',
+              isGranted: _isPostNotificationsGranted,
+              onPressed: _requestPostNotificationsPermission,
+            ),
+          _buildPermissionRequestTile(
+            title: 'Notification Access',
+            subtitle: 'Lets the app read music player notifications.',
+            isGranted: _isNotificationAccessGranted,
+            onPressed: _requestNotificationAccess,
+          ),
+          _buildRestrictedSettingsNote(),
+          _buildPermissionRequestTile(
+            title: 'Display Over Other Apps',
+            subtitle: 'Enables showing lyrics on top of other apps.',
+            isGranted: _canDrawOverlays,
+            onPressed: _requestOverlayPermission,
+          ),
+          const SizedBox(height: 16),
+
+          Padding(
+            padding: const EdgeInsets.only(top: 12.0, bottom: 4.0),
+            child: Text(
+              'Optional Setting',
+              style: textTheme.titleMedium?.copyWith(
+                color: colorScheme.secondary,
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 4.0),
+            child: Text(
+              'Consider this for a more reliable experience on some devices.',
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildPermissionRequestTile(
+            title: 'Disable Battery Optimization',
+            subtitle: 'Helps the service run reliably in the background.',
+            isGranted: _isBatteryOptimizationDisabled,
+            onPressed: _requestDisableBatteryOptimization,
+            optional: true,
+          ),
+          const SizedBox(height: 16),
+          const Divider(height: 24, indent: 16, endIndent: 16),
+          _buildSectionHeader(context, 'Lyric Service Control'),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('Service Status:', style: textTheme.titleMedium),
+                const SizedBox(width: 12),
+                Icon(
+                  _isServiceRunning
+                      ? Icons.rocket_launch_rounded
+                      : Icons.rocket_outlined,
+                  color:
+                      _isServiceRunning
+                          ? colorScheme.primary
+                          : colorScheme.onSurfaceVariant,
+                  size: 24,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _isServiceRunning
+                        ? 'Active'
+                        : (_canStartService
+                            ? 'Ready to Launch'
+                            : 'Awaiting Permissions'),
+                    style: textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color:
+                          _isServiceRunning
+                              ? colorScheme.primary
+                              : colorScheme.onSurfaceVariant,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: FilledButton(
+              onPressed:
+                  _isServiceActionInProgress
+                      ? null
+                      : (_isServiceRunning
+                          ? _stopLyricService
+                          : (_canStartService ? _startLyricService : null)),
+              style: FilledButton.styleFrom(
+                backgroundColor:
+                    _isServiceRunning
+                        ? colorScheme.error
+                        : (_canStartService
+                            ? colorScheme.primary
+                            : colorScheme.surfaceContainerHighest),
+                foregroundColor:
+                    _isServiceRunning
+                        ? colorScheme.onError
+                        : (_canStartService
+                            ? colorScheme.onPrimary
+                            : colorScheme.onSurfaceVariant),
+              ).copyWith(
+                elevation: WidgetStateProperty.resolveWith<double?>((
+                  Set<WidgetState> states,
+                ) {
+                  if (states.contains(WidgetState.disabled) &&
+                      !_isServiceActionInProgress) {
+                    return 0;
+                  }
+                  return 4;
+                }),
+              ),
+              child: AnimatedScale(
+                scale: _isServiceActionInProgress ? 0.95 : 1.0,
+                duration: const Duration(milliseconds: 600),
+                curve: expressiveSpringCurve,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _isServiceActionInProgress
+                        ? SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            color:
+                                _isServiceRunning
+                                    ? colorScheme.onError
+                                    : colorScheme.onPrimary,
+                          ),
+                        )
+                        : Icon(
+                          _isServiceRunning
+                              ? Icons.stop_circle_outlined
+                              : Icons.play_circle_outline_rounded,
+                          size: 28,
+                        ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _isServiceActionInProgress
+                          ? (_isServiceRunning ? 'Stopping...' : 'Starting...')
+                          : (_isServiceRunning
+                              ? 'Stop Lyric Service'
+                              : 'Launch Lyric Service'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(28),
+            ),
+            child: Text(
+              _isServiceRunning
+                  ? 'The lyric service is active. Stop it here if needed. It may restart if music plays and permissions are granted.'
+                  : 'Once permissions are granted, launch the service. It will run in the background. If it stops, come back here to launch it again!',
+              style: textTheme.bodySmall,
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
       ),
     );
   }
@@ -1999,15 +2310,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     print(
-      "HomeScreen build: Called. _isLoadingAppStatus: $_isLoadingAppStatus, _isServiceRunning: $_isServiceRunning, _canStartService: $_canStartService, _isServiceActionInProgress: $_isServiceActionInProgress",
+      "MainScreen build: Called. _isLoadingAppStatus: $_isLoadingAppStatus, _isServiceRunning: $_isServiceRunning, _canStartService: $_canStartService, _isServiceActionInProgress: $_isServiceActionInProgress",
     );
     final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
 
-    Widget screenContent;
+    Widget body;
 
     if (_isLoadingAppStatus) {
-      screenContent = const Center(
+      body = const Center(
         child: Padding(
           padding: EdgeInsets.all(32.0),
           child: Column(
@@ -2021,262 +2331,53 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
       );
     } else {
-      screenContent = expressive_refresh.ExpressiveRefreshIndicator.contained(
-        onRefresh: _handleRefresh,
-        onStatusChange: (status) {
-          if (!mounted || _refreshStatus == status) return;
-          setState(() {
-            _refreshStatus = status;
-          });
+      Widget child;
+      switch (_selectedIndex) {
+        case 0:
+          child = _buildHomeView(context);
+          break;
+        case 1:
+          child = _buildSettingsView(context);
+          break;
+        case 2:
+          child = _buildHelpView(context);
+          break;
+        default:
+          child = _buildHomeView(context);
+      }
+
+      body = AnimatedSwitcher(
+        duration: const Duration(milliseconds: 400),
+        switchInCurve: expressiveStandardCurve,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (Widget child, Animation<double> animation) {
+          return FadeTransition(
+            opacity: animation,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.92, end: 1.0).animate(animation),
+              child: child,
+            ),
+          );
         },
-        statusText: _isServiceRunning ? 'Active' : 'Inactive',
-        subtitleText:
-            _isServiceRunning
-                ? 'Enjoy synced lyrics :)'
-                : 'Launch service below to enjoy synced lyrics!',
-        color: colorScheme.primary,
-        backgroundColor: colorScheme.surfaceContainerHighest,
-        polygons: _refreshPolygons,
-        indicatorConstraints: const BoxConstraints(
-          minWidth: 56,
-          minHeight: 56,
-          maxWidth: 56,
-          maxHeight: 56,
-        ),
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(
-            parent: BouncingScrollPhysics(),
-          ),
-          padding: const EdgeInsets.fromLTRB(16.0, 36.0, 16.0, 12.0),
-          children: <Widget>[
-            AnimatedOpacity(
-              opacity: _supportCardVisible ? 1.0 : 0.0,
-              duration: const Duration(milliseconds: 700),
-              curve: expressiveStandardCurve,
-              child: _buildSupportCard(),
-            ),
-            AnimatedOpacity(
-              opacity: _welcomeVisible ? 1.0 : 0.0,
-              duration: const Duration(milliseconds: 600),
-              curve: expressiveStandardCurve,
-              child: _buildWelcomeSection(context),
-            ),
-
-            const Divider(height: 24, indent: 16, endIndent: 16),
-            _buildSectionHeader(context, 'App Setup & Permissions'),
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 24.0,
-                vertical: 4.0,
-              ),
-              child: Text(
-                'Grant these required permissions for the app to function.',
-                style: textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            if (_androidSdkInt != null &&
-                _androidSdkInt! >= _android13ApiLevel)
-              _buildPermissionRequestTile(
-                title: 'Post Notifications (Android 13+)',
-                subtitle: 'Allows the app to show its persistent notification.',
-                isGranted: _isPostNotificationsGranted,
-                onPressed: _requestPostNotificationsPermission,
-              ),
-            _buildPermissionRequestTile(
-              title: 'Notification Access',
-              subtitle: 'Lets the app read music player notifications.',
-              isGranted: _isNotificationAccessGranted,
-              onPressed: _requestNotificationAccess,
-            ),
-            _buildRestrictedSettingsNote(),
-            _buildPermissionRequestTile(
-              title: 'Display Over Other Apps',
-              subtitle: 'Enables showing lyrics on top of other apps.',
-              isGranted: _canDrawOverlays,
-              onPressed: _requestOverlayPermission,
-            ),
-            const SizedBox(height: 16),
-
-            Padding(
-              padding: const EdgeInsets.only(top: 12.0, bottom: 4.0),
-              child: Text(
-                'Optional Setting',
-                style: textTheme.titleMedium?.copyWith(
-                  color: colorScheme.secondary,
-                  fontWeight: FontWeight.w500,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 24.0,
-                vertical: 4.0,
-              ),
-              child: Text(
-                'Consider this for a more reliable experience on some devices.',
-                style: textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const SizedBox(height: 8),
-            _buildPermissionRequestTile(
-              title: 'Disable Battery Optimization',
-              subtitle: 'Helps the service run reliably in the background.',
-              isGranted: _isBatteryOptimizationDisabled,
-              onPressed: _requestDisableBatteryOptimization,
-              optional: true,
-            ),
-            const SizedBox(height: 16),
-            const Divider(height: 24, indent: 16, endIndent: 16),
-            _buildSectionHeader(context, 'Lyric Service Control'),
-
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('Service Status:', style: textTheme.titleMedium),
-                  const SizedBox(width: 12),
-                  Icon(
-                    _isServiceRunning
-                        ? Icons.rocket_launch_rounded
-                        : Icons.rocket_outlined,
-                    color:
-                        _isServiceRunning
-                            ? colorScheme.primary
-                            : colorScheme.onSurfaceVariant,
-                    size: 24,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      _isServiceRunning
-                          ? 'Active'
-                          : (_canStartService
-                              ? 'Ready to Launch'
-                              : 'Awaiting Permissions'),
-                      style: textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color:
-                            _isServiceRunning
-                                ? colorScheme.primary
-                                : colorScheme.onSurfaceVariant,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Center(
-              child: FilledButton(
-                onPressed:
-                    _isServiceActionInProgress
-                        ? null
-                        : (_isServiceRunning
-                            ? _stopLyricService
-                            : (_canStartService
-                                ? _startLyricService
-                                : null)),
-                style: FilledButton.styleFrom(
-                  backgroundColor:
-                      _isServiceRunning
-                          ? colorScheme.error
-                          : (_canStartService
-                              ? colorScheme.primary
-                              : colorScheme.surfaceContainerHighest),
-                  foregroundColor:
-                      _isServiceRunning
-                          ? colorScheme.onError
-                          : (_canStartService
-                              ? colorScheme.onPrimary
-                              : colorScheme.onSurfaceVariant),
-                ).copyWith(
-                  elevation: WidgetStateProperty.resolveWith<double?>((
-                    Set<WidgetState> states,
-                  ) {
-                    if (states.contains(WidgetState.disabled) &&
-                        !_isServiceActionInProgress) {
-                      return 0;
-                    }
-                    return 4;
-                  }),
-                ),
-                child: AnimatedScale(
-                  scale: _isServiceActionInProgress ? 0.95 : 1.0,
-                  duration: const Duration(milliseconds: 600),
-                  curve: expressiveSpringCurve,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _isServiceActionInProgress
-                          ? SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 3,
-                              color:
-                                  _isServiceRunning
-                                      ? colorScheme.onError
-                                      : colorScheme.onPrimary,
-                            ),
-                          )
-                          : Icon(
-                            _isServiceRunning
-                                ? Icons.stop_circle_outlined
-                                : Icons.play_circle_outline_rounded,
-                            size: 28,
-                          ),
-                      const SizedBox(width: 8),
-                      Text(
-                        _isServiceActionInProgress
-                            ? (_isServiceRunning
-                                ? 'Stopping...'
-                                : 'Starting...')
-                            : (_isServiceRunning
-                                ? 'Stop Lyric Service'
-                                : 'Launch Lyric Service'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(28),
-              ),
-              child: Text(
-                _isServiceRunning
-                    ? 'The lyric service is active. Stop it here if needed. It may restart if music plays and permissions are granted.'
-                    : 'Once permissions are granted, launch the service. It will run in the background. If it stops, come back here to launch it again!',
-                style: textTheme.bodySmall,
-                textAlign: TextAlign.center,
-              ),
-            ),
-
-            const SizedBox(height: 16),
-            const Divider(height: 24, indent: 16, endIndent: 16),
-            _buildCustomizationSection(context),
-            const Divider(height: 24, indent: 16, endIndent: 16),
-            _buildHelpAndSupportSection(context),
-
-            const SizedBox(height: 20),
-          ],
+        child: KeyedSubtree(
+          key: ValueKey<int>(_selectedIndex),
+          child: child,
         ),
       );
+    }
+
+    String appBarTitle;
+    switch (_selectedIndex) {
+      case 1:
+        appBarTitle = 'Settings';
+        break;
+      case 2:
+        appBarTitle = 'Help';
+        break;
+      case 0:
+      default:
+        appBarTitle = 'Lyric Listener';
+        break;
     }
 
     return Scaffold(
@@ -2285,9 +2386,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.lyrics_rounded, color: colorScheme.primary),
-            const SizedBox(width: 12),
-            const Text('Lyric Listener'),
+            if (_selectedIndex == 0) ...[
+              Icon(Icons.lyrics_rounded, color: colorScheme.primary),
+              const SizedBox(width: 12),
+            ],
+            Text(appBarTitle),
           ],
         ),
         actions: [
@@ -2302,7 +2405,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ],
       ),
-      body: SafeArea(child: Center(child: screenContent)),
+      body: SafeArea(child: body),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: _onItemTapped,
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home_rounded),
+            label: 'Home',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings_rounded),
+            label: 'Settings',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.help_outline_rounded),
+            selectedIcon: Icon(Icons.help_rounded),
+            label: 'Help',
+          ),
+        ],
+      ),
     );
   }
 }

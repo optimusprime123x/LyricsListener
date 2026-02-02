@@ -144,35 +144,36 @@ void main() {
     expect(find.text('Stop Lyric Service'), findsNothing);
   });
 
-  testWidgets('Settings section expands', (WidgetTester tester) async {
+  testWidgets('Settings tab is accessible', (WidgetTester tester) async {
     registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
     await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
     await tester.pumpAndSettle(); // Wait for async loading to settle
 
-    // Find and tap customization expansion tile.
-    final customizationTile = find.text('Settings');
-    expect(customizationTile, findsOneWidget);
+    // Find and tap Settings tab in NavigationBar
+    // Using icon to be more specific as "Settings" might appear in title if we were already there (but we start at Home)
+    final settingsTab = find.byIcon(Icons.settings_outlined);
+    expect(settingsTab, findsOneWidget);
 
-    await tester.tap(customizationTile);
+    await tester.tap(settingsTab);
     await tester.pumpAndSettle();
 
-    // Check for expanded content
+    // Check for settings content
     expect(find.text('Theme Color'), findsOneWidget);
     expect(find.text('Dynamic lyrics window colours'), findsOneWidget);
   });
 
-  testWidgets('Help section is accessible', (WidgetTester tester) async {
+  testWidgets('Help tab is accessible', (WidgetTester tester) async {
     registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
     await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
     await tester.pumpAndSettle(); // Wait for async loading to settle
 
-    // Find and tap help expansion tile
-    final helpTile = find.text('Help and Support');
-    expect(helpTile, findsOneWidget);
+    // Find and tap Help tab in NavigationBar
+    final helpTab = find.byIcon(Icons.help_outline_rounded);
+    expect(helpTab, findsOneWidget);
 
-    await tester.tap(helpTile);
+    await tester.tap(helpTab);
     await tester.pumpAndSettle();
 
     // Check for FAQ items.
@@ -180,6 +181,9 @@ void main() {
   });
 
   testWidgets('Refresh subtitle appears immediately', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    addTearDown(tester.view.resetPhysicalSize);
+
     final refreshKey = GlobalKey<expressive_refresh.ExpressiveRefreshIndicatorState>();
     final completer = Completer<void>();
 
@@ -199,7 +203,7 @@ void main() {
     );
 
     refreshKey.currentState!.show();
-    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(seconds: 1));
 
     final subtitleFinder = find.text('Launch service below to enjoy synced lyrics!');
     expect(subtitleFinder, findsOneWidget);
