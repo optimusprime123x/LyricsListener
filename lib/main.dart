@@ -1233,6 +1233,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         subtitle: Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
         trailing: FilledButton.tonal(
           onPressed: isGranted ? null : onPressed,
+          style: ButtonStyle(
+            padding: WidgetStateProperty.all(
+              const EdgeInsets.symmetric(horizontal: 16),
+            ),
+            backgroundColor: WidgetStateProperty.resolveWith<Color?>((
+              Set<WidgetState> states,
+            ) {
+              if (states.contains(WidgetState.disabled)) {
+                return colorScheme.surfaceContainerHighest;
+              }
+              return null;
+            }),
+            foregroundColor: WidgetStateProperty.resolveWith<Color?>((
+              Set<WidgetState> states,
+            ) {
+              if (states.contains(WidgetState.disabled)) {
+                return colorScheme.onSurfaceVariant;
+              }
+              return null;
+            }),
+          ),
           child: Text(isGranted ? 'Granted' : 'Grant'),
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
