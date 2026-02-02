@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:flutter_m3shapes/flutter_m3shapes.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -28,6 +29,8 @@ const String _lyricsWindowHighlightColorKey = 'lyrics_window_highlight_color';
 const Color _defaultLyricsWindowTitleColor = Color(0xFFE0E0E0);
 const Color _defaultLyricsWindowBackgroundColor = Color(0xDD212121);
 const Color _defaultLyricsWindowHighlightColor = Color(0x46C8C8C8);
+
+const Curve expressiveCurve = Curves.elasticOut;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -75,7 +78,7 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
-    final baseHeadlineTheme = GoogleFonts.poppinsTextTheme(
+    final baseHeadlineTheme = GoogleFonts.robotoFlexTextTheme(
       Theme.of(context).textTheme,
     );
     final baseBodyTheme = GoogleFonts.manropeTextTheme(
@@ -102,7 +105,7 @@ class _MyAppState extends State<MyApp> {
         elevation: 1,
         margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(28),
           side: BorderSide(color: baseLightColorScheme.outlineVariant),
         ),
       ),
@@ -110,7 +113,7 @@ class _MyAppState extends State<MyApp> {
         style: ElevatedButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(28),
           ),
           textStyle: lightTextTheme.labelLarge?.copyWith(
             fontWeight: FontWeight.bold,
@@ -121,7 +124,7 @@ class _MyAppState extends State<MyApp> {
         style: FilledButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(28),
           ),
           textStyle: lightTextTheme.labelLarge?.copyWith(
             fontWeight: FontWeight.w600,
@@ -132,7 +135,7 @@ class _MyAppState extends State<MyApp> {
         style: OutlinedButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(28),
           ),
           textStyle: lightTextTheme.labelLarge?.copyWith(
             fontWeight: FontWeight.w600,
@@ -156,7 +159,7 @@ class _MyAppState extends State<MyApp> {
         titleTextStyle: lightTextTheme.titleMedium,
         subtitleTextStyle: lightTextTheme.bodyMedium,
         minVerticalPadding: 16,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       ),
       expansionTileTheme: ExpansionTileThemeData(
         iconColor: baseLightColorScheme.primary,
@@ -165,22 +168,22 @@ class _MyAppState extends State<MyApp> {
         collapsedTextColor: baseLightColorScheme.onSurface,
         backgroundColor: baseLightColorScheme.surfaceContainerLow,
         collapsedBackgroundColor: baseLightColorScheme.surfaceContainer,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
         collapsedShape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(28),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(28),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(28),
           borderSide: BorderSide(color: baseLightColorScheme.outline),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(28),
           borderSide: BorderSide(color: baseLightColorScheme.primary, width: 2),
         ),
         filled: true,
@@ -188,7 +191,7 @@ class _MyAppState extends State<MyApp> {
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
         backgroundColor: baseLightColorScheme.inverseSurface,
         contentTextStyle: lightTextTheme.bodyMedium?.copyWith(
           color: baseLightColorScheme.onInverseSurface,
@@ -216,7 +219,7 @@ class _MyAppState extends State<MyApp> {
         elevation: 1,
         margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(28),
           side: BorderSide(color: baseDarkColorScheme.outlineVariant),
         ),
       ),
@@ -224,7 +227,7 @@ class _MyAppState extends State<MyApp> {
         style: ElevatedButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(28),
           ),
           textStyle: darkTextTheme.labelLarge?.copyWith(
             fontWeight: FontWeight.bold,
@@ -235,7 +238,7 @@ class _MyAppState extends State<MyApp> {
         style: FilledButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(28),
           ),
           textStyle: darkTextTheme.labelLarge?.copyWith(
             fontWeight: FontWeight.w600,
@@ -246,7 +249,7 @@ class _MyAppState extends State<MyApp> {
         style: OutlinedButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(28),
           ),
           textStyle: darkTextTheme.labelLarge?.copyWith(
             fontWeight: FontWeight.w600,
@@ -270,7 +273,7 @@ class _MyAppState extends State<MyApp> {
         titleTextStyle: darkTextTheme.titleMedium,
         subtitleTextStyle: darkTextTheme.bodyMedium,
         minVerticalPadding: 16,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       ),
       expansionTileTheme: ExpansionTileThemeData(
         iconColor: baseDarkColorScheme.primary,
@@ -279,22 +282,22 @@ class _MyAppState extends State<MyApp> {
         collapsedTextColor: baseDarkColorScheme.onSurface,
         backgroundColor: baseDarkColorScheme.surfaceContainerLow,
         collapsedBackgroundColor: baseDarkColorScheme.surfaceContainer,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
         collapsedShape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(28),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(28),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(28),
           borderSide: BorderSide(color: baseDarkColorScheme.outline),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(28),
           borderSide: BorderSide(color: baseDarkColorScheme.primary, width: 2),
         ),
         filled: true,
@@ -302,7 +305,7 @@ class _MyAppState extends State<MyApp> {
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
         backgroundColor: baseDarkColorScheme.inverseSurface,
         contentTextStyle: darkTextTheme.bodyMedium?.copyWith(
           color: baseDarkColorScheme.onInverseSurface,
@@ -1402,7 +1405,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     return GestureDetector(
                       onTap: () => Navigator.of(dialogContext).pop(color),
                       child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
+                        duration: const Duration(milliseconds: 600),
+                        curve: expressiveCurve,
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
@@ -1569,7 +1573,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       message:
                           'Set theme color to #${color.value.toRadixString(16).substring(2).toUpperCase()}',
                       child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
+                        duration: const Duration(milliseconds: 600),
+                        curve: expressiveCurve,
                         width: _seedColorChipSize,
                         height: _seedColorChipSize,
                         decoration: BoxDecoration(
@@ -1623,8 +1628,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           ),
           AnimatedSwitcher(
-            duration: const Duration(milliseconds: 200),
-            switchInCurve: Curves.easeOutCubic,
+            duration: const Duration(milliseconds: 600),
+            switchInCurve: expressiveCurve,
             switchOutCurve: Curves.easeInCubic,
             child:
                 _dynamicLyricsWindowColors
@@ -1932,227 +1937,241 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
       );
     } else {
-      screenContent = ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-        children: <Widget>[
-          AnimatedOpacity(
-            opacity: _supportCardVisible ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 500),
-            child: _buildSupportCard(),
+      screenContent = RefreshIndicator(
+        onRefresh: _loadInitialData,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
           ),
-          AnimatedOpacity(
-            opacity: _welcomeVisible ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 500),
-            child: _buildWelcomeSection(context),
-          ),
-
-          const Divider(height: 24, indent: 16, endIndent: 16),
-          _buildSectionHeader(context, 'App Setup & Permissions'),
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 24.0,
-              vertical: 4.0,
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+          children: <Widget>[
+            AnimatedOpacity(
+              opacity: _supportCardVisible ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 600),
+              curve: expressiveCurve,
+              child: _buildSupportCard(),
             ),
-            child: Text(
-              'Grant these required permissions for the app to function.',
-              style: textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
+            AnimatedOpacity(
+              opacity: _welcomeVisible ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 600),
+              curve: expressiveCurve,
+              child: _buildWelcomeSection(context),
+            ),
+
+            const Divider(height: 24, indent: 16, endIndent: 16),
+            _buildSectionHeader(context, 'App Setup & Permissions'),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24.0,
+                vertical: 4.0,
               ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          if (_androidSdkInt != null && _androidSdkInt! >= _android13ApiLevel)
-            _buildPermissionRequestTile(
-              title: 'Post Notifications (Android 13+)',
-              subtitle: 'Allows the app to show its persistent notification.',
-              isGranted: _isPostNotificationsGranted,
-              onPressed: _requestPostNotificationsPermission,
-            ),
-          _buildPermissionRequestTile(
-            title: 'Notification Access',
-            subtitle: 'Lets the app read music player notifications.',
-            isGranted: _isNotificationAccessGranted,
-            onPressed: _requestNotificationAccess,
-          ),
-          _buildRestrictedSettingsNote(),
-          _buildPermissionRequestTile(
-            title: 'Display Over Other Apps',
-            subtitle: 'Enables showing lyrics on top of other apps.',
-            isGranted: _canDrawOverlays,
-            onPressed: _requestOverlayPermission,
-          ),
-          const SizedBox(height: 16),
-
-          Padding(
-            padding: const EdgeInsets.only(top: 12.0, bottom: 4.0),
-            child: Text(
-              'Optional Setting',
-              style: textTheme.titleMedium?.copyWith(
-                color: colorScheme.secondary,
-                fontWeight: FontWeight.w500,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 24.0,
-              vertical: 4.0,
-            ),
-            child: Text(
-              'Consider this for a more reliable experience on some devices.',
-              style: textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          const SizedBox(height: 8),
-          _buildPermissionRequestTile(
-            title: 'Disable Battery Optimization',
-            subtitle: 'Helps the service run reliably in the background.',
-            isGranted: _isBatteryOptimizationDisabled,
-            onPressed: _requestDisableBatteryOptimization,
-            optional: true,
-          ),
-          const SizedBox(height: 16),
-          const Divider(height: 24, indent: 16, endIndent: 16),
-          _buildSectionHeader(context, 'Lyric Service Control'),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('Service Status:', style: textTheme.titleMedium),
-                const SizedBox(width: 12),
-                Icon(
-                  _isServiceRunning
-                      ? Icons.rocket_launch_rounded
-                      : Icons.rocket_outlined,
-                  color:
-                      _isServiceRunning
-                          ? colorScheme.primary
-                          : colorScheme.onSurfaceVariant,
-                  size: 24,
+              child: Text(
+                'Grant these required permissions for the app to function.',
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
                 ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            if (_androidSdkInt != null &&
+                _androidSdkInt! >= _android13ApiLevel)
+              _buildPermissionRequestTile(
+                title: 'Post Notifications (Android 13+)',
+                subtitle: 'Allows the app to show its persistent notification.',
+                isGranted: _isPostNotificationsGranted,
+                onPressed: _requestPostNotificationsPermission,
+              ),
+            _buildPermissionRequestTile(
+              title: 'Notification Access',
+              subtitle: 'Lets the app read music player notifications.',
+              isGranted: _isNotificationAccessGranted,
+              onPressed: _requestNotificationAccess,
+            ),
+            _buildRestrictedSettingsNote(),
+            _buildPermissionRequestTile(
+              title: 'Display Over Other Apps',
+              subtitle: 'Enables showing lyrics on top of other apps.',
+              isGranted: _canDrawOverlays,
+              onPressed: _requestOverlayPermission,
+            ),
+            const SizedBox(height: 16),
+
+            Padding(
+              padding: const EdgeInsets.only(top: 12.0, bottom: 4.0),
+              child: Text(
+                'Optional Setting',
+                style: textTheme.titleMedium?.copyWith(
+                  color: colorScheme.secondary,
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24.0,
+                vertical: 4.0,
+              ),
+              child: Text(
+                'Consider this for a more reliable experience on some devices.',
+                style: textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildPermissionRequestTile(
+              title: 'Disable Battery Optimization',
+              subtitle: 'Helps the service run reliably in the background.',
+              isGranted: _isBatteryOptimizationDisabled,
+              onPressed: _requestDisableBatteryOptimization,
+              optional: true,
+            ),
+            const SizedBox(height: 16),
+            const Divider(height: 24, indent: 16, endIndent: 16),
+            _buildSectionHeader(context, 'Lyric Service Control'),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('Service Status:', style: textTheme.titleMedium),
+                  const SizedBox(width: 12),
+                  Icon(
                     _isServiceRunning
-                        ? 'Active'
-                        : (_canStartService
-                            ? 'Ready to Launch'
-                            : 'Awaiting Permissions'),
-                    style: textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color:
-                          _isServiceRunning
-                              ? colorScheme.primary
-                              : colorScheme.onSurfaceVariant,
+                        ? Icons.rocket_launch_rounded
+                        : Icons.rocket_outlined,
+                    color:
+                        _isServiceRunning
+                            ? colorScheme.primary
+                            : colorScheme.onSurfaceVariant,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _isServiceRunning
+                          ? 'Active'
+                          : (_canStartService
+                              ? 'Ready to Launch'
+                              : 'Awaiting Permissions'),
+                      style: textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color:
+                            _isServiceRunning
+                                ? colorScheme.primary
+                                : colorScheme.onSurfaceVariant,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Center(
+              child: FilledButton(
+                onPressed:
+                    _isServiceActionInProgress
+                        ? null
+                        : (_isServiceRunning
+                            ? _stopLyricService
+                            : (_canStartService
+                                ? _startLyricService
+                                : null)),
+                style: FilledButton.styleFrom(
+                  backgroundColor:
+                      _isServiceRunning
+                          ? colorScheme.error
+                          : (_canStartService
+                              ? colorScheme.primary
+                              : colorScheme.surfaceContainerHighest),
+                  foregroundColor:
+                      _isServiceRunning
+                          ? colorScheme.onError
+                          : (_canStartService
+                              ? colorScheme.onPrimary
+                              : colorScheme.onSurfaceVariant),
+                ).copyWith(
+                  elevation: WidgetStateProperty.resolveWith<double?>((
+                    Set<WidgetState> states,
+                  ) {
+                    if (states.contains(WidgetState.disabled) &&
+                        !_isServiceActionInProgress) {
+                      return 0;
+                    }
+                    return 4;
+                  }),
+                ),
+                child: AnimatedScale(
+                  scale: _isServiceActionInProgress ? 0.95 : 1.0,
+                  duration: const Duration(milliseconds: 600),
+                  curve: expressiveCurve,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _isServiceActionInProgress
+                          ? SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 3,
+                              color:
+                                  _isServiceRunning
+                                      ? colorScheme.onError
+                                      : colorScheme.onPrimary,
+                            ),
+                          )
+                          : Icon(
+                            _isServiceRunning
+                                ? Icons.stop_circle_outlined
+                                : Icons.play_circle_outline_rounded,
+                            size: 28,
+                          ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _isServiceActionInProgress
+                            ? (_isServiceRunning
+                                ? 'Stopping...'
+                                : 'Starting...')
+                            : (_isServiceRunning
+                                ? 'Stop Lyric Service'
+                                : 'Launch Lyric Service'),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Center(
-            child: FilledButton(
-              onPressed:
-                  _isServiceActionInProgress
-                      ? null
-                      : (_isServiceRunning
-                          ? _stopLyricService
-                          : (_canStartService ? _startLyricService : null)),
-              style: FilledButton.styleFrom(
-                backgroundColor:
-                    _isServiceRunning
-                        ? colorScheme.error
-                        : (_canStartService
-                            ? colorScheme.primary
-                            : colorScheme.surfaceContainerHighest),
-                foregroundColor:
-                    _isServiceRunning
-                        ? colorScheme.onError
-                        : (_canStartService
-                            ? colorScheme.onPrimary
-                            : colorScheme.onSurfaceVariant),
-              ).copyWith(
-                elevation: WidgetStateProperty.resolveWith<double?>((
-                  Set<WidgetState> states,
-                ) {
-                  if (states.contains(WidgetState.disabled) &&
-                      !_isServiceActionInProgress) {
-                    return 0;
-                  }
-                  return 4;
-                }),
-              ),
-              child: AnimatedScale(
-                scale: _isServiceActionInProgress ? 0.95 : 1.0,
-                duration: const Duration(milliseconds: 200),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _isServiceActionInProgress
-                        ? SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 3,
-                            color:
-                                _isServiceRunning
-                                    ? colorScheme.onError
-                                    : colorScheme.onPrimary,
-                          ),
-                        )
-                        : Icon(
-                          _isServiceRunning
-                              ? Icons.stop_circle_outlined
-                              : Icons.play_circle_outline_rounded,
-                          size: 28,
-                        ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _isServiceActionInProgress
-                          ? (_isServiceRunning ? 'Stopping...' : 'Starting...')
-                          : (_isServiceRunning
-                              ? 'Stop Lyric Service'
-                              : 'Launch Lyric Service'),
-                    ),
-                  ],
-                ),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(16),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text(
+                _isServiceRunning
+                    ? 'The lyric service is active. Stop it here if needed. It may restart if music plays and permissions are granted.'
+                    : 'Once permissions are granted, launch the service. It will run in the background. If it stops, come back here to launch it again!',
+                style: textTheme.bodySmall,
+                textAlign: TextAlign.center,
+              ),
             ),
-            child: Text(
-              _isServiceRunning
-                  ? 'The lyric service is active. Stop it here if needed. It may restart if music plays and permissions are granted.'
-                  : 'Once permissions are granted, launch the service. It will run in the background. If it stops, come back here to launch it again!',
-              style: textTheme.bodySmall,
-              textAlign: TextAlign.center,
-            ),
-          ),
 
-          const SizedBox(height: 16),
-          const Divider(height: 24, indent: 16, endIndent: 16),
-          _buildCustomizationSection(context),
-          const Divider(height: 24, indent: 16, endIndent: 16),
-          _buildHelpAndSupportSection(context),
+            const SizedBox(height: 16),
+            const Divider(height: 24, indent: 16, endIndent: 16),
+            _buildCustomizationSection(context),
+            const Divider(height: 24, indent: 16, endIndent: 16),
+            _buildHelpAndSupportSection(context),
 
-          const SizedBox(height: 20),
-        ],
+            const SizedBox(height: 20),
+          ],
+        ),
       );
     }
 
