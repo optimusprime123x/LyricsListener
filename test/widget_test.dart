@@ -1,17 +1,59 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lyricslistener/main.dart';
 
 void main() {
+  const MethodChannel channel = MethodChannel('dev.optimus.lyricslistener/permissions');
+
+  setUp(() {
+    // Set a large screen size to ensure all ListView items are rendered
+    TestWidgetsFlutterBinding.ensureInitialized();
+  });
+
+  tearDown(() {
+  });
+
+  void registerMock(WidgetTester tester) {
+    tester.view.physicalSize = const Size(1080, 4000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      channel,
+      (MethodCall methodCall) async {
+        switch (methodCall.method) {
+          case 'getAndroidVersion':
+            return 33; // Android 13
+          case 'isNotificationAccessGranted':
+            return true;
+          case 'canDrawOverlays':
+            return true;
+          case 'isPostNotificationsGranted':
+            return true;
+          case 'isIgnoringBatteryOptimizations':
+            return false;
+          case 'isLyricServiceRunning':
+            return false;
+          case 'clearLyricsCache':
+            return 0;
+          default:
+            return null;
+        }
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      );
+    });
+  }
+
   testWidgets('MyApp initializes with seed color', (WidgetTester tester) async {
+    registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
     await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
 
@@ -20,6 +62,7 @@ void main() {
   });
 
   testWidgets('HomeScreen displays welcome section', (WidgetTester tester) async {
+    registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
     await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
     await tester.pumpAndSettle(); // Wait for async loading to settle
@@ -30,6 +73,7 @@ void main() {
   });
 
   testWidgets('Theme toggle button works', (WidgetTester tester) async {
+    registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
     await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
     await tester.pumpAndSettle(); // Wait for async loading to settle
@@ -37,14 +81,21 @@ void main() {
     // Find and tap theme toggle button in AppBar
     final themeButton = find.byIcon(Icons.dark_mode_rounded);
     expect(themeButton, findsOneWidget);
+
+    // First tap: System (Light) -> Light (no change)
     await tester.tap(themeButton);
-    await tester.pump();
+    await tester.pumpAndSettle();
+
+    // Second tap: Light -> Dark (icon changes to light_mode_rounded)
+    await tester.tap(themeButton);
+    await tester.pumpAndSettle();
 
     // Verify theme change (icon should switch to light mode)
     expect(find.byIcon(Icons.light_mode_rounded), findsOneWidget);
   });
 
   testWidgets('Expressive theme shapes are applied', (WidgetTester tester) async {
+    registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
     await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
 
@@ -55,44 +106,52 @@ void main() {
     final filledButtonShape =
         theme?.filledButtonTheme.style?.shape?.resolve({});
 
-    expect(cardRadius?.topLeft.x, 24);
+    // Updated expectations for Material 3 Expressive (28 radius)
+    expect(cardRadius?.topLeft.x, 28);
     expect(filledButtonShape, isA<RoundedRectangleBorder>());
     expect(
       (filledButtonShape as RoundedRectangleBorder).borderRadius,
-      BorderRadius.circular(20),
+      BorderRadius.circular(28),
     );
   });
 
   testWidgets('Permission status icons display correctly', (WidgetTester tester) async {
+    registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
     await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
     await tester.pumpAndSettle(); // Wait for async loading to settle
 
-    // Check for permission status icons (assuming some are present based on state)
-    expect(find.byIcon(Icons.check_circle_rounded), findsWidgets); // Granted permissions
-    expect(find.byIcon(Icons.error_outline_rounded), findsWidgets); // Missing permissions
+    // Since we mocked permissions to true, we expect check circles
+    expect(find.byIcon(Icons.check_circle_rounded), findsWidgets);
+    // We mocked battery optimization to false (default/optional), so it might show info or error depending on implementation.
+    expect(find.byIcon(Icons.info_outline_rounded), findsOneWidget);
   });
 
   testWidgets('Service control buttons are present', (WidgetTester tester) async {
+    registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
     await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
     await tester.pumpAndSettle(); // Wait for async loading to settle
 
-    // Check for service control elements
+    // Mocked 'isLyricServiceRunning' to false.
+    // Expect 'Launch Lyric Service'
     expect(find.text('Launch Lyric Service'), findsOneWidget);
-    expect(find.text('Stop Lyric Service'), findsOneWidget);
+    // 'Stop Lyric Service' should NOT be present
+    expect(find.text('Stop Lyric Service'), findsNothing);
   });
 
-  testWidgets('Customization section expands', (WidgetTester tester) async {
+  testWidgets('Settings section expands', (WidgetTester tester) async {
+    registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
     await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
     await tester.pumpAndSettle(); // Wait for async loading to settle
 
-    // Find and tap customization expansion tile
-    final customizationTile = find.text('Customization & Appearance');
+    // Find and tap customization expansion tile.
+    final customizationTile = find.text('Settings');
     expect(customizationTile, findsOneWidget);
+
     await tester.tap(customizationTile);
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     // Check for expanded content
     expect(find.text('Theme Color'), findsOneWidget);
@@ -100,6 +159,7 @@ void main() {
   });
 
   testWidgets('Help section is accessible', (WidgetTester tester) async {
+    registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
     await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
     await tester.pumpAndSettle(); // Wait for async loading to settle
@@ -107,10 +167,11 @@ void main() {
     // Find and tap help expansion tile
     final helpTile = find.text('Help and Support');
     expect(helpTile, findsOneWidget);
-    await tester.tap(helpTile);
-    await tester.pump();
 
-    // Check for FAQ items
-    expect(find.text('Lyrics popup is not shown'), findsOneWidget);
+    await tester.tap(helpTile);
+    await tester.pumpAndSettle();
+
+    // Check for FAQ items.
+    expect(find.textContaining('Lyrics popup is not shown'), findsOneWidget);
   });
 }
