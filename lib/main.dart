@@ -1231,20 +1231,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         subtitle: Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
         trailing: FilledButton.tonal(
           onPressed: isGranted ? null : onPressed,
-          style: FilledButton.styleFrom(
-            backgroundColor:
-                isGranted
-                    ? colorScheme.surfaceContainerHighest
-                    : colorScheme.primaryContainer,
-            foregroundColor:
-                isGranted
-                    ? colorScheme.onSurfaceVariant
-                    : colorScheme.onPrimaryContainer,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
           child: Text(isGranted ? 'Granted' : 'Grant'),
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1547,6 +1533,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ],
           ),
           const SizedBox(height: 12),
+          const double seedColorChipSize = 44;
+          const double seedColorChipRadius = seedColorChipSize / 2;
+
           Wrap(
             spacing: 16.0,
             runSpacing: 12.0,
@@ -1554,18 +1543,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 _predefinedSeedColors.map((color) {
                   final isSelected = widget.seedColor == color;
                   return InkWell(
-                    borderRadius: BorderRadius.circular(22),
+                    borderRadius: BorderRadius.circular(seedColorChipRadius),
                     onTap: () => widget.onSeedColorChanged(color),
                     child: Tooltip(
                       message:
                           'Set theme color to #${color.value.toRadixString(16).substring(2).toUpperCase()}',
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
-                        width: 44,
-                        height: 44,
+                        width: seedColorChipSize,
+                        height: seedColorChipSize,
                         decoration: BoxDecoration(
                           color: color,
-                          borderRadius: BorderRadius.circular(22),
+                          borderRadius: BorderRadius.circular(
+                            seedColorChipRadius,
+                          ),
                           border: Border.all(
                             color: Theme.of(context).colorScheme.outlineVariant,
                             width: isSelected ? 2.5 : 1.5,
