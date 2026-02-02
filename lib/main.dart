@@ -769,7 +769,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() {
         _supportCardVisible = true;
         _welcomeVisible = true;
-        _statusHeaderVisible = true;
       });
     });
   }
@@ -838,11 +837,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await prefs.setInt(_lyricsWindowHighlightColorKey, color.value);
   }
 
-  Future<void> _loadInitialData() async {
+  Future<void> _loadInitialData({bool showLoading = true}) async {
     print("HomeScreen _loadInitialData: Starting");
     if (!mounted) return;
 
-    if (!_isLoadingAppStatus) {
+    if (showLoading && !_isLoadingAppStatus) {
       setState(() {
         _isLoadingAppStatus = true;
       });
@@ -860,7 +859,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
     } finally {
       if (mounted) {
-        if (_isLoadingAppStatus) {
+        if (showLoading && _isLoadingAppStatus) {
           setState(() {
             _isLoadingAppStatus = false;
           });
@@ -870,6 +869,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         );
       }
     }
+  }
+
+  Future<void> _handleRefresh() async {
+    await _loadInitialData(showLoading: false);
   }
 
   @override
@@ -1333,16 +1336,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             top: -28,
             left: 0,
             right: 0,
-            child: AnimatedSlide(
-              offset: _statusHeaderVisible ? Offset.zero : const Offset(0, -0.25),
-              duration: const Duration(milliseconds: 650),
-              curve: expressiveSpringCurve,
-              child: AnimatedOpacity(
-                opacity: _statusHeaderVisible ? 1 : 0,
-                duration: const Duration(milliseconds: 450),
-                curve: expressiveStandardCurve,
-                child: Center(child: _buildServiceStatusBadge(context)),
-              ),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 450),
+              switchInCurve: expressiveSpringCurve,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                final offsetAnimation = Tween<Offset>(
+                  begin: const Offset(0, -0.2),
+                  end: Offset.zero,
+                ).animate(animation);
+                return SlideTransition(
+                  position: offsetAnimation,
+                  child: FadeTransition(opacity: animation, child: child),
+                );
+              },
+              child:
+                  _statusHeaderVisible
+                      ? Center(
+                        key: const ValueKey('status-badge'),
+                        child: _buildServiceStatusBadge(context),
+                      )
+                      : const SizedBox.shrink(),
             ),
           ),
         ],
@@ -1625,6 +1639,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       margin: EdgeInsets.zero,
       child: ExpansionTile(
         title: Text('Settings', style: textTheme.titleMedium),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        collapsedShape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
         initiallyExpanded: false,
         childrenPadding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
         children: <Widget>[
@@ -1645,45 +1662,60 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             children:
                 _predefinedSeedColors.map((color) {
                   final isSelected = widget.seedColor == color;
-                  return InkWell(
-                    borderRadius: BorderRadius.circular(_seedColorChipRadius),
-                    onTap: () => widget.onSeedColorChanged(color),
-                    child: Tooltip(
-                      message:
-                          'Set theme color to #${color.value.toRadixString(16).substring(2).toUpperCase()}',
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 600),
-                        curve: expressiveSpringCurve,
-                        width: _seedColorChipSize,
-                        height: _seedColorChipSize,
-                        decoration: BoxDecoration(
-                          color: color,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Theme.of(context).colorScheme.outlineVariant,
-                            width: isSelected ? 2.5 : 1.5,
-                          ),
-                        ),
-                        child:
-                            isSelected
-                                ? Center(
-                                  child: Icon(
-                                    Icons.check_rounded,
-                                    color:
-                                        ThemeData.estimateBrightnessForColor(
-                                                  color,
-                                                ) ==
-                                                Brightness.dark
-                                            ? Colors.white
-                                            : Colors.black,
-                                    size: 24,
-                                  ),
-                                )
-                                : null,
-                      ),
+          return InkWell(
+            borderRadius: BorderRadius.circular(_seedColorChipRadius),
+            onTap: () => widget.onSeedColorChanged(color),
+            child: Tooltip(
+              message:
+                  'Set theme color to #${color.value.toRadixString(16).substring(2).toUpperCase()}',
+              child: AnimatedScale(
+                duration: const Duration(milliseconds: 450),
+                curve: expressiveSpringCurve,
+                scale: isSelected ? 1.08 : 1.0,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 600),
+                  curve: expressiveSpringCurve,
+                  width: _seedColorChipSize,
+                  height: _seedColorChipSize,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                      width: isSelected ? 2.5 : 1.5,
                     ),
-                  );
-                }).toList(),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withValues(alpha: isSelected ? 0.35 : 0.15),
+                        blurRadius: isSelected ? 12 : 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child:
+                      isSelected
+                          ? Center(
+                            child: Icon(
+                              Icons.check_rounded,
+                              color:
+                                  ThemeData.estimateBrightnessForColor(
+                                            color,
+                                          ) ==
+                                          Brightness.dark
+                                      ? Colors.white
+                                      : Colors.black,
+                              size: 24,
+                            ),
+                          )
+                          : null,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
           ),
           const SizedBox(height: 24),
           SwitchListTile.adaptive(
@@ -1830,6 +1862,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         margin: EdgeInsets.zero,
         child: ExpansionTile(
           title: Text('Help and Support', style: textTheme.titleMedium),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+          collapsedShape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
           initiallyExpanded: false,
           childrenPadding: const EdgeInsets.symmetric(
             horizontal: 16,
@@ -2010,9 +2045,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         isActive ? colorScheme.onPrimary : colorScheme.onSurfaceVariant;
     final headline = isActive ? 'Active' : 'Not active';
     final subtitle =
-        isActive
-            ? 'Enjoy synced lyrics :)'
-            : 'Launch service below to enjoy synced lyrics!';
+        isRefreshing
+            ? (isActive
+                ? 'Enjoy synced lyrics :)'
+                : 'Launch service below to enjoy synced lyrics!')
+            : null;
 
     return SizedBox(
       width: _statusBadgeWidth,
@@ -2061,15 +2098,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: textTheme.labelSmall?.copyWith(
-                      color: onBadgeColor.withValues(alpha: 0.85),
-                      fontWeight: FontWeight.w500,
-                    ),
-                    textAlign: TextAlign.center,
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 350),
+                    switchInCurve: expressiveSpringCurve,
+                    switchOutCurve: Curves.easeInCubic,
+                    child:
+                        subtitle == null
+                            ? const SizedBox.shrink()
+                            : Text(
+                              subtitle,
+                              key: ValueKey(subtitle),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: textTheme.labelSmall?.copyWith(
+                                color: onBadgeColor.withValues(alpha: 0.85),
+                                fontWeight: FontWeight.w500,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
                   ),
                 ],
               ),
@@ -2106,11 +2152,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
     } else {
       screenContent = expressive_refresh.ExpressiveRefreshIndicator.contained(
-        onRefresh: _loadInitialData,
+        onRefresh: _handleRefresh,
         onStatusChange: (status) {
           if (!mounted || _refreshStatus == status) return;
+          final isActiveStatus =
+              status == expressive_refresh.RefreshIndicatorStatus.drag ||
+              status == expressive_refresh.RefreshIndicatorStatus.armed ||
+              status == expressive_refresh.RefreshIndicatorStatus.refresh ||
+              status == expressive_refresh.RefreshIndicatorStatus.snap;
           setState(() {
             _refreshStatus = status;
+            _statusHeaderVisible = isActiveStatus;
           });
         },
         color: colorScheme.primary,
