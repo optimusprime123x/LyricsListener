@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 
-import 'package:expressive_refresh/expressive_refresh.dart'
+import 'package:lyricslistener/widgets/expressive_refresh_indicator.dart'
     as expressive_refresh;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -543,7 +543,7 @@ class _DebugScreenState extends State<DebugScreen> {
               child: Container(
                 decoration: BoxDecoration(
                   color: colorScheme.surfaceContainer,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(28),
                   border: Border.all(color: colorScheme.outlineVariant),
                 ),
                 child: SelectionArea(
@@ -611,7 +611,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _isServiceActionInProgress = false;
   bool _supportCardVisible = false;
   bool _welcomeVisible = false;
-  bool _statusHeaderVisible = false;
   int _cacheManagementTapCount = 0;
   Timer? _cacheManagementResetTimer;
   expressive_refresh.RefreshIndicatorStatus? _refreshStatus;
@@ -749,8 +748,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     Color(0x4DCDDC39),
     Color(0x4DFFEB3B),
   ];
-  static const double _statusBadgeWidth = 176;
-  static const double _statusBadgeHeight = 64;
   static final List<RoundedPolygon> _refreshPolygons = [
     MaterialShapes.circle,
     MaterialShapes.softBurst,
@@ -1332,33 +1329,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ],
             ),
           ),
-          Positioned(
-            top: -28,
-            left: 0,
-            right: 0,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 450),
-              switchInCurve: expressiveSpringCurve,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) {
-                final offsetAnimation = Tween<Offset>(
-                  begin: const Offset(0, -0.2),
-                  end: Offset.zero,
-                ).animate(animation);
-                return SlideTransition(
-                  position: offsetAnimation,
-                  child: FadeTransition(opacity: animation, child: child),
-                );
-              },
-              child:
-                  _statusHeaderVisible
-                      ? Center(
-                        key: const ValueKey('status-badge'),
-                        child: _buildServiceStatusBadge(context),
-                      )
-                      : const SizedBox.shrink(),
-            ),
-          ),
         ],
       ),
     );
@@ -1548,9 +1518,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       padding: const EdgeInsets.only(bottom: 12.0),
       child: Material(
         color: colorScheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(28),
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(28),
           onTap: () async {
             final selectedColor = await _showColorPickerDialog(
               context: context,
@@ -1599,7 +1569,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       height: 40,
                       decoration: BoxDecoration(
                         color: color,
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(28),
                         border: Border.all(
                           color: colorScheme.outlineVariant,
                           width: 1.5,
@@ -1669,12 +1639,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               message:
                   'Set theme color to #${color.value.toRadixString(16).substring(2).toUpperCase()}',
               child: AnimatedScale(
-                duration: const Duration(milliseconds: 450),
-                curve: expressiveSpringCurve,
-                scale: isSelected ? 1.08 : 1.0,
+                duration: const Duration(milliseconds: 700),
+                curve: const ElasticOutCurve(0.8),
+                scale: isSelected ? 1.15 : 1.0,
                 child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 600),
-                  curve: expressiveSpringCurve,
+                  duration: const Duration(milliseconds: 700),
+                  curve: const ElasticOutCurve(0.8),
                   width: _seedColorChipSize,
                   height: _seedColorChipSize,
                   decoration: BoxDecoration(
@@ -2026,106 +1996,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildServiceStatusBadge(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    final isActive = _isServiceRunning;
-    final status = _refreshStatus;
-    final isDragging =
-        status == expressive_refresh.RefreshIndicatorStatus.drag ||
-        status == expressive_refresh.RefreshIndicatorStatus.armed;
-    final isRefreshing =
-        status == expressive_refresh.RefreshIndicatorStatus.refresh ||
-        status == expressive_refresh.RefreshIndicatorStatus.snap;
-    final scale = isRefreshing ? 1.06 : (isDragging ? 1.02 : 1.0);
-    final shadowElevation = isRefreshing ? 14.0 : 9.0;
-    final badgeColor =
-        isActive ? colorScheme.primary : colorScheme.surfaceContainerHighest;
-    final onBadgeColor =
-        isActive ? colorScheme.onPrimary : colorScheme.onSurfaceVariant;
-    final headline = isActive ? 'Active' : 'Not active';
-    final subtitle =
-        isRefreshing
-            ? (isActive
-                ? 'Enjoy synced lyrics :)'
-                : 'Launch service below to enjoy synced lyrics!')
-            : null;
-
-    return SizedBox(
-      width: _statusBadgeWidth,
-      height: _statusBadgeHeight,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          AnimatedScale(
-            scale: scale,
-            duration: const Duration(milliseconds: 600),
-            curve: expressiveSpringCurve,
-            child: CustomPaint(
-              size: const Size(_statusBadgeWidth, _statusBadgeHeight),
-              painter: _PolygonBadgePainter(
-                polygon: MaterialShapes.pill,
-                fillColor: badgeColor,
-                strokeColor: colorScheme.primary.withValues(
-                  alpha: isActive ? 0.3 : 0.2,
-                ),
-                shadowColor: colorScheme.primary.withValues(
-                  alpha: isActive ? 0.35 : 0.2,
-                ),
-                shadowElevation: shadowElevation,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.center,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    headline,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: textTheme.titleSmall?.copyWith(
-                      color: onBadgeColor,
-                      fontWeight: FontWeight.w700,
-                      fontVariations: const [
-                        FontVariation('wght', 720),
-                        FontVariation('wdth', 110),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 350),
-                    switchInCurve: expressiveSpringCurve,
-                    switchOutCurve: Curves.easeInCubic,
-                    child:
-                        subtitle == null
-                            ? const SizedBox.shrink()
-                            : Text(
-                              subtitle,
-                              key: ValueKey(subtitle),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: textTheme.labelSmall?.copyWith(
-                                color: onBadgeColor.withValues(alpha: 0.85),
-                                fontWeight: FontWeight.w500,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     print(
@@ -2155,16 +2025,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         onRefresh: _handleRefresh,
         onStatusChange: (status) {
           if (!mounted || _refreshStatus == status) return;
-          final isActiveStatus =
-              status == expressive_refresh.RefreshIndicatorStatus.drag ||
-              status == expressive_refresh.RefreshIndicatorStatus.armed ||
-              status == expressive_refresh.RefreshIndicatorStatus.refresh ||
-              status == expressive_refresh.RefreshIndicatorStatus.snap;
           setState(() {
             _refreshStatus = status;
-            _statusHeaderVisible = isActiveStatus;
           });
         },
+        statusText: _isServiceRunning ? 'Active' : 'Inactive',
+        subtitleText:
+            _isServiceRunning
+                ? 'Enjoy synced lyrics :)'
+                : 'Launch service below to enjoy synced lyrics!',
         color: colorScheme.primary,
         backgroundColor: colorScheme.surfaceContainerHighest,
         polygons: _refreshPolygons,
@@ -2387,7 +2256,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: colorScheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(28),
               ),
               child: Text(
                 _isServiceRunning
@@ -2438,61 +2307,3 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 }
 
-class _PolygonBadgePainter extends CustomPainter {
-  _PolygonBadgePainter({
-    required this.polygon,
-    required this.fillColor,
-    required this.strokeColor,
-    required this.shadowColor,
-    required this.shadowElevation,
-  });
-
-  final RoundedPolygon polygon;
-  final Color fillColor;
-  final Color strokeColor;
-  final Color shadowColor;
-  final double shadowElevation;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final bounds = polygon.calculateBounds();
-    final width = bounds[2] - bounds[0];
-    final height = bounds[3] - bounds[1];
-    final scale = size.height / height;
-    final translatedPath =
-        polygon.toPath().shift(Offset(-bounds[0], -bounds[1]));
-    final scaledPath = translatedPath.transform(
-      Matrix4.diagonal3Values(scale, scale, 1).storage,
-    );
-    final scaledBounds = scaledPath.getBounds();
-    final centeredPath = scaledPath.shift(
-      Offset(
-        (size.width - scaledBounds.width) / 2 - scaledBounds.left,
-        (size.height - scaledBounds.height) / 2 - scaledBounds.top,
-      ),
-    );
-
-    final paint = Paint()
-      ..style = PaintingStyle.fill
-      ..color = fillColor
-      ..isAntiAlias = true;
-    canvas.drawShadow(centeredPath, shadowColor, shadowElevation, true);
-    canvas.drawPath(centeredPath, paint);
-
-    final strokePaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..color = strokeColor
-      ..isAntiAlias = true;
-    canvas.drawPath(centeredPath, strokePaint);
-  }
-
-  @override
-  bool shouldRepaint(_PolygonBadgePainter oldDelegate) {
-    return oldDelegate.polygon != polygon ||
-        oldDelegate.fillColor != fillColor ||
-        oldDelegate.strokeColor != strokeColor ||
-        oldDelegate.shadowColor != shadowColor ||
-        oldDelegate.shadowElevation != shadowElevation;
-  }
-}
