@@ -5,7 +5,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:flutter_m3shapes/flutter_m3shapes.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -30,7 +29,8 @@ const Color _defaultLyricsWindowTitleColor = Color(0xFFE0E0E0);
 const Color _defaultLyricsWindowBackgroundColor = Color(0xDD212121);
 const Color _defaultLyricsWindowHighlightColor = Color(0x46C8C8C8);
 
-const Curve expressiveCurve = Curves.elasticOut;
+const Curve expressiveSpringCurve = Curves.elasticOut;
+const Curve expressiveStandardCurve = Curves.easeOutCubic;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -1406,7 +1406,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       onTap: () => Navigator.of(dialogContext).pop(color),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 600),
-                        curve: expressiveCurve,
+                        curve: expressiveSpringCurve,
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
@@ -1574,7 +1574,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           'Set theme color to #${color.value.toRadixString(16).substring(2).toUpperCase()}',
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 600),
-                        curve: expressiveCurve,
+                        curve: expressiveSpringCurve,
                         width: _seedColorChipSize,
                         height: _seedColorChipSize,
                         decoration: BoxDecoration(
@@ -1629,7 +1629,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 600),
-            switchInCurve: expressiveCurve,
+            switchInCurve: expressiveStandardCurve,
             switchOutCurve: Curves.easeInCubic,
             child:
                 _dynamicLyricsWindowColors
@@ -1948,13 +1948,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             AnimatedOpacity(
               opacity: _supportCardVisible ? 1.0 : 0.0,
               duration: const Duration(milliseconds: 600),
-              curve: expressiveCurve,
+              curve: expressiveStandardCurve,
               child: _buildSupportCard(),
             ),
             AnimatedOpacity(
               opacity: _welcomeVisible ? 1.0 : 0.0,
               duration: const Duration(milliseconds: 600),
-              curve: expressiveCurve,
+              curve: expressiveStandardCurve,
               child: _buildWelcomeSection(context),
             ),
 
@@ -2110,7 +2110,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: AnimatedScale(
                   scale: _isServiceActionInProgress ? 0.95 : 1.0,
                   duration: const Duration(milliseconds: 600),
-                  curve: expressiveCurve,
+                  curve: expressiveSpringCurve,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
