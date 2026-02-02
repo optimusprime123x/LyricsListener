@@ -102,16 +102,40 @@ class _MyAppState extends State<MyApp> {
         elevation: 1,
         margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(24),
           side: BorderSide(color: baseLightColorScheme.outlineVariant),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          shape: const StadiumBorder(),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           textStyle: lightTextTheme.labelLarge?.copyWith(
             fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          textStyle: lightTextTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          textStyle: lightTextTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),
@@ -132,7 +156,7 @@ class _MyAppState extends State<MyApp> {
         titleTextStyle: lightTextTheme.titleMedium,
         subtitleTextStyle: lightTextTheme.bodyMedium,
         minVerticalPadding: 16,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       expansionTileTheme: ExpansionTileThemeData(
         iconColor: baseLightColorScheme.primary,
@@ -141,22 +165,22 @@ class _MyAppState extends State<MyApp> {
         collapsedTextColor: baseLightColorScheme.onSurface,
         backgroundColor: baseLightColorScheme.surfaceContainerLow,
         collapsedBackgroundColor: baseLightColorScheme.surfaceContainer,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         collapsedShape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: baseLightColorScheme.outline),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: baseLightColorScheme.primary, width: 2),
         ),
         filled: true,
@@ -164,7 +188,7 @@ class _MyAppState extends State<MyApp> {
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         backgroundColor: baseLightColorScheme.inverseSurface,
         contentTextStyle: lightTextTheme.bodyMedium?.copyWith(
           color: baseLightColorScheme.onInverseSurface,
@@ -192,16 +216,40 @@ class _MyAppState extends State<MyApp> {
         elevation: 1,
         margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(24),
           side: BorderSide(color: baseDarkColorScheme.outlineVariant),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          shape: const StadiumBorder(),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           textStyle: darkTextTheme.labelLarge?.copyWith(
             fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          textStyle: darkTextTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          textStyle: darkTextTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),
@@ -222,7 +270,7 @@ class _MyAppState extends State<MyApp> {
         titleTextStyle: darkTextTheme.titleMedium,
         subtitleTextStyle: darkTextTheme.bodyMedium,
         minVerticalPadding: 16,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       expansionTileTheme: ExpansionTileThemeData(
         iconColor: baseDarkColorScheme.primary,
@@ -231,22 +279,22 @@ class _MyAppState extends State<MyApp> {
         collapsedTextColor: baseDarkColorScheme.onSurface,
         backgroundColor: baseDarkColorScheme.surfaceContainerLow,
         collapsedBackgroundColor: baseDarkColorScheme.surfaceContainer,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         collapsedShape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: baseDarkColorScheme.outline),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: baseDarkColorScheme.primary, width: 2),
         ),
         filled: true,
@@ -254,7 +302,7 @@ class _MyAppState extends State<MyApp> {
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         backgroundColor: baseDarkColorScheme.inverseSurface,
         contentTextStyle: darkTextTheme.bodyMedium?.copyWith(
           color: baseDarkColorScheme.onInverseSurface,
@@ -447,7 +495,7 @@ class _DebugScreenState extends State<DebugScreen> {
             const SizedBox(height: 12),
             Row(
               children: [
-                ElevatedButton.icon(
+                FilledButton.icon(
                   onPressed: _isStarting ? null : _startDebugSession,
                   icon: const Icon(Icons.bug_report_outlined),
                   label: Text(_isStarting
@@ -486,7 +534,7 @@ class _DebugScreenState extends State<DebugScreen> {
               child: Container(
                 decoration: BoxDecoration(
                   color: colorScheme.surfaceContainer,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: colorScheme.outlineVariant),
                 ),
                 child: SelectionArea(
@@ -572,6 +620,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     Color(0xFF416FDF),
     Color(0xFF556614),
   ];
+  static const double _seedColorChipSize = 44;
+  static const double _seedColorChipRadius = 22;
 
   static const List<Color> _lyricsWindowBackgroundOptions = [
     Color(0xDD1a1a2e),
@@ -1181,25 +1231,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         leading: _buildPermissionStatusIcon(isGranted, optional: optional),
         title: Text(title, style: Theme.of(context).textTheme.titleSmall),
         subtitle: Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-        trailing: ElevatedButton(
+        trailing: FilledButton.tonal(
           onPressed: isGranted ? null : onPressed,
-          style: ElevatedButton.styleFrom(
-            backgroundColor:
-                isGranted
-                    ? colorScheme.surfaceContainerHighest
-                    : colorScheme.primaryContainer,
-            foregroundColor:
-                isGranted
-                    ? colorScheme.onSurfaceVariant
-                    : colorScheme.onPrimaryContainer,
-            elevation: isGranted ? 0 : 2,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+          style: ButtonStyle(
+            padding: WidgetStateProperty.all(
+              const EdgeInsets.symmetric(horizontal: 16),
             ),
+            backgroundColor: WidgetStateProperty.resolveWith<Color?>((
+              Set<WidgetState> states,
+            ) {
+              if (states.contains(WidgetState.disabled)) {
+                return colorScheme.surfaceContainerHighest;
+              }
+              return null;
+            }),
+            foregroundColor: WidgetStateProperty.resolveWith<Color?>((
+              Set<WidgetState> states,
+            ) {
+              if (states.contains(WidgetState.disabled)) {
+                return colorScheme.onSurfaceVariant;
+              }
+              return null;
+            }),
           ),
           child: Text(isGranted ? 'Granted' : 'Grant'),
         ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         onTap: isGranted ? null : onPressed,
       ),
     );
@@ -1403,9 +1460,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       padding: const EdgeInsets.only(bottom: 12.0),
       child: Material(
         color: colorScheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           onTap: () async {
             final selectedColor = await _showColorPickerDialog(
               context: context,
@@ -1452,7 +1509,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       height: 40,
                       decoration: BoxDecoration(
                         color: color,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(16),
                         border: Border.all(
                           color: colorScheme.outlineVariant,
                           width: 1.5,
@@ -1505,15 +1562,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             children:
                 _predefinedSeedColors.map((color) {
                   final isSelected = widget.seedColor == color;
-                  return GestureDetector(
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(_seedColorChipRadius),
                     onTap: () => widget.onSeedColorChanged(color),
                     child: Tooltip(
                       message:
                           'Set theme color to #${color.value.toRadixString(16).substring(2).toUpperCase()}',
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
-                        width: 40,
-                        height: 40,
+                        width: _seedColorChipSize,
+                        height: _seedColorChipSize,
                         decoration: BoxDecoration(
                           color: color,
                           shape: BoxShape.circle,
@@ -2003,14 +2061,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           const SizedBox(height: 8),
           Center(
-            child: ElevatedButton(
+            child: FilledButton(
               onPressed:
                   _isServiceActionInProgress
                       ? null
                       : (_isServiceRunning
                           ? _stopLyricService
                           : (_canStartService ? _startLyricService : null)),
-              style: ElevatedButton.styleFrom(
+              style: FilledButton.styleFrom(
                 backgroundColor:
                     _isServiceRunning
                         ? colorScheme.error
@@ -2076,7 +2134,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: colorScheme.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
             ),
             child: Text(
               _isServiceRunning
