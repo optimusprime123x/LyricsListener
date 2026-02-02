@@ -626,6 +626,7 @@ class ExpressiveRefreshIndicatorState extends State<ExpressiveRefreshIndicator>
 }
 
 /// Full implementation of expressive loading indicator for refresh state
+// TODO: Refactor duplicate code in loading indicators (`_ExpressiveLoadingIndicatorImpl` vs `_ContainedExpressiveLoadingIndicator`) into a shared widget or mixin.
 class _ExpressiveLoadingIndicatorImpl extends StatefulWidget {
   const _ExpressiveLoadingIndicatorImpl({
     required this.color,
@@ -848,6 +849,7 @@ class _ExpressiveLoadingIndicatorImplState extends State<_ExpressiveLoadingIndic
 }
 
 /// Drag feedback indicator that morphs through shapes based on progress
+// TODO: Refactor duplicate code in drag indicators (`_DragExpressiveIndicator` vs `_ContainedDragExpressiveIndicator`) into a shared widget.
 class _DragExpressiveIndicator extends StatelessWidget {
   const _DragExpressiveIndicator({
     required this.color,

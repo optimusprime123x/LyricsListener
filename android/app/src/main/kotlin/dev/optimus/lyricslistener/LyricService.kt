@@ -242,6 +242,7 @@ class LyricService : NotificationListenerService() {
     }
 
         // Musixmatch constants
+        // TODO: Move hardcoded URLs and API keys to BuildConfig/secure storage.
         private const val MUSIXMATCH_TOKEN_URL = "https://apic.musixmatch.com/ws/1.1/token.get?app_id=mac-ios-v2.0"
         private const val MUSIXMATCH_API_BASE_URL = "https://apic.musixmatch.com/ws/1.1/macro.subtitles.get"
         private const val MUSIXMATCH_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
@@ -405,6 +406,7 @@ class LyricService : NotificationListenerService() {
 
 
         Log.i(TAG, "performStopActions: Stopping foreground and self.")
+        // TODO: Review stopForeground usage for Android 14+ requirements if needed.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
@@ -1003,6 +1005,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     return cleaned
 }
 
+    // TODO: Refactor this complex method into a separate repository class or smaller helper functions.
     private fun fetchAndDisplayLyrics(title: String, artist: String, durationFromMediaMs: Long) {
         if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) { Log.w(TAG, "fetchAndDisplayLyrics: Aborting. ServiceJob cancelled or service not manually started."); return }
         lyricsHighlightingJob?.cancel()
@@ -2112,6 +2115,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             notificationManager.createNotificationChannel(channel)
         }
     }
+    // TODO: Consolidate createPersistentNotification and updatePersistentNotification to reduce duplication.
     private fun createPersistentNotification(text: String): Notification {
         val showLyricsIntent = Intent(this, LyricService::class.java).apply { action = ACTION_SHOW_LYRICS }
         val hideLyricsIntent = Intent(this, LyricService::class.java).apply { action = ACTION_HIDE_LYRICS }
@@ -2355,6 +2359,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         super.onDestroy()
     }
 
+    // TODO: Extract ViewMover to a separate file.
     private inner class ViewMover : View.OnTouchListener {
         private var initialX: Int = 0; private var initialY: Int = 0
         private var initialTouchX: Float = 0f; private var initialTouchY: Float = 0f

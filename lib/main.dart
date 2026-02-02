@@ -35,6 +35,7 @@ const Color _defaultLyricsWindowTitleColor = Color(0xFFE0E0E0);
 const Color _defaultLyricsWindowBackgroundColor = Color(0xDD212121);
 const Color _defaultLyricsWindowHighlightColor = Color(0x46C8C8C8);
 
+// TODO: Verify if Curves.elasticOut exactly matches the M3E "spring" spec or if a custom SpringSimulation is needed.
 const Curve expressiveSpringCurve = Curves.elasticOut;
 const Curve expressiveStandardCurve = Curves.easeOutCubic;
 
@@ -52,6 +53,7 @@ void main() async {
 class MyApp extends StatefulWidget {
   const MyApp({super.key, required this.initialSeedColor});
 
+  // TODO: Move hardcoded colors and constants (like initialSeedColor defaults) to a dedicated configuration file/class.
   final Color initialSeedColor;
 
   @override
@@ -382,6 +384,7 @@ class _MyAppState extends State<MyApp> {
   }
 }
 
+// TODO: Extract DebugScreen to a separate file (e.g., lib/screens/debug_screen.dart).
 class DebugScreen extends StatefulWidget {
   const DebugScreen({super.key});
 
@@ -765,6 +768,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    // TODO: Replace print statements with a proper logging service (e.g., logger package).
     print("MainScreen initState: Called");
     WidgetsBinding.instance.addObserver(this);
     _loadCustomizationPreferences();
@@ -905,6 +909,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _launchDonateUrl() async {
+    // TODO: Move hardcoded URLs to a configuration file.
     final Uri donateUrl = Uri.parse('https://prancingunicorn.pages.dev/donate');
     try {
       await launchUrl(donateUrl, mode: LaunchMode.externalApplication);

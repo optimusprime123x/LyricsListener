@@ -23,6 +23,7 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 
 class MainActivity : FlutterActivity() {
+    // TODO: Extract MethodChannel/EventChannel names to a shared constant file or BuildConfig.
     private val CHANNEL = "dev.optimus.lyricslistener/permissions"
     private val DEBUG_LOG_CHANNEL = "dev.optimus.lyricslistener/debugLogs"
     private val POST_NOTIFICATIONS_REQUEST_CODE = 101
@@ -226,6 +227,7 @@ class MainActivity : FlutterActivity() {
             try {
                 ProcessBuilder("logcat", "-c").start().waitFor()
             } catch (ignored: Exception) {
+                // TODO: Add logging for swallowed exception.
             }
 
             val processBuilder = ProcessBuilder(
@@ -264,6 +266,7 @@ class MainActivity : FlutterActivity() {
             try {
                 logcatProcess?.destroy()
             } catch (ignored: Exception) {
+                // TODO: Add logging for swallowed exception.
             }
             readerThread?.interrupt()
             logcatProcess = null
@@ -273,6 +276,7 @@ class MainActivity : FlutterActivity() {
 
     @Suppress("DEPRECATION")
     private fun isServiceProcessRunning(serviceClass: Class<*>): Boolean {
+        // TODO: Replace deprecated getRunningServices with a more modern approach (e.g., WorkManager inspection or Bound Service callback).
         try {
             val manager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager?
             // On newer Android versions, getRunningServices is restricted for 3rd party apps.

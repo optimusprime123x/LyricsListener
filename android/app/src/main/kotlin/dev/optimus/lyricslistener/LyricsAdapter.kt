@@ -18,6 +18,7 @@ class LyricsAdapter(
     private var highlightedPosition = -1
     private var isSyncedMode = false
 
+    // TODO: Extract hardcoded colors to colors.xml or configuration.
     private var normalLineTextColor: Int = Color.WHITE
     private var highlightedLineTextColor: Int = Color.WHITE
     private var highlightedLineBackgroundColor: Int = Color.argb(70, 200, 200, 200)
@@ -42,6 +43,7 @@ class LyricsAdapter(
         return ViewHolder(view)
     }
 
+    // TODO: Separate attribution line logic from regular lyric binding, possibly using a different ViewType.
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val line = lyricLines[position]
         holder.lyricText.text = line.text

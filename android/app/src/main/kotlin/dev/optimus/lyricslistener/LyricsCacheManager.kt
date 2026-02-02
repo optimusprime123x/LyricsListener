@@ -19,6 +19,7 @@ import kotlin.concurrent.write
  */
 class LyricsCacheManager(context: Context) {
     private val cacheDir: File = File(context.cacheDir, "lyrics")
+    // TODO: Implement metadata.json index to avoid O(N) file parsing during cache lookup.
     private val metadataFile: File = File(cacheDir, "metadata.json")
     private val lock = ReentrantReadWriteLock()
 
@@ -201,6 +202,7 @@ class LyricsCacheManager(context: Context) {
 
     // Private helper methods
 
+    // TODO: Optimize this O(N) search by using the metadata index.
     private fun findMatchingCacheFile(artist: String, title: String, durationMs: Long): File? {
         val files = cacheDir.listFiles() ?: return null
 
