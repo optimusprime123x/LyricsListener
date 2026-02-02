@@ -44,6 +44,25 @@ void main() {
     expect(find.byIcon(Icons.light_mode_rounded), findsOneWidget);
   });
 
+  testWidgets('Expressive theme shapes are applied', (WidgetTester tester) async {
+    const initialSeedColor = Color(0xFF6750A4);
+    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
+
+    final materialApp = tester.widget<MaterialApp>(find.byType(MaterialApp));
+    final theme = materialApp.theme;
+    final cardShape = theme?.cardTheme.shape as RoundedRectangleBorder?;
+    final cardRadius = cardShape?.borderRadius as BorderRadius?;
+    final filledButtonShape =
+        theme?.filledButtonTheme.style?.shape?.resolve({});
+
+    expect(cardRadius?.topLeft.x, 24);
+    expect(filledButtonShape, isA<RoundedRectangleBorder>());
+    expect(
+      (filledButtonShape as RoundedRectangleBorder).borderRadius,
+      BorderRadius.circular(20),
+    );
+  });
+
   testWidgets('Permission status icons display correctly', (WidgetTester tester) async {
     const initialSeedColor = Color(0xFF6750A4);
     await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
