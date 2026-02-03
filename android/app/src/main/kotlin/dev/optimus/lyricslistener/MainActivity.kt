@@ -26,6 +26,7 @@ class MainActivity : FlutterActivity() {
     private val CHANNEL = "dev.optimus.lyricslistener/permissions"
     private val DEBUG_LOG_CHANNEL = "dev.optimus.lyricslistener/debugLogs"
     private val POST_NOTIFICATIONS_REQUEST_CODE = 101
+    private val ENABLED_NOTIFICATION_LISTENERS_KEY = "enabled_notification_listeners"
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -38,9 +39,34 @@ class MainActivity : FlutterActivity() {
                 }
                 "isNotificationAccessGranted" -> {
                     try {
-                        val notificationListener = ComponentName(this, LyricService::class.java).flattenToString()
-                        val enabledListeners = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
-                        result.success(enabledListeners != null && enabledListeners.contains(notificationListener))
+                        val enabledPackages = NotificationManagerCompat.getEnabledListenerPackages(this)
+                        if (enabledPackages.contains(packageName)) {
+                            result.success(true)
+                            return@setMethodCallHandler
+                        }
+
+                        val enabledListeners = Settings.Secure.getString(contentResolver, ENABLED_NOTIFICATION_LISTENERS_KEY)
+                        val notificationListener = ComponentName(this, LyricService::class.java)
+                        val flat = notificationListener.flattenToString()
+                        val short = notificationListener.flattenToShortString()
+
+                        if (enabledListeners.isNullOrBlank()) {
+                            Log.d(
+                                "MainActivity",
+                                "Notification access debug (isNotificationAccessGranted): enabledPackages=$enabledPackages, enabledListeners=$enabledListeners, componentFlat=$flat, componentShort=$short"
+                            )
+                            result.success(false)
+                            return@setMethodCallHandler
+                        }
+
+                        val hasAccess = enabledListeners.contains(flat) || enabledListeners.contains(short)
+                        if (!hasAccess) {
+                            Log.d(
+                                "MainActivity",
+                                "Notification access debug (isNotificationAccessGranted): enabledPackages=$enabledPackages, enabledListeners=$enabledListeners, componentFlat=$flat, componentShort=$short"
+                            )
+                        }
+                        result.success(hasAccess)
                     } catch (e: Exception) {
                         Log.e("MainActivity", "Error checking notification access: ${e.message}")
                         result.error("ERROR_NOTIFICATION_ACCESS", e.message, null)

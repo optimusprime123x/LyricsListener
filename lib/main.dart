@@ -40,6 +40,14 @@ const Color _defaultLyricsWindowHighlightColor = Color(0x46C8C8C8);
 const Curve expressiveSpringCurve = Curves.elasticOut;
 const Curve expressiveStandardCurve = Curves.easeOutCubic;
 
+bool _isFlutterTestEnvironment() {
+  try {
+    return Platform.environment.containsKey('FLUTTER_TEST');
+  } catch (_) {
+    return false;
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
@@ -134,12 +142,15 @@ class _MyAppState extends State<MyApp> {
           baseBodyTheme,
           baseLightColorScheme.onSurface,
         );
+        final testSplashFactory =
+            _isFlutterTestEnvironment() ? InkRipple.splashFactory : null;
 
         final lightTheme = ThemeData(
           colorScheme: baseLightColorScheme,
           useMaterial3: true,
           brightness: Brightness.light,
           textTheme: lightTextTheme,
+          splashFactory: testSplashFactory,
           cardTheme: CardThemeData(
             elevation: 1,
             shadowColor: baseLightColorScheme.primary.withValues(alpha: 0.16),
@@ -262,6 +273,7 @@ class _MyAppState extends State<MyApp> {
           useMaterial3: true,
           brightness: Brightness.dark,
           textTheme: darkTextTheme,
+          splashFactory: testSplashFactory,
           cardTheme: CardThemeData(
             elevation: 1,
             shadowColor: baseDarkColorScheme.primary.withValues(alpha: 0.24),

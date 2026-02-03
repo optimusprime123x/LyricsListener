@@ -2,6 +2,9 @@ FROM mcr.microsoft.com/devcontainers/base:ubuntu-22.04
 
 ARG USERNAME=vscode
 ARG FLUTTER_CHANNEL=stable
+ARG NODE_MAJOR=22
+
+ENV DEBIAN_FRONTEND=noninteractive
 
 ENV FLUTTER_CHANNEL=${FLUTTER_CHANNEL}
 
@@ -42,7 +45,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgbm1 \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
+    gnupg \
     && rm -rf /var/lib/apt/lists/*
+
+# ------------------------------------------------------------
+# Node.js (decent modern Node 22.x) + npm (bundled)
+# Non-interactive, Codespaces-safe
+# ------------------------------------------------------------
+RUN set -eux; \
+  curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash -; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends nodejs; \
+  rm -rf /var/lib/apt/lists/*; \
+  node -v; \
+  npm -v
 
 # ------------------------------------------------------------
 # Android SDK command line tools

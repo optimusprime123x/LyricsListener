@@ -10,11 +10,11 @@ import android.content.ComponentName
 import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import android.view.WindowManager
 import android.graphics.PixelFormat
 import android.content.Intent
 import android.content.SharedPreferences
-import android.content.pm.PackageManager
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSession
@@ -116,6 +116,7 @@ class LyricService : NotificationListenerService() {
     private val lastListenerHeartbeatMs = AtomicLong(0L)
     private val consecutiveListenerRecoveryAttempts = AtomicInteger(0)
     private val nextListenerHealthCheckAtMs = AtomicLong(0L)
+    private val lastNotificationAccessDebugLogMs = AtomicLong(0L)
     private val listenerHealthHandler by lazy { Handler(Looper.getMainLooper()) }
     private val listenerHealthCheckRunnable = Runnable { evaluateListenerHealth() }
 
@@ -212,6 +213,7 @@ class LyricService : NotificationListenerService() {
         const val ACTION_USER_INITIATED_START = "dev.optimus.lyricslistener.ACTION_USER_INITIATED_START"
         const val ACTION_USER_INITIATED_STOP = "dev.optimus.lyricslistener.ACTION_USER_INITIATED_STOP"
         const val ACTION_DEBUG_ACTIVE_NOTIFICATION = "dev.optimus.lyricslistener.ACTION_DEBUG_ACTIVE_NOTIFICATION"
+        private const val ENABLED_NOTIFICATION_LISTENERS_KEY = "enabled_notification_listeners"
         const val ATTRIBUTION_TIMESTAMP = -999L
 
         private const val LYRIC_API_BASE_URL = "https://lrclib.net/api/search"
@@ -497,45 +499,47 @@ class LyricService : NotificationListenerService() {
 
         val componentName = ComponentName(this, javaClass)
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                Log.i(TAG, "requestNotificationListenerRebind: Requesting system rebind. Reason: $reason")
-                requestRebind(componentName)
-            } else {
-                Log.i(TAG, "requestNotificationListenerRebind: Toggling component to force rebind (legacy). Reason: $reason")
-                toggleNotificationListenerComponent(componentName)
-            }
+            Log.i(TAG, "requestNotificationListenerRebind: Requesting system rebind. Reason: $reason")
+            requestRebind(componentName)
         } catch (e: IllegalArgumentException) {
-            Log.w(TAG, "requestNotificationListenerRebind: requestRebind failed (${e.message}). Falling back to component toggle.")
-            toggleNotificationListenerComponent(componentName)
+            Log.w(TAG, "requestNotificationListenerRebind: requestRebind failed (${e.message}).")
+            handleMissingNotificationAccess("requestRebind failed: ${e.message}")
         } catch (e: SecurityException) {
             Log.e(TAG, "requestNotificationListenerRebind: SecurityException during rebind request: ${e.message}", e)
-        }
-    }
-
-    private fun toggleNotificationListenerComponent(componentName: ComponentName) {
-        try {
-            val packageManager = applicationContext.packageManager
-            packageManager.setComponentEnabledSetting(
-                componentName,
-                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                PackageManager.DONT_KILL_APP
-            )
-            packageManager.setComponentEnabledSetting(
-                componentName,
-                PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                PackageManager.DONT_KILL_APP
-            )
-            Log.i(TAG, "toggleNotificationListenerComponent: Component toggled to force listener rebind.")
-        } catch (e: Exception) {
-            Log.e(TAG, "toggleNotificationListenerComponent: Failed to toggle component for rebind: ${e.message}", e)
+            handleMissingNotificationAccess("requestRebind SecurityException")
         }
     }
 
     private fun hasNotificationAccess(): Boolean {
         return try {
-            val enabledListeners = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
-            val componentName = ComponentName(this, javaClass).flattenToString()
-            enabledListeners != null && enabledListeners.contains(componentName)
+            val enabledPackages = NotificationManagerCompat.getEnabledListenerPackages(this)
+            if (enabledPackages.contains(packageName)) {
+                return true
+            }
+
+            val enabledListeners = Settings.Secure.getString(contentResolver, ENABLED_NOTIFICATION_LISTENERS_KEY)
+            if (enabledListeners.isNullOrBlank()) {
+                maybeLogNotificationAccessDebug(
+                    reason = "hasNotificationAccess=false (enabled_listeners empty)",
+                    enabledPackages = enabledPackages,
+                    enabledListeners = enabledListeners
+                )
+                return false
+            }
+
+            val componentName = ComponentName(this, javaClass)
+            val flat = componentName.flattenToString()
+            val short = componentName.flattenToShortString()
+            val hasAccess = enabledListeners.contains(flat) || enabledListeners.contains(short)
+            if (!hasAccess) {
+                maybeLogNotificationAccessDebug(
+                    reason = "hasNotificationAccess=false (component not found)",
+                    enabledPackages = enabledPackages,
+                    enabledListeners = enabledListeners,
+                    componentName = componentName
+                )
+            }
+            hasAccess
         } catch (e: Exception) {
             Log.w(TAG, "hasNotificationAccess: Unable to determine notification access state: ${e.message}")
             true
@@ -2292,8 +2296,39 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
 
     private fun handleMissingNotificationAccess(reason: String) {
         Log.w(TAG, "handleMissingNotificationAccess: Notification access missing. Reason: $reason")
+        maybeLogNotificationAccessDebug("handleMissingNotificationAccess: $reason")
         updatePersistentNotification("Notification access missing. Tap to fix.")
         //maybeShowStatusInfo("Notification access missing. If stuck here, Go to the app's help and support section and follow the steps under question 1. ")
+    }
+
+    private fun maybeLogNotificationAccessDebug(
+        reason: String,
+        enabledPackages: Set<String>? = null,
+        enabledListeners: String? = null,
+        componentName: ComponentName? = null
+    ) {
+        val now = SystemClock.elapsedRealtime()
+        val last = lastNotificationAccessDebugLogMs.get()
+        if (now - last < TimeUnit.SECONDS.toMillis(20)) {
+            return
+        }
+        if (!lastNotificationAccessDebugLogMs.compareAndSet(last, now)) {
+            return
+        }
+
+        val resolvedComponent = componentName ?: ComponentName(this, javaClass)
+        val resolvedPackages = enabledPackages ?: NotificationManagerCompat.getEnabledListenerPackages(this)
+        val resolvedListeners = enabledListeners ?: Settings.Secure.getString(
+            contentResolver,
+            ENABLED_NOTIFICATION_LISTENERS_KEY
+        )
+        val flat = resolvedComponent.flattenToString()
+        val short = resolvedComponent.flattenToShortString()
+
+        Log.d(
+            TAG,
+            "Notification access debug ($reason): enabledPackages=$resolvedPackages, enabledListeners=$resolvedListeners, componentFlat=$flat, componentShort=$short"
+        )
     }
 
     private fun maybeShowStatusInfo(message: String) {

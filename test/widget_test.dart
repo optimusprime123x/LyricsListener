@@ -59,7 +59,7 @@ void main() {
   testWidgets('MyApp initializes with seed color', (WidgetTester tester) async {
     registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
-    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
+    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor, initialMaterialYouThemingEnabled: true));
 
     // Verify app builds without errors and MaterialApp is present
     expect(find.byType(MaterialApp), findsOneWidget);
@@ -68,7 +68,7 @@ void main() {
   testWidgets('HomeScreen displays welcome section', (WidgetTester tester) async {
     registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
-    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
+    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor, initialMaterialYouThemingEnabled: true));
     await tester.pumpAndSettle(); // Wait for async loading to settle
 
     // Check for welcome text in HomeScreen
@@ -79,7 +79,7 @@ void main() {
   testWidgets('Theme toggle button works', (WidgetTester tester) async {
     registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
-    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
+    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor, initialMaterialYouThemingEnabled: true));
     await tester.pumpAndSettle(); // Wait for async loading to settle
 
     // Find and tap theme toggle button in AppBar
@@ -101,7 +101,7 @@ void main() {
   testWidgets('Expressive theme shapes are applied', (WidgetTester tester) async {
     registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
-    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
+    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor, initialMaterialYouThemingEnabled: true));
 
     final materialApp = tester.widget<MaterialApp>(find.byType(MaterialApp));
     final theme = materialApp.theme;
@@ -122,7 +122,7 @@ void main() {
   testWidgets('Permission status icons display correctly', (WidgetTester tester) async {
     registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
-    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
+    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor, initialMaterialYouThemingEnabled: true));
     await tester.pumpAndSettle(); // Wait for async loading to settle
 
     // Since we mocked permissions to true, we expect check circles
@@ -134,7 +134,7 @@ void main() {
   testWidgets('Service control buttons are present', (WidgetTester tester) async {
     registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
-    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
+    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor, initialMaterialYouThemingEnabled: true));
     await tester.pumpAndSettle(); // Wait for async loading to settle
 
     // Mocked 'isLyricServiceRunning' to false.
@@ -147,7 +147,7 @@ void main() {
   testWidgets('Settings tab is accessible', (WidgetTester tester) async {
     registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
-    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
+    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor, initialMaterialYouThemingEnabled: true));
     await tester.pumpAndSettle(); // Wait for async loading to settle
 
     // Find and tap Settings tab in NavigationBar
@@ -166,7 +166,7 @@ void main() {
   testWidgets('Help tab is accessible', (WidgetTester tester) async {
     registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
-    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor));
+    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor, initialMaterialYouThemingEnabled: true));
     await tester.pumpAndSettle(); // Wait for async loading to settle
 
     // Find and tap Help tab in NavigationBar
@@ -202,8 +202,8 @@ void main() {
       ),
     );
 
-    refreshKey.currentState!.show();
-    await tester.pump(const Duration(seconds: 1));
+    await tester.drag(find.byType(ListView), const Offset(0, 300));
+    await tester.pump(const Duration(milliseconds: 300));
 
     final subtitleFinder = find.text('Launch service below to enjoy synced lyrics!');
     expect(subtitleFinder, findsOneWidget);
