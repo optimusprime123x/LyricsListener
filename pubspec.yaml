@@ -37,6 +37,7 @@ dependencies:
   shared_preferences: ^2.2.3
   expressive_refresh: ^0.1.2
   material_new_shapes: ^1.0.0
+  dynamic_color: ^1.6.9
 
 dev_dependencies:
   flutter_test:
