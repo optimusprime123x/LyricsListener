@@ -1,0 +1,19 @@
+{
+  "name": "LyricsListener",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "FLUTTER_CHANNEL": "stable"
+    }
+  },
+  "remoteUser": "vscode",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Dart-Code.dart-code",
+        "Dart-Code.flutter"
+      ]
+    }
+  },
+  "postCreateCommand": "flutter pub get && flutter doctor -v"
+}
