@@ -132,6 +132,8 @@ class LyricService : NotificationListenerService() {
 
     @Volatile private var _listenerEverConnected = false
     @Volatile private var _isAttemptingConnection = false
+
+    @Volatile private var currentNotificationText: String? = null
     
     // Musixmatch related properties
     private var musixmatchUserToken: String? = null
@@ -659,6 +661,7 @@ class LyricService : NotificationListenerService() {
                 override fun onPlaybackStateChanged(state: PlaybackState?) {
                     if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) { Log.w(TAG, "onPlaybackStateChanged: Ignoring."); return }
                     super.onPlaybackStateChanged(state)
+                    registerActivity()
                     if (newController.sessionToken != currentMediaSessionToken) {
                         Log.w(TAG, "onPlaybackStateChanged for a stale session (${newController.sessionToken}, pkg: ${newController.packageName}). Current active token is $currentMediaSessionToken. Ignoring.")
                         return
@@ -682,6 +685,7 @@ class LyricService : NotificationListenerService() {
                 override fun onMetadataChanged(metadata: MediaMetadata?) {
                     if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) { Log.w(TAG, "onMetadataChanged: Ignoring."); return }
                     super.onMetadataChanged(metadata)
+                    registerActivity()
                     if (newController.sessionToken != currentMediaSessionToken) {
                         Log.w(TAG, "onMetadataChanged for a stale session (${newController.sessionToken}, pkg: ${newController.packageName}). Current active token is $currentMediaSessionToken. Ignoring.")
                         return
@@ -857,10 +861,7 @@ class LyricService : NotificationListenerService() {
     private fun _onNotificationPosted(sbn: StatusBarNotification, source: String) {
         if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) { Log.w(TAG, "_onNotificationPosted: Ignoring. ServiceJob cancelled or service not manually started."); return }
         Log.d(TAG, "_onNotificationPosted (source: $source, pkg: ${sbn.packageName})")
-        lastListenerHeartbeatMs.set(SystemClock.elapsedRealtime())
-        if (consecutiveListenerRecoveryAttempts.get() != 0) {
-            consecutiveListenerRecoveryAttempts.set(0)
-        }
+        registerActivity()
         scheduleListenerHealthCheck(LISTENER_HEALTH_LONG_INTERVAL_MS, "notification from ${sbn.packageName}")
         val notification = sbn.notification ?: return
         val extras = notification.extras ?: return
@@ -2156,8 +2157,29 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             Log.d(TAG, "updatePersistentNotification: Skipped update. serviceJob Cancelled: ${serviceJob.isCancelled}, Not Manually Started: ${!isServiceManuallyStarted.get()}. Text: $text")
             return
         }
-        Log.d(TAG, "Updating persistent notification: $text")
-        notificationManager.notify(NOTIFICATION_ID, createPersistentNotification(text))
+        if (currentNotificationText != text) {
+            currentNotificationText = text
+            Log.d(TAG, "Updating persistent notification: $text")
+            notificationManager.notify(NOTIFICATION_ID, createPersistentNotification(text))
+        }
+    }
+
+    private fun registerActivity() {
+        lastListenerHeartbeatMs.set(SystemClock.elapsedRealtime())
+        consecutiveListenerRecoveryAttempts.set(0)
+
+        // If the notification shows a stale/error state but we have active song info, restore it.
+        val currentText = currentNotificationText
+        if (currentText == "Waiting for songs.." ||
+            currentText == "Waiting for notification listener..." ||
+            currentText == "Error accessing notifications. Retrying..." ||
+            currentText == "Listener disconnected. Check permissions.") {
+
+            if (!lastDetectedSongTitle.isNullOrBlank()) {
+                Log.i(TAG, "registerActivity: Restoring notification from stale state '$currentText' to active song info.")
+                updatePersistentNotification(buildStatusNotificationText())
+            }
+        }
     }
 
     private fun buildStatusNotificationText(): String {
