@@ -1,4 +1,4 @@
-name: Build Flutter Android debug APK
+name: Build debug APK
 
 on:
   push:
