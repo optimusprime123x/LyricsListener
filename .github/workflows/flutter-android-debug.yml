@@ -29,6 +29,20 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Cache Android SDK licenses
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/licenses
+          key: ${{ runner.os }}-android-licenses-v1
+
+      - name: Cache Android SDK CMake
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/cmake
+          key: ${{ runner.os }}-android-cmake-v1
+          restore-keys: |
+            ${{ runner.os }}-android-cmake-
+
       - name: Cache pub dependencies
         uses: actions/cache@v4
         with:
