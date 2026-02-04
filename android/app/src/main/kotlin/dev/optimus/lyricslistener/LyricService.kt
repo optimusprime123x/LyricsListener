@@ -135,6 +135,7 @@ class LyricService : NotificationListenerService() {
     @Volatile private var _isAttemptingConnection = false
 
     @Volatile private var currentNotificationText: String? = null
+    @Volatile private var pendingDebugNotificationReset = false
     
     // Musixmatch related properties
     private var musixmatchUserToken: String? = null
@@ -213,6 +214,7 @@ class LyricService : NotificationListenerService() {
         const val ACTION_USER_INITIATED_START = "dev.optimus.lyricslistener.ACTION_USER_INITIATED_START"
         const val ACTION_USER_INITIATED_STOP = "dev.optimus.lyricslistener.ACTION_USER_INITIATED_STOP"
         const val ACTION_DEBUG_ACTIVE_NOTIFICATION = "dev.optimus.lyricslistener.ACTION_DEBUG_ACTIVE_NOTIFICATION"
+        private const val DEBUG_NOTIFICATION_TEXT = "Debugging media notification..."
         private const val ENABLED_NOTIFICATION_LISTENERS_KEY = "enabled_notification_listeners"
         const val ATTRIBUTION_TIMESTAMP = -999L
 
@@ -267,7 +269,7 @@ class LyricService : NotificationListenerService() {
         }
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createPersistentNotification("Initializing..."))
+        startForegroundWithNotification("Initializing...")
         isLyricsExpanded = false
         _listenerEverConnected = false
         _isAttemptingConnection = false
@@ -278,6 +280,30 @@ class LyricService : NotificationListenerService() {
         cacheManager = LyricsCacheManager(this)
 
         initializeMusixmatchToken()
+    }
+
+    private fun markListenerConnected(reason: String) {
+        if (!_listenerEverConnected) {
+            _listenerEverConnected = true
+            Log.i(TAG, "markListenerConnected: Listener considered connected ($reason).")
+        }
+    }
+
+    private fun startForegroundWithNotification(text: String) {
+        currentNotificationText = text
+        Log.d(TAG, "startForegroundWithNotification: $text")
+        startForeground(NOTIFICATION_ID, createPersistentNotification(text))
+    }
+
+    private fun maybeResetDebugNotification(reason: String) {
+        if (!pendingDebugNotificationReset) return
+        pendingDebugNotificationReset = false
+        if (currentNotificationText == DEBUG_NOTIFICATION_TEXT) {
+            Log.d(TAG, "maybeResetDebugNotification: Resetting debug notification. Reason: $reason")
+            updatePersistentNotification(buildStatusNotificationText())
+        } else {
+            Log.d(TAG, "maybeResetDebugNotification: Debug already replaced. Reason: $reason")
+        }
     }
     
     private fun initializeMusixmatchToken() {
@@ -326,7 +352,7 @@ class LyricService : NotificationListenerService() {
         when (intent?.action) {
             ACTION_USER_INITIATED_START -> {
                 Log.i(TAG, "ACTION_USER_INITIATED_START received. Forcing full re-initialization.")
-                startForeground(NOTIFICATION_ID, createPersistentNotification("Service starting..."))
+                startForegroundWithNotification("Service starting...")
                 _listenerEverConnected = false
                 _isAttemptingConnection = false
                 lastListenerRebindAttempt.set(0L)
@@ -337,7 +363,7 @@ class LyricService : NotificationListenerService() {
             }
             ACTION_SHOW_LYRICS -> {
                 Log.d(TAG, "ACTION_SHOW_LYRICS received.")
-                startForeground(NOTIFICATION_ID, createPersistentNotification(buildStatusNotificationText()))
+                startForegroundWithNotification(buildStatusNotificationText())
                 val dataToShow = currentLyricsData ?: LyricsData.Info(
                     lastDetectedSongTitle, lastDetectedSongArtist,
                     if (lastDetectedSongTitle != null) "Loading lyrics..." else if (_listenerEverConnected) "Waiting for song..." else "Connecting listener...",
@@ -359,18 +385,16 @@ class LyricService : NotificationListenerService() {
             }
             ACTION_DEBUG_ACTIVE_NOTIFICATION -> {
                 Log.i(TAG, "ACTION_DEBUG_ACTIVE_NOTIFICATION received. Running active media scan for debug.")
-                startForeground(
-                    NOTIFICATION_ID,
-                    createPersistentNotification("Debugging media notification...")
-                )
+                pendingDebugNotificationReset = true
+                startForegroundWithNotification(DEBUG_NOTIFICATION_TEXT)
                 tryToConnectToActiveMediaSessions(delayMs = 0L)
             }
             else -> {
                 Log.i(TAG, "Service (re)started with null or unhandled action (Intent: $intent, Action: ${intent?.action}). _listenerEverConnected: $_listenerEverConnected")
-                startForeground(NOTIFICATION_ID, createPersistentNotification(
+                startForegroundWithNotification(
                     if (_listenerEverConnected && currentMediaSessionToken != null) "Service active. Last: $lastDetectedSongTitle"
                     else if (_listenerEverConnected) "Service active. Scanning..."
-                    else "Service starting..."))
+                    else "Service starting...")
                 _isAttemptingConnection = false
                 if (!_listenerEverConnected) {
                     requestNotificationListenerRebind("General service start with no listener connection")
@@ -427,7 +451,7 @@ class LyricService : NotificationListenerService() {
             return
         }
 
-        _listenerEverConnected = true
+        markListenerConnected("onListenerConnected")
         _isAttemptingConnection = false
         consecutiveListenerRecoveryAttempts.set(0)
         lastListenerHeartbeatMs.set(SystemClock.elapsedRealtime())
@@ -548,102 +572,105 @@ class LyricService : NotificationListenerService() {
 
 
     private fun executeFindActiveMediaSessions() {
-        if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) {
-             Log.w(TAG, "executeFindActiveMediaSessions: Aborting. ServiceJob cancelled or service not manually started. isCancelled=${serviceJob.isCancelled}, isManuallyStarted=${isServiceManuallyStarted.get()}")
-             _isAttemptingConnection = false
-             return
-        }
-        Log.d(TAG, "executeFindActiveMediaSessions: Starting media scan. _listenerEverConnected: $_listenerEverConnected. Current token: $currentMediaSessionToken")
-        var activeNotificationsInternal: Array<StatusBarNotification>? = null
         try {
-            activeNotificationsInternal = this.activeNotifications
-            if (!_listenerEverConnected && activeNotificationsInternal != null) {
-                Log.i(TAG, "executeFindActiveMediaSessions: Got active notifications, considering listener active for this scan.")
+            if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) {
+                Log.w(TAG, "executeFindActiveMediaSessions: Aborting. ServiceJob cancelled or service not manually started. isCancelled=${serviceJob.isCancelled}, isManuallyStarted=${isServiceManuallyStarted.get()}")
+                return
             }
-        } catch (e: SecurityException) {
-            Log.e(TAG, "SecurityException getting active notifications: ${e.message}. Listener permission might be revoked.")
-            _listenerEverConnected = false
-            updatePersistentNotification("Error: Check Notification Access.")
-            clearSongContextAndHideLyrics()
-            requestNotificationListenerRebind("SecurityException while querying active notifications", force = true)
-            _isAttemptingConnection = false
-            return
-        } catch (e: Exception) {
-            Log.e(TAG, "Exception getting active notifications: ${e.message}", e)
-            updatePersistentNotification("Error accessing notifications. Retrying...")
-             _isAttemptingConnection = false
-            tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
-            return
-        }
-
-        if (activeNotificationsInternal == null) {
-            Log.w(TAG, "activeNotifications API returned null. Listener might not be fully bound or permission issue.")
-            updatePersistentNotification(if (_listenerEverConnected) "Listener error. Retrying..." else "Waiting for listener connection...")
-            if (!_listenerEverConnected) {
-                requestNotificationListenerRebind("activeNotifications returned null")
-            }
-            _isAttemptingConnection = false
-            tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS * 2)
-            if (currentMediaSessionToken != null) clearSongContextAndHideLyrics()
-            return
-        }
-
-
-        if (activeNotificationsInternal.isEmpty()) {
-            Log.d(TAG, "No active media notifications found (list is empty).")
-            if (!_listenerEverConnected) {
-                requestNotificationListenerRebind("activeNotifications empty while listener never connected")
-            }
-            updatePersistentNotification(buildStatusNotificationText())
-
-            if (currentMediaSessionToken != null) {
-                Log.d(TAG, "executeFindActiveMediaSessions: activeNotifications empty, clearing existing song context for token $currentMediaSessionToken.")
-                clearSongContextAndHideLyrics()
-            }
-            _isAttemptingConnection = false
-            return
-        }
-
-        Log.d(TAG, "Found ${activeNotificationsInternal.size} active notifications.")
-        val playingNotifications = activeNotificationsInternal.mapNotNull { sbn ->
-            val token = sbn.notification.extras.getParcelable<MediaSession.Token>(Notification.EXTRA_MEDIA_SESSION)
-            if (token != null) {
-                try {
-                    val controller = MediaController(applicationContext, token)
-                    if (controller.playbackState?.state == PlaybackState.STATE_PLAYING) {
-                        sbn
-                    } else {
-                        null
+            Log.d(TAG, "executeFindActiveMediaSessions: Starting media scan. _listenerEverConnected: $_listenerEverConnected. Current token: $currentMediaSessionToken")
+            var activeNotificationsInternal: Array<StatusBarNotification>? = null
+            try {
+                activeNotificationsInternal = this.activeNotifications
+                if (activeNotificationsInternal != null) {
+                    if (!_listenerEverConnected) {
+                        Log.i(TAG, "executeFindActiveMediaSessions: Got active notifications, considering listener active for this scan.")
                     }
-                } catch (e: Exception) { null }
-            } else {
-                null
-            }
-        }
-
-        var mostRecentSbnToProcess = playingNotifications.maxByOrNull {
-            it.notification.`when`.takeIf { w -> w > 0 } ?: it.postTime
-        }
-
-        if (mostRecentSbnToProcess == null && activeNotificationsInternal.isNotEmpty()) {
-            Log.d(TAG, "No actively playing media. Checking for any recent media notification to establish context.")
-            mostRecentSbnToProcess = activeNotificationsInternal.maxByOrNull {
-                 it.notification.`when`.takeIf { w -> w > 0 } ?: it.postTime
-            }
-        }
-
-        mostRecentSbnToProcess?.let { sbn ->
-            Log.d(TAG, "Processing most recent media notification from ${sbn.packageName} (postTime: ${sbn.postTime}, when: ${sbn.notification.`when`}).")
-            _onNotificationPosted(sbn, "From executeFindActiveMediaSessions")
-        } ?: run {
-            Log.d(TAG, "No suitable media notifications found to process.")
-            updatePersistentNotification(buildStatusNotificationText())
-
-            if (currentMediaSessionToken != null) {
+                    markListenerConnected("activeNotifications accessible")
+                }
+            } catch (e: SecurityException) {
+                Log.e(TAG, "SecurityException getting active notifications: ${e.message}. Listener permission might be revoked.")
+                _listenerEverConnected = false
+                updatePersistentNotification("Error: Check Notification Access.")
                 clearSongContextAndHideLyrics()
+                requestNotificationListenerRebind("SecurityException while querying active notifications", force = true)
+                return
+            } catch (e: Exception) {
+                Log.e(TAG, "Exception getting active notifications: ${e.message}", e)
+                updatePersistentNotification("Error accessing notifications. Retrying...")
+                _isAttemptingConnection = false
+                tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
+                return
             }
+
+            if (activeNotificationsInternal == null) {
+                Log.w(TAG, "activeNotifications API returned null. Listener might not be fully bound or permission issue.")
+                updatePersistentNotification(if (_listenerEverConnected) "Listener error. Retrying..." else "Waiting for listener connection...")
+                if (!_listenerEverConnected) {
+                    requestNotificationListenerRebind("activeNotifications returned null")
+                }
+                _isAttemptingConnection = false
+                tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS * 2)
+                if (currentMediaSessionToken != null) clearSongContextAndHideLyrics()
+                return
+            }
+
+            if (activeNotificationsInternal.isEmpty()) {
+                Log.d(TAG, "No active media notifications found (list is empty).")
+                if (!_listenerEverConnected) {
+                    requestNotificationListenerRebind("activeNotifications empty while listener never connected")
+                }
+                updatePersistentNotification(buildStatusNotificationText())
+
+                if (currentMediaSessionToken != null) {
+                    Log.d(TAG, "executeFindActiveMediaSessions: activeNotifications empty, clearing existing song context for token $currentMediaSessionToken.")
+                    clearSongContextAndHideLyrics()
+                }
+                return
+            }
+
+            Log.d(TAG, "Found ${activeNotificationsInternal.size} active notifications.")
+            val playingNotifications = activeNotificationsInternal.mapNotNull { sbn ->
+                val token = sbn.notification.extras.getParcelable<MediaSession.Token>(Notification.EXTRA_MEDIA_SESSION)
+                if (token != null) {
+                    try {
+                        val controller = MediaController(applicationContext, token)
+                        if (controller.playbackState?.state == PlaybackState.STATE_PLAYING) {
+                            sbn
+                        } else {
+                            null
+                        }
+                    } catch (e: Exception) { null }
+                } else {
+                    null
+                }
+            }
+
+            var mostRecentSbnToProcess = playingNotifications.maxByOrNull {
+                it.notification.`when`.takeIf { w -> w > 0 } ?: it.postTime
+            }
+
+            if (mostRecentSbnToProcess == null && activeNotificationsInternal.isNotEmpty()) {
+                Log.d(TAG, "No actively playing media. Checking for any recent media notification to establish context.")
+                mostRecentSbnToProcess = activeNotificationsInternal.maxByOrNull {
+                    it.notification.`when`.takeIf { w -> w > 0 } ?: it.postTime
+                }
+            }
+
+            mostRecentSbnToProcess?.let { sbn ->
+                Log.d(TAG, "Processing most recent media notification from ${sbn.packageName} (postTime: ${sbn.postTime}, when: ${sbn.notification.`when`}).")
+                _onNotificationPosted(sbn, "From executeFindActiveMediaSessions")
+            } ?: run {
+                Log.d(TAG, "No suitable media notifications found to process.")
+                updatePersistentNotification(buildStatusNotificationText())
+
+                if (currentMediaSessionToken != null) {
+                    clearSongContextAndHideLyrics()
+                }
+            }
+        } finally {
+            _isAttemptingConnection = false
+            maybeResetDebugNotification("executeFindActiveMediaSessions finished")
         }
-        _isAttemptingConnection = false
     }
 
 
@@ -865,6 +892,7 @@ class LyricService : NotificationListenerService() {
     private fun _onNotificationPosted(sbn: StatusBarNotification, source: String) {
         if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) { Log.w(TAG, "_onNotificationPosted: Ignoring. ServiceJob cancelled or service not manually started."); return }
         Log.d(TAG, "_onNotificationPosted (source: $source, pkg: ${sbn.packageName})")
+        markListenerConnected("onNotificationPosted from ${sbn.packageName}")
         registerActivity()
         scheduleListenerHealthCheck(LISTENER_HEALTH_LONG_INTERVAL_MS, "notification from ${sbn.packageName}")
         val notification = sbn.notification ?: return
