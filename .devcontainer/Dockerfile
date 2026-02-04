@@ -71,7 +71,7 @@ RUN mkdir -p ${ANDROID_SDK_ROOT}/cmdline-tools \
 
 # ------------------------------------------------------------
 # Android SDK packages + licenses
-# (Add whatever compileSdk your project uses; 34 is common)
+# (Add whatever compileSdk your project uses; 35 is common)
 # ------------------------------------------------------------
 RUN yes | sdkmanager --sdk_root=${ANDROID_SDK_ROOT} --licenses \
   && sdkmanager --sdk_root=${ANDROID_SDK_ROOT} \
