@@ -1036,6 +1036,25 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     return cleaned
 }
 
+    private fun extractPrimaryArtistForSearch(artist: String): String {
+        return artist
+            .split(
+                Regex(
+                    ",|feat\\.?|ft\\.?|featuring|&|\\||\\s+x\\s+|\\band\\b|\\bwith\\b|\\bvs\\.?\\b",
+                    RegexOption.IGNORE_CASE
+                )
+            )
+            .firstOrNull()
+            ?.trim()
+            ?.replace(Regex("\\s+"), " ")
+            .orEmpty()
+    }
+
+    private fun firstTwoWords(value: String): String {
+        val words = value.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+        return words.take(2).joinToString(" ")
+    }
+
     private fun fetchAndDisplayLyrics(title: String, artist: String, durationFromMediaMs: Long) {
         if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) { Log.w(TAG, "fetchAndDisplayLyrics: Aborting. ServiceJob cancelled or service not manually started."); return }
         lyricsHighlightingJob?.cancel()
@@ -1208,18 +1227,44 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             } else {
                 if (artist.isNotBlank()) "$title $artist" else title
             }
+            val attemptedQueries = mutableSetOf(initialQuery.trim().lowercase())
             results = searchLrcLib(initialQuery)
 
             if (results.isNullOrEmpty() && !isFromYouTube) {
-                if (artist.length > 10) {
-                    Log.d(TAG, "LRCLib: Initial search failed for '$title'. Retrying with artist truncated.")
-                    results = searchLrcLib("$title ${artist.take(10)}")
-                    if (!results.isNullOrEmpty()) potentialMismatch = true
+                val primaryArtist = extractPrimaryArtistForSearch(artist)
+                if (primaryArtist.isNotBlank()) {
+                    val delimiterQuery = "$title $primaryArtist".trim()
+                    val shouldTryDelimiterQuery = delimiterQuery.isNotBlank() &&
+                            attemptedQueries.add(delimiterQuery.lowercase())
+                    if (shouldTryDelimiterQuery) {
+                        Log.d(TAG, "LRCLib: Initial search failed for '$title'. Retrying with primary artist '$primaryArtist'.")
+                        results = searchLrcLib(delimiterQuery)
+                        if (!results.isNullOrEmpty()) potentialMismatch = true
+                    }
                 }
-                if (results.isNullOrEmpty() && title.isNotBlank()) {
-                    Log.d(TAG, "LRCLib: Retry 1 failed for '$title'. Retrying with just track name.")
-                    results = searchLrcLib(title)
-                    if (!results.isNullOrEmpty()) potentialMismatch = true
+
+                if (results.isNullOrEmpty()) {
+                    val firstTwoArtistWords = firstTwoWords(primaryArtist)
+                    val firstTwoWordsQuery = "$title $firstTwoArtistWords".trim()
+                    val shouldTryFirstTwoWordsQuery = firstTwoWordsQuery.isNotBlank() &&
+                            attemptedQueries.add(firstTwoWordsQuery.lowercase())
+                    if (shouldTryFirstTwoWordsQuery) {
+                        Log.d(TAG, "LRCLib: Primary artist retry failed for '$title'. Retrying with first two artist words '$firstTwoArtistWords'.")
+                        results = searchLrcLib(firstTwoWordsQuery)
+                        if (!results.isNullOrEmpty()) potentialMismatch = true
+                    }
+                }
+
+                if (results.isNullOrEmpty() && attemptedQueries.size == 1) {
+                    Log.d(TAG, "LRCLib: No usable fallback query for '$title'. Keeping initial search result.")
+                }
+            }
+
+            if (results.isNullOrEmpty() && !isFromYouTube) {
+                if (attemptedQueries.size > 1) {
+                    Log.d(TAG, "LRCLib: Exhausted fallback retries for '$title'.")
+                } else {
+                    Log.d(TAG, "LRCLib: Initial search failed and no additional fallback retries applied for '$title'.")
                 }
             }
 
