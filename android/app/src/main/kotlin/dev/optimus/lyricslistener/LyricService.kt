@@ -1075,7 +1075,6 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             Log.d(TAG, "Fetching lyrics for '$titleForThisFetch' by '$artistForThisFetch' (Token: $tokenForThisFetch, Media Duration: ${durationFromMediaMs}ms)")
 
             var fetchedLyricsDataLocal: LyricsData? = null
-            var fromCache = false
 
             val useYouTubeLogic = isYouTubeBasedPlayer(activeMediaController?.packageName)
 
@@ -1085,9 +1084,29 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                     val cachedLyrics = cacheManager.get(artistForThisFetch, titleForThisFetch, durationFromMediaMs)
                     if (cachedLyrics != null) {
                         Log.d(TAG, "Cache hit for '$titleForThisFetch' by '$artistForThisFetch'")
-                        // Update attribution to include "(cached)" and update artist to match current request
-                        fetchedLyricsDataLocal = updateCachedLyricsForDisplay(cachedLyrics, artistForThisFetch)
-                        fromCache = true
+                        // Update attribution to include "(cached)" and keep artist aligned with current request
+                        val preparedCachedLyrics = updateCachedLyricsForDisplay(cachedLyrics, artistForThisFetch)
+                        val cachedTitle = when (preparedCachedLyrics) {
+                            is LyricsData.Synced -> preparedCachedLyrics.title
+                            is LyricsData.Plain -> preparedCachedLyrics.title
+                            is LyricsData.Info -> preparedCachedLyrics.title
+                            is LyricsData.MismatchInfo -> preparedCachedLyrics.title
+                        }
+                        val cachedArtist = when (preparedCachedLyrics) {
+                            is LyricsData.Synced -> preparedCachedLyrics.artist
+                            is LyricsData.Plain -> preparedCachedLyrics.artist
+                            is LyricsData.Info -> preparedCachedLyrics.artist
+                            is LyricsData.MismatchInfo -> preparedCachedLyrics.artist
+                        }
+
+                        if (matchesCurrentSongContext(cachedTitle, cachedArtist)) {
+                            fetchedLyricsDataLocal = preparedCachedLyrics
+                        } else {
+                            Log.w(
+                                TAG,
+                                "Cache hit for '$titleForThisFetch'/'$artistForThisFetch' produced cached payload '$cachedTitle'/'$cachedArtist' that failed current song guard '$lastDetectedSongTitle'/'$lastDetectedSongArtist'. Skipping cache and falling back to network."
+                            )
+                        }
                     }
                 }
 
