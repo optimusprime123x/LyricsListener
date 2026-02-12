@@ -43,6 +43,14 @@ void main() {
             return false;
           case 'clearLyricsCache':
             return 0;
+          case 'getCachedLyricsList':
+            return <Map<String, dynamic>>[];
+          case 'getCachedLyricsContent':
+            return <String, dynamic>{};
+          case 'updateCachedLyrics':
+            return true;
+          case 'deleteCachedLyrics':
+            return true;
           default:
             return null;
         }

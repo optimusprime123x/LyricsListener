@@ -315,6 +315,162 @@ class LyricsCacheManager(context: Context) {
         }
     }
 
+    /**
+     * Returns all cached lyrics entries with metadata and content summary.
+     * Each entry is a Map with: cacheKey, title, artist, durationMs, type, source, cachedAt
+     */
+    fun getAllEntries(): List<Map<String, Any?>> {
+        try {
+            ensureMetadataLoaded()
+            return lock.read {
+                val index = metadataCache ?: MetadataIndex(mutableListOf())
+                val result = mutableListOf<Map<String, Any?>>()
+
+                for (entry in index.entries) {
+                    val file = File(cacheDir, "${entry.cacheKey}.json")
+                    if (!file.exists()) continue
+
+                    try {
+                        val json = JSONObject(file.readText())
+                        result.add(mapOf(
+                            "cacheKey" to entry.cacheKey,
+                            "title" to json.optString("title", ""),
+                            "artist" to json.optString("artist", ""),
+                            "durationMs" to json.optLong("durationMs", 0L),
+                            "type" to json.optString("type", "unknown"),
+                            "source" to json.optString("source", "unknown"),
+                            "cachedAt" to json.optLong("cachedAt", 0L)
+                        ))
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Error reading cache file ${entry.cacheKey}, skipping", e)
+                    }
+                }
+
+                result
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting all entries", e)
+            return emptyList()
+        }
+    }
+
+    /**
+     * Returns the full content of a cached lyrics entry.
+     * Returns a Map with all fields from the cache JSON file.
+     */
+    fun getEntry(cacheKey: String): Map<String, Any?>? = lock.read {
+        try {
+            val file = File(cacheDir, "$cacheKey.json")
+            if (!file.exists()) return null
+
+            val json = JSONObject(file.readText())
+            val result = mutableMapOf<String, Any?>(
+                "cacheKey" to cacheKey,
+                "title" to json.optString("title", ""),
+                "artist" to json.optString("artist", ""),
+                "durationMs" to json.optLong("durationMs", 0L),
+                "type" to json.optString("type", "unknown"),
+                "source" to json.optString("source", "unknown"),
+                "cachedAt" to json.optLong("cachedAt", 0L)
+            )
+
+            when (json.optString("type")) {
+                "synced" -> {
+                    val linesArray = json.optJSONArray("lines") ?: JSONArray()
+                    val lines = mutableListOf<Map<String, Any>>()
+                    for (i in 0 until linesArray.length()) {
+                        val lineObj = linesArray.optJSONObject(i) ?: continue
+                        lines.add(mapOf(
+                            "timestamp" to lineObj.optLong("timestamp", 0L),
+                            "text" to lineObj.optString("text", "")
+                        ))
+                    }
+                    result["lines"] = lines
+                }
+                "plain" -> {
+                    result["lyrics"] = json.optString("lyrics", "")
+                }
+            }
+
+            return result
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting entry $cacheKey", e)
+            return null
+        }
+    }
+
+    /**
+     * Updates a cached lyrics entry with new content.
+     * For synced lyrics, expects lines as List<Map<String, Any>> with "timestamp" and "text" keys.
+     * For plain lyrics, expects "lyrics" as a String.
+     */
+    fun updateEntry(cacheKey: String, updatedData: Map<String, Any?>): Boolean = lock.write {
+        try {
+            val file = File(cacheDir, "$cacheKey.json")
+            if (!file.exists()) return false
+
+            val existingJson = JSONObject(file.readText())
+
+            // Update the content based on type
+            val type = existingJson.optString("type")
+            when (type) {
+                "synced" -> {
+                    @Suppress("UNCHECKED_CAST")
+                    val lines = updatedData["lines"] as? List<Map<String, Any>>
+                    if (lines != null) {
+                        val linesArray = JSONArray()
+                        for (line in lines) {
+                            val lineObj = JSONObject().apply {
+                                put("timestamp", (line["timestamp"] as? Number)?.toLong() ?: 0L)
+                                put("text", line["text"] as? String ?: "")
+                            }
+                            linesArray.put(lineObj)
+                        }
+                        existingJson.put("lines", linesArray)
+                    }
+                }
+                "plain" -> {
+                    val lyrics = updatedData["lyrics"] as? String
+                    if (lyrics != null) {
+                        existingJson.put("lyrics", lyrics)
+                    }
+                }
+            }
+
+            existingJson.put("lastAccessed", System.currentTimeMillis())
+            file.writeText(existingJson.toString())
+            Log.d(TAG, "Updated cache entry: $cacheKey")
+            return true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating entry $cacheKey", e)
+            return false
+        }
+    }
+
+    /**
+     * Deletes a specific cached lyrics entry.
+     * @return true if the entry was successfully deleted
+     */
+    fun deleteEntry(cacheKey: String): Boolean = lock.write {
+        try {
+            val file = File(cacheDir, "$cacheKey.json")
+            if (!file.exists()) return false
+
+            val deleted = file.delete()
+            if (deleted) {
+                // Remove from metadata index
+                val index = loadMetadataIndexLocked()
+                index.entries.removeAll { it.cacheKey == cacheKey }
+                writeMetadataIndexLocked(index)
+                Log.d(TAG, "Deleted cache entry: $cacheKey")
+            }
+            return deleted
+        } catch (e: Exception) {
+            Log.e(TAG, "Error deleting entry $cacheKey", e)
+            return false
+        }
+    }
+
     // Private helper methods
 
     private fun ensureMetadataLoaded() {

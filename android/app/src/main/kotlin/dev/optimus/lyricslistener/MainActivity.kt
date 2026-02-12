@@ -220,6 +220,66 @@ class MainActivity : FlutterActivity() {
                         result.error("ERROR_CLEAR_CACHE", e.message, null)
                     }
                 }
+                "getCachedLyricsList" -> {
+                    try {
+                        val cacheManager = LyricsCacheManager(this)
+                        val entries = cacheManager.getAllEntries()
+                        result.success(entries)
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Error getting cached lyrics list: ${e.message}")
+                        result.error("ERROR_GET_CACHE_LIST", e.message, null)
+                    }
+                }
+                "getCachedLyricsContent" -> {
+                    try {
+                        val cacheKey = call.argument<String>("cacheKey")
+                        if (cacheKey == null) {
+                            result.error("ERROR_MISSING_PARAM", "cacheKey is required", null)
+                            return@setMethodCallHandler
+                        }
+                        val cacheManager = LyricsCacheManager(this)
+                        val entry = cacheManager.getEntry(cacheKey)
+                        if (entry != null) {
+                            result.success(entry)
+                        } else {
+                            result.error("ERROR_NOT_FOUND", "Cache entry not found", null)
+                        }
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Error getting cached lyrics content: ${e.message}")
+                        result.error("ERROR_GET_CACHE_CONTENT", e.message, null)
+                    }
+                }
+                "updateCachedLyrics" -> {
+                    try {
+                        val cacheKey = call.argument<String>("cacheKey")
+                        val updatedData = call.argument<Map<String, Any?>>("data")
+                        if (cacheKey == null || updatedData == null) {
+                            result.error("ERROR_MISSING_PARAM", "cacheKey and data are required", null)
+                            return@setMethodCallHandler
+                        }
+                        val cacheManager = LyricsCacheManager(this)
+                        val success = cacheManager.updateEntry(cacheKey, updatedData)
+                        result.success(success)
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Error updating cached lyrics: ${e.message}")
+                        result.error("ERROR_UPDATE_CACHE", e.message, null)
+                    }
+                }
+                "deleteCachedLyrics" -> {
+                    try {
+                        val cacheKey = call.argument<String>("cacheKey")
+                        if (cacheKey == null) {
+                            result.error("ERROR_MISSING_PARAM", "cacheKey is required", null)
+                            return@setMethodCallHandler
+                        }
+                        val cacheManager = LyricsCacheManager(this)
+                        val success = cacheManager.deleteEntry(cacheKey)
+                        result.success(success)
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Error deleting cached lyrics: ${e.message}")
+                        result.error("ERROR_DELETE_CACHE", e.message, null)
+                    }
+                }
                 "startDebugActiveMediaNotification" -> {
                     try {
                         val intent = Intent(this, LyricService::class.java).apply {

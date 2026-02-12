@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 
+import 'package:lyricslistener/pages/manage_lyrics_page.dart';
 import 'package:lyricslistener/widgets/expressive_refresh_indicator.dart'
     as expressive_refresh;
 import 'package:flutter/gestures.dart';
@@ -1230,6 +1231,36 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _clearLyricsCache() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final colorScheme = Theme.of(context).colorScheme;
+        return AlertDialog(
+          title: const Text('Clear all lyrics'),
+          content: const Text(
+            'Are you sure? This will delete all cached lyrics. '
+            'Cached lyrics load faster and reduce network usage.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: colorScheme.error,
+                foregroundColor: colorScheme.onError,
+              ),
+              child: const Text('Clear all'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
     try {
       final int? clearedCount = await _platformChannel.invokeMethod<int>(
         'clearLyricsCache',
@@ -1924,10 +1955,28 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 children: [
                   SizedBox(
                     width: double.infinity,
+                    child: FilledButton.tonalIcon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const ManageLyricsPage(),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.library_music_rounded),
+                      label: const Text('Manage lyrics'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
                     child: OutlinedButton.icon(
                       onPressed: _clearLyricsCache,
                       icon: const Icon(Icons.delete_outline_rounded),
-                      label: const Text('Clear Lyrics Cache'),
+                      label: const Text('Clear all lyrics'),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         side: BorderSide(color: colorScheme.error),
