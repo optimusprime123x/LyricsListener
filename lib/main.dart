@@ -127,7 +127,8 @@ class _MyAppState extends State<MyApp> {
     );
     return DynamicColorBuilder(
       builder: (lightDynamic, darkDynamic) {
-        final bool useDynamicColors = _isMaterialYouThemingEnabled &&
+        final bool useDynamicColors =
+            _isMaterialYouThemingEnabled &&
             lightDynamic != null &&
             darkDynamic != null;
 
@@ -143,8 +144,9 @@ class _MyAppState extends State<MyApp> {
           baseBodyTheme,
           baseLightColorScheme.onSurface,
         );
-        final testSplashFactory =
-            _isFlutterTestEnvironment() ? InkRipple.splashFactory : null;
+        final testSplashFactory = _isFlutterTestEnvironment()
+            ? InkRipple.splashFactory
+            : null;
 
         final lightTheme = ThemeData(
           colorScheme: baseLightColorScheme,
@@ -200,8 +202,9 @@ class _MyAppState extends State<MyApp> {
             titleTextStyle: lightTextTheme.titleLarge?.copyWith(
               color: baseLightColorScheme.onSurface,
             ),
-            iconTheme:
-                IconThemeData(color: baseLightColorScheme.onSurfaceVariant),
+            iconTheme: IconThemeData(
+              color: baseLightColorScheme.onSurfaceVariant,
+            ),
           ),
           dividerTheme: DividerThemeData(
             thickness: 1,
@@ -212,8 +215,9 @@ class _MyAppState extends State<MyApp> {
             titleTextStyle: lightTextTheme.titleMedium,
             subtitleTextStyle: lightTextTheme.bodyMedium,
             minVerticalPadding: 16,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(28),
+            ),
           ),
           expansionTileTheme: ExpansionTileThemeData(
             iconColor: baseLightColorScheme.primary,
@@ -222,8 +226,9 @@ class _MyAppState extends State<MyApp> {
             collapsedTextColor: baseLightColorScheme.onSurface,
             backgroundColor: baseLightColorScheme.surfaceContainerLow,
             collapsedBackgroundColor: baseLightColorScheme.surfaceContainer,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(28),
+            ),
             collapsedShape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(28),
             ),
@@ -239,16 +244,19 @@ class _MyAppState extends State<MyApp> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(28),
-              borderSide:
-                  BorderSide(color: baseLightColorScheme.primary, width: 2),
+              borderSide: BorderSide(
+                color: baseLightColorScheme.primary,
+                width: 2,
+              ),
             ),
             filled: true,
             fillColor: baseLightColorScheme.surfaceContainerHighest,
           ),
           snackBarTheme: SnackBarThemeData(
             behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(28),
+            ),
             backgroundColor: baseLightColorScheme.inverseSurface,
             contentTextStyle: lightTextTheme.bodyMedium?.copyWith(
               color: baseLightColorScheme.onInverseSurface,
@@ -323,8 +331,9 @@ class _MyAppState extends State<MyApp> {
             titleTextStyle: darkTextTheme.titleLarge?.copyWith(
               color: baseDarkColorScheme.onSurface,
             ),
-            iconTheme:
-                IconThemeData(color: baseDarkColorScheme.onSurfaceVariant),
+            iconTheme: IconThemeData(
+              color: baseDarkColorScheme.onSurfaceVariant,
+            ),
           ),
           dividerTheme: DividerThemeData(
             thickness: 1,
@@ -335,8 +344,9 @@ class _MyAppState extends State<MyApp> {
             titleTextStyle: darkTextTheme.titleMedium,
             subtitleTextStyle: darkTextTheme.bodyMedium,
             minVerticalPadding: 16,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(28),
+            ),
           ),
           expansionTileTheme: ExpansionTileThemeData(
             iconColor: baseDarkColorScheme.primary,
@@ -345,8 +355,9 @@ class _MyAppState extends State<MyApp> {
             collapsedTextColor: baseDarkColorScheme.onSurface,
             backgroundColor: baseDarkColorScheme.surfaceContainerLow,
             collapsedBackgroundColor: baseDarkColorScheme.surfaceContainer,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(28),
+            ),
             collapsedShape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(28),
             ),
@@ -362,16 +373,19 @@ class _MyAppState extends State<MyApp> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(28),
-              borderSide:
-                  BorderSide(color: baseDarkColorScheme.primary, width: 2),
+              borderSide: BorderSide(
+                color: baseDarkColorScheme.primary,
+                width: 2,
+              ),
             ),
             filled: true,
             fillColor: baseDarkColorScheme.surfaceContainerHighest,
           ),
           snackBarTheme: SnackBarThemeData(
             behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(28),
+            ),
             backgroundColor: baseDarkColorScheme.inverseSurface,
             contentTextStyle: darkTextTheme.bodyMedium?.copyWith(
               color: baseDarkColorScheme.onInverseSurface,
@@ -1238,7 +1252,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return AlertDialog(
           title: const Text('Clear all lyrics'),
           content: const Text(
-            'Are you sure? This will delete all cached lyrics. '
+            'Are you sure? This will delete all stored lyrics. '
             'Cached lyrics load faster and reduce network usage.',
           ),
           actions: [
@@ -1716,8 +1730,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   Widget _buildSettingsView(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
-    final bool isMaterialYouThemingEnabled =
-        widget.isMaterialYouThemingEnabled;
+    final bool isMaterialYouThemingEnabled = widget.isMaterialYouThemingEnabled;
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
@@ -1793,8 +1806,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                                       ? Center(
                                           child: Icon(
                                             Icons.check_rounded,
-                                            color: ThemeData
-                                                        .estimateBrightnessForColor(
+                                            color:
+                                                ThemeData.estimateBrightnessForColor(
                                                       color,
                                                     ) ==
                                                     Brightness.dark

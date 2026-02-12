@@ -60,15 +60,8 @@ jobs:
       - name: Build debug APK
         run: flutter build apk --debug
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug.apk
-          path: build/app/outputs/flutter-apk/app-debug.apk
-
       - name: Prepare release metadata
         id: release_meta
-        if: github.event_name == 'push'
         run: |
           message_lower="$(jq -r '.head_commit.message // ""' "$GITHUB_EVENT_PATH" | tr '[:upper:]' '[:lower:]')"
           if [[ "$message_lower" =~ (^|[^[:alnum:]_])(release|stable)($|[^[:alnum:]_]) ]]; then
@@ -77,6 +70,13 @@ jobs:
             echo "should_release=false" >> "$GITHUB_OUTPUT"
           fi
           echo "release_timestamp=$(date -u +'%Y%m%d%H%M%S')" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug.apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 7
 
       - name: Create GitHub release
         if: github.event_name == 'push' && steps.release_meta.outputs.should_release == 'true'

@@ -279,7 +279,7 @@ class _ManageLyricsPageState extends State<ManageLyricsPage> {
                       ),
                     ),
                     Text(
-                      'cached lyrics',
+                      'stored lyrics',
                       style: textTheme.bodyMedium?.copyWith(
                         color: colorScheme.onPrimaryContainer,
                       ),
@@ -403,7 +403,7 @@ class _ManageLyricsPageState extends State<ManageLyricsPage> {
           ),
           const SizedBox(height: 16),
           Text(
-            'No matching lyrics',
+            'No matching lyrics stored',
             style: textTheme.titleMedium?.copyWith(
               color: colorScheme.onSurfaceVariant,
               fontWeight: FontWeight.w600,
