@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:lyricslistener/pages/manage_lyrics_page.dart';
+import 'package:lyricslistener/widgets/expressive_page_transitions.dart';
 import 'package:lyricslistener/widgets/expressive_refresh_indicator.dart'
     as expressive_refresh;
 import 'package:flutter/gestures.dart';
@@ -154,6 +155,7 @@ class _MyAppState extends State<MyApp> {
           brightness: Brightness.light,
           textTheme: lightTextTheme,
           splashFactory: testSplashFactory,
+          pageTransitionsTheme: expressivePageTransitionsTheme,
           cardTheme: CardThemeData(
             elevation: 1,
             shadowColor: baseLightColorScheme.primary.withValues(alpha: 0.16),
@@ -283,6 +285,7 @@ class _MyAppState extends State<MyApp> {
           brightness: Brightness.dark,
           textTheme: darkTextTheme,
           splashFactory: testSplashFactory,
+          pageTransitionsTheme: expressivePageTransitionsTheme,
           cardTheme: CardThemeData(
             elevation: 1,
             shadowColor: baseDarkColorScheme.primary.withValues(alpha: 0.24),
@@ -1980,6 +1983,24 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       icon: const Icon(Icons.library_music_rounded),
                       label: const Text('Manage lyrics'),
                       style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Add custom lyrics — coming soon!'),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.add_rounded),
+                      label: const Text('Add custom lyrics'),
+                      style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                     ),

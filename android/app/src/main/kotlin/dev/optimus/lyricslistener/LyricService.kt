@@ -31,6 +31,7 @@ import androidx.recyclerview.widget.RecyclerView
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.android.*
+import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -133,12 +134,14 @@ class LyricService : NotificationListenerService() {
 
     private enum class LyricsProvider {
         MUSIXMATCH,
+        CUSTOM,
         LRCLIB
     }
 
     private data class ProviderLyricsResult(
         val provider: LyricsProvider,
-        val data: LyricsData?
+        val data: LyricsData?,
+        val cacheSource: String? = null
     )
 
 
@@ -202,6 +205,22 @@ class LyricService : NotificationListenerService() {
         val syncedLyrics: String? = null
     )
 
+    @Serializable
+    data class CustomLyricsResponse(
+        val song: String? = null,
+        val artist: String? = null,
+        val source: String? = null,
+        val durationMs: Long? = null,
+        val lrc: List<CustomLyricsLine>? = null
+    )
+
+    @Serializable
+    data class CustomLyricsLine(
+        val time: String? = null,
+        val timeMs: Long? = null,
+        val text: String? = null
+    )
+
     private val httpClient = HttpClient(Android) {
         install(ContentNegotiation) {
             // We must explicitly register the JSON converter for both the standard
@@ -230,6 +249,7 @@ class LyricService : NotificationListenerService() {
         const val ATTRIBUTION_TIMESTAMP = -999L
 
         private const val LYRIC_API_BASE_URL = "https://lrclib.net/api/search"
+        private const val CUSTOM_LYRIC_API_BASE_URL = "https://lyrics-hiwayajcyq-uw.a.run.app/"
         private val LRC_LINE_PATTERN: Pattern = Pattern.compile("(?<=\\[)(\\d{2,}):(\\d{2})([.:])(\\d{2,3})\\](.*)")
 
         private const val FLUTTER_SHARED_PREFERENCES = "FlutterSharedPreferences"
@@ -1080,6 +1100,20 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         return lines?.filter { it.timestamp != ATTRIBUTION_TIMESTAMP }
     }
 
+    private fun formatLyricsAttribution(source: String?, cached: Boolean = false): String {
+        val sourceLabel = when (source?.trim()?.lowercase()) {
+            "musixmatch" -> "Musixmatch"
+            "lrclib" -> "LRCLib"
+            null, "" -> "Unknown"
+            else -> source!!.trim()
+        }
+        return if (cached) {
+            "Lyrics provided by $sourceLabel (cached)"
+        } else {
+            "Lyrics provided by $sourceLabel"
+        }
+    }
+
     private fun cacheConcurrentWinnerIfEligible(
         providerResult: ProviderLyricsResult,
         requestedTitle: String,
@@ -1105,7 +1139,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                                 requestedTitle,
                                 requestedDurationMs,
                                 syncedToCache,
-                                "musixmatch"
+                                providerResult.cacheSource ?: "musixmatch"
                             )
                         }
                     }
@@ -1122,7 +1156,32 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                                 requestedTitle,
                                 requestedDurationMs,
                                 plainToCache,
-                                "musixmatch"
+                                providerResult.cacheSource ?: "musixmatch"
+                            )
+                        }
+                    }
+                    else -> Unit
+                }
+            }
+            LyricsProvider.CUSTOM -> {
+                when (val data = providerResult.data) {
+                    is LyricsData.Synced -> {
+                        val linesToCache = stripAttributionLines(data.lines).orEmpty()
+                        if (linesToCache.isNotEmpty()) {
+                            val durationToCache = if (data.durationMs > 0) data.durationMs else requestedDurationMs
+                            val syncedToCache = LyricsData.Synced(
+                                title = requestedTitle,
+                                artist = requestedArtist.ifEmpty { null },
+                                lines = linesToCache,
+                                translatedLines = null,
+                                durationMs = durationToCache
+                            )
+                            cacheManager.put(
+                                requestedArtist.ifEmpty { null },
+                                requestedTitle,
+                                durationToCache,
+                                syncedToCache,
+                                providerResult.cacheSource ?: "custom"
                             )
                         }
                     }
@@ -1147,7 +1206,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                                 requestedTitle,
                                 durationToCache,
                                 syncedToCache,
-                                "lrclib"
+                                providerResult.cacheSource ?: "lrclib"
                             )
                         }
                     }
@@ -1162,32 +1221,49 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         artist: String,
         durationFromMediaMs: Long
     ): LyricsData? = coroutineScope {
-        val musixmatchRequest = async(Dispatchers.IO) {
-            ProviderLyricsResult(
-                LyricsProvider.MUSIXMATCH,
-                searchWithMusixmatch(
+        val pendingRequests = mutableSetOf<Deferred<ProviderLyricsResult>>()
+
+        if (musixmatchUserToken != null) {
+            pendingRequests.add(
+                async(Dispatchers.IO) {
+                    ProviderLyricsResult(
+                        provider = LyricsProvider.MUSIXMATCH,
+                        data = searchWithMusixmatch(
+                            title = title,
+                            artist = artist,
+                            durationFromMediaMs = durationFromMediaMs,
+                            allowCacheWrite = false
+                        ),
+                        cacheSource = "musixmatch"
+                    )
+                }
+            )
+        }
+
+        pendingRequests.add(
+            async(Dispatchers.IO) {
+                searchWithCustomLyricsApi(
                     title = title,
                     artist = artist,
                     durationFromMediaMs = durationFromMediaMs,
                     allowCacheWrite = false
                 )
-            )
-        }
+            }
+        )
 
-        val lrcLibRequest = async(Dispatchers.IO) {
+        pendingRequests.add(async(Dispatchers.IO) {
             ProviderLyricsResult(
-                LyricsProvider.LRCLIB,
-                searchWithLrcLib(
+                provider = LyricsProvider.LRCLIB,
+                data = searchWithLrcLib(
                     title = title,
                     artist = artist,
                     durationFromMediaMs = durationFromMediaMs,
                     enableFallbackRetries = false,
                     allowCacheWrite = false
-                )
+                ),
+                cacheSource = "lrclib"
             )
-        }
-
-        val pendingRequests = mutableSetOf(musixmatchRequest, lrcLibRequest)
+        })
         while (pendingRequests.isNotEmpty()) {
             val completedRequestAndResult = select<Pair<Deferred<ProviderLyricsResult>, ProviderLyricsResult>> {
                 pendingRequests.forEach { request ->
@@ -1251,7 +1327,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
 
             try {
                 // Check cache first (only for non-YouTube players)
-                if (!useYouTubeLogic) {
+                    if (!useYouTubeLogic) {
                     val cachedLyrics = cacheManager.get(artistForThisFetch, titleForThisFetch, durationFromMediaMs)
                     if (cachedLyrics != null) {
                         Log.d(TAG, "Cache hit for '$titleForThisFetch' by '$artistForThisFetch'")
@@ -1279,7 +1355,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                             )
                         }
                     }
-                }
+                    }
 
                 if (fetchedLyricsDataLocal == null) {
                     if (useYouTubeLogic) {
@@ -1289,8 +1365,12 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                             artist = artistForThisFetch,
                             durationFromMediaMs = durationFromMediaMs
                         )
-                    } else if (musixmatchUserToken != null) {
-                        Log.d(TAG, "Starting concurrent first-pass fetch (Musixmatch + LRCLIB without retries).")
+                    } else {
+                        if (musixmatchUserToken != null) {
+                            Log.d(TAG, "Starting concurrent first-pass fetch (Musixmatch + Custom + LRCLIB without retries).")
+                        } else {
+                            Log.d(TAG, "Musixmatch token unavailable. Starting concurrent first-pass fetch (Custom + LRCLIB without retries).")
+                        }
                         fetchedLyricsDataLocal = fetchFirstValidLyricsFromConcurrentProviders(
                             title = titleForThisFetch,
                             artist = artistForThisFetch,
@@ -1306,13 +1386,6 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                                 enableFallbackRetries = true
                             )
                         }
-                    } else {
-                        Log.d(TAG, "Musixmatch token unavailable. Falling back to LRCLIB search with retries.")
-                        fetchedLyricsDataLocal = searchWithLrcLib(
-                            title = titleForThisFetch,
-                            artist = artistForThisFetch,
-                            durationFromMediaMs = durationFromMediaMs
-                        )
                     }
                 }
 
@@ -1503,16 +1576,20 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             val chosenLyricResult: LyricResult?
             if (!results.isNullOrEmpty()) {
                 val mediaDurationSec = if (durationFromMediaMs > 0) durationFromMediaMs / 1000.0 else -1.0
-                val durationToleranceSec = 2.0
-                val selectors = listOf<(LyricResult) -> Boolean>(
-                    { !it.syncedLyrics.isNullOrBlank() && mediaDurationSec > 0 && kotlin.math.abs(it.duration - mediaDurationSec) <= durationToleranceSec },
-                    { !it.syncedLyrics.isNullOrBlank() },
-                    { !it.plainLyrics.isNullOrBlank() && mediaDurationSec > 0 && kotlin.math.abs(it.duration - mediaDurationSec) <= durationToleranceSec },
-                    { !it.plainLyrics.isNullOrBlank() }
-                )
-                chosenLyricResult = selectors.firstNotNullOfOrNull { selector ->
-                    results.firstOrNull { r -> !r.instrumental && selector(r) }
-                } ?: results.firstOrNull()
+                val durationToleranceSec = 3.0
+                chosenLyricResult = if (mediaDurationSec > 0) {
+                    results.firstOrNull { r ->
+                        !r.instrumental &&
+                            !r.syncedLyrics.isNullOrBlank() &&
+                            kotlin.math.abs(r.duration - mediaDurationSec) <= durationToleranceSec
+                    } ?: results.firstOrNull { r ->
+                        r.instrumental &&
+                            kotlin.math.abs(r.duration - mediaDurationSec) <= durationToleranceSec
+                    }
+                } else {
+                    Log.d(TAG, "LRCLib: Media duration unavailable for '$title'. Skipping LRCLib result selection because strict duration matching is required.")
+                    null
+                }
             } else {
                 chosenLyricResult = null
             }
@@ -1540,10 +1617,9 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
 
                         LyricsData.Synced(title, artist.ifEmpty { null }, linesWithAttribution, null, finalDurationMs)
                     } else {
-                        LyricsData.Plain(title, artist.ifEmpty { null }, chosenLyricResult.plainLyrics ?: "", finalDurationMs)
+                        Log.w(TAG, "LRCLib: Synced lyrics payload for '$title' could not be parsed into timed lines. Discarding result.")
+                        LyricsData.Info(title, artist.ifEmpty { null }, "Lyrics not found.", finalDurationMs)
                     }
-                } else if (!chosenLyricResult.plainLyrics.isNullOrBlank()) {
-                    LyricsData.Plain(title, artist.ifEmpty { null }, chosenLyricResult.plainLyrics, finalDurationMs)
                 } else {
                     LyricsData.Info(title, artist.ifEmpty { null }, "Lyrics not found (empty content).", finalDurationMs)
                 }
@@ -1566,6 +1642,84 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         } catch (e: Exception) {
             Log.e(TAG, "Exception in LRCLib search for '$title'", e)
             return LyricsData.Info(title, artist.ifEmpty { null }, "Could not load lyrics.", durationFromMediaMs.takeIf { it > 0 } ?: 0L)
+        }
+    }
+
+    private suspend fun searchWithCustomLyricsApi(
+        title: String,
+        artist: String,
+        durationFromMediaMs: Long,
+        allowCacheWrite: Boolean = true
+    ): ProviderLyricsResult {
+        if (title.isBlank()) {
+            Log.d(TAG, "Custom lyrics API search skipped: title is blank.")
+            return ProviderLyricsResult(LyricsProvider.CUSTOM, null, "custom")
+        }
+
+        return try {
+            val encodedTitle = URLEncoder.encode(title, StandardCharsets.UTF_8.toString())
+            val encodedArtist = URLEncoder.encode(artist, StandardCharsets.UTF_8.toString())
+            val url = "$CUSTOM_LYRIC_API_BASE_URL?title=$encodedTitle&artist=$encodedArtist"
+            Log.d(TAG, "Fetching from custom lyrics API: $url")
+
+            val response: CustomLyricsResponse = httpClient.get(url).body()
+            val source = response.source?.trim().takeUnless { it.isNullOrEmpty() } ?: "custom"
+            val sortedLines = response.lrc
+                .orEmpty()
+                .mapNotNull { line ->
+                    val timestamp = line.timeMs
+                    if (timestamp == null || timestamp < 0) {
+                        null
+                    } else {
+                        val text = line.text?.trim().takeUnless { it.isNullOrBlank() } ?: "🎶 ... 🎶"
+                        TimedLyricLine(timestamp, text)
+                    }
+                }
+                .sortedBy { it.timestamp }
+
+            if (sortedLines.isEmpty()) {
+                Log.d(TAG, "Custom lyrics API returned no usable synced lines for '$title'.")
+                return ProviderLyricsResult(LyricsProvider.CUSTOM, null, source)
+            }
+
+            val finalDurationMs = when {
+                durationFromMediaMs > 0 -> durationFromMediaMs
+                (response.durationMs ?: 0L) > 0 -> response.durationMs!!
+                else -> 0L
+            }
+
+            val linesWithAttribution = sortedLines.toMutableList().apply {
+                add(TimedLyricLine(ATTRIBUTION_TIMESTAMP, formatLyricsAttribution(source)))
+            }
+            val syncedData = LyricsData.Synced(
+                title = title,
+                artist = artist.ifEmpty { null },
+                lines = linesWithAttribution,
+                translatedLines = null,
+                durationMs = finalDurationMs
+            )
+
+            if (allowCacheWrite) {
+                val lyricsToCache = LyricsData.Synced(
+                    title = title,
+                    artist = artist.ifEmpty { null },
+                    lines = sortedLines,
+                    translatedLines = null,
+                    durationMs = finalDurationMs
+                )
+                cacheManager.put(artist.ifEmpty { null }, title, finalDurationMs, lyricsToCache, source)
+            }
+
+            ProviderLyricsResult(LyricsProvider.CUSTOM, syncedData, source)
+        } catch (e: CancellationException) {
+            Log.d(TAG, "Custom lyrics API search cancelled for '$title'.")
+            throw e
+        } catch (e: ResponseException) {
+            Log.d(TAG, "Custom lyrics API returned ${e.response.status.value} for '$title' (treated as no result).")
+            ProviderLyricsResult(LyricsProvider.CUSTOM, null, "custom")
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception in custom lyrics API search for '$title'", e)
+            ProviderLyricsResult(LyricsProvider.CUSTOM, null, "custom")
         }
     }
     
@@ -2309,8 +2463,13 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 val updatedLines = if (hasAttribution) {
                     // Update existing attribution
                     lyrics.lines.map { line ->
-                        if (line.timestamp == ATTRIBUTION_TIMESTAMP && line.text == MUSIXMATCH_ATTRIBUTION) {
-                            line.copy(text = MUSIXMATCH_ATTRIBUTION_CACHE)
+                        if (line.timestamp == ATTRIBUTION_TIMESTAMP) {
+                            when {
+                                line.text == MUSIXMATCH_ATTRIBUTION -> line.copy(text = MUSIXMATCH_ATTRIBUTION_CACHE)
+                                line.text.startsWith("Lyrics provided by ") && !line.text.contains("(cached)", ignoreCase = true) ->
+                                    line.copy(text = "${line.text} (cached)")
+                                else -> line
+                            }
                         } else {
                             line
                         }
@@ -2318,7 +2477,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 } else {
                     // Add new attribution line
                     lyrics.lines.toMutableList().apply {
-                        add(TimedLyricLine(ATTRIBUTION_TIMESTAMP, MUSIXMATCH_ATTRIBUTION_CACHE))
+                        add(TimedLyricLine(ATTRIBUTION_TIMESTAMP, "Lyrics provided by cache"))
                     }
                 }
 
@@ -2326,15 +2485,20 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                     val hasTranslatedAttribution = translatedLines.any { it.timestamp == ATTRIBUTION_TIMESTAMP }
                     if (hasTranslatedAttribution) {
                         translatedLines.map { line ->
-                            if (line.timestamp == ATTRIBUTION_TIMESTAMP && line.text == MUSIXMATCH_ATTRIBUTION) {
-                                line.copy(text = MUSIXMATCH_ATTRIBUTION_CACHE)
+                            if (line.timestamp == ATTRIBUTION_TIMESTAMP) {
+                                when {
+                                    line.text == MUSIXMATCH_ATTRIBUTION -> line.copy(text = MUSIXMATCH_ATTRIBUTION_CACHE)
+                                    line.text.startsWith("Lyrics provided by ") && !line.text.contains("(cached)", ignoreCase = true) ->
+                                        line.copy(text = "${line.text} (cached)")
+                                    else -> line
+                                }
                             } else {
                                 line
                             }
                         }
                     } else {
                         translatedLines.toMutableList().apply {
-                            add(TimedLyricLine(ATTRIBUTION_TIMESTAMP, MUSIXMATCH_ATTRIBUTION_CACHE))
+                            add(TimedLyricLine(ATTRIBUTION_TIMESTAMP, "Lyrics provided by cache"))
                         }
                     }
                 }

@@ -188,13 +188,13 @@ class LyricsCacheManager(context: Context) {
     }
 
     /**
-     * Saves lyrics to cache (Musixmatch and LRCLib).
-     * @param source Must be "musixmatch" or "lrclib" - other sources are ignored
+     * Saves lyrics to cache.
+     * @param source Source/provider identifier stored for attribution and diagnostics
      */
     fun put(artist: String?, title: String?, durationMs: Long, lyrics: LyricsData, source: String) = lock.write {
         try {
-            val lowercaseSource = source.lowercase()
-            if (lowercaseSource != "musixmatch" && lowercaseSource != "lrclib") {
+            val trimmedSource = source.trim()
+            if (trimmedSource.isEmpty()) {
                 Log.d(TAG, "Skipping cache for unsupported source: $source")
                 return@write
             }
@@ -219,7 +219,7 @@ class LyricsCacheManager(context: Context) {
                 put("title", title ?: "")
                 put("artist", artist ?: "")
                 put("durationMs", durationMs)
-                put("source", source)
+                put("source", trimmedSource)
                 put("cachedAt", System.currentTimeMillis())
                 put("lastAccessed", System.currentTimeMillis())
 
@@ -825,26 +825,50 @@ class LyricsCacheManager(context: Context) {
             val title = json.getString("title")
             val artist = json.optString("artist", null)
             val durationMs = json.getLong("durationMs")
+            val source = json.optString("source", "")
 
             when (type) {
                 "synced" -> {
                     val linesArray = json.getJSONArray("lines")
-                    val lines = (0 until linesArray.length()).map { i ->
+                    val parsedLines = (0 until linesArray.length()).map { i ->
                         val lineObj = linesArray.getJSONObject(i)
                         TimedLyricLine(
                             timestamp = lineObj.getLong("timestamp"),
                             text = lineObj.getString("text")
                         )
                     }
+                    val cachedAttribution = buildCachedAttributionText(source)
+                    val lines = if (
+                        cachedAttribution != null &&
+                        parsedLines.none { it.timestamp == LyricService.ATTRIBUTION_TIMESTAMP }
+                    ) {
+                        parsedLines + TimedLyricLine(
+                            LyricService.ATTRIBUTION_TIMESTAMP,
+                            cachedAttribution
+                        )
+                    } else {
+                        parsedLines
+                    }
 
                     val translatedLines = if (json.has("translatedLines")) {
                         val translatedArray = json.getJSONArray("translatedLines")
-                        (0 until translatedArray.length()).map { i ->
+                        val parsedTranslated = (0 until translatedArray.length()).map { i ->
                             val lineObj = translatedArray.getJSONObject(i)
                             TimedLyricLine(
                                 timestamp = lineObj.getLong("timestamp"),
                                 text = lineObj.getString("text")
                             )
+                        }
+                        if (
+                            cachedAttribution != null &&
+                            parsedTranslated.none { it.timestamp == LyricService.ATTRIBUTION_TIMESTAMP }
+                        ) {
+                            parsedTranslated + TimedLyricLine(
+                                LyricService.ATTRIBUTION_TIMESTAMP,
+                                cachedAttribution
+                            )
+                        } else {
+                            parsedTranslated
                         }
                     } else null
 
@@ -871,6 +895,17 @@ class LyricsCacheManager(context: Context) {
             Log.e(TAG, "Error parsing cached lyrics", e)
             null
         }
+    }
+
+    private fun buildCachedAttributionText(source: String?): String? {
+        val raw = source?.trim().orEmpty()
+        if (raw.isEmpty()) return null
+        val displaySource = when (raw.lowercase()) {
+            "musixmatch" -> "Musixmatch"
+            "lrclib" -> "LRCLib"
+            else -> raw
+        }
+        return "Lyrics provided by $displaySource (cached)"
     }
 
     private fun updateAccessTime(cacheKey: String) {

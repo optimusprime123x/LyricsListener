@@ -327,28 +327,6 @@ class _ManageLyricsPageState extends State<ManageLyricsPage> {
               ),
             ),
           ),
-
-        // Add custom lyrics button
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Add custom lyrics — coming soon!'),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Add custom lyrics'),
-            ),
-          ),
-        ),
-
-        const SizedBox(height: 4),
-
         // Lyrics list
         Expanded(
           child: _cachedLyrics.isEmpty
