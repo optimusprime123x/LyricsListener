@@ -331,16 +331,10 @@ class LyricsCacheManager(context: Context) {
                     if (!file.exists()) continue
 
                     try {
-                        val json = JSONObject(file.readText())
-                        result.add(mapOf(
-                            "cacheKey" to entry.cacheKey,
-                            "title" to json.optString("title", ""),
-                            "artist" to json.optString("artist", ""),
-                            "durationMs" to json.optLong("durationMs", 0L),
-                            "type" to json.optString("type", "unknown"),
-                            "source" to json.optString("source", "unknown"),
-                            "cachedAt" to json.optLong("cachedAt", 0L)
-                        ))
+                        val summary = buildEntrySummaryFromFile(entry.cacheKey, file)
+                        if (summary != null) {
+                            result.add(summary)
+                        }
                     } catch (e: Exception) {
                         Log.w(TAG, "Error reading cache file ${entry.cacheKey}, skipping", e)
                     }
@@ -396,6 +390,82 @@ class LyricsCacheManager(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Error getting entry $cacheKey", e)
             return null
+        }
+    }
+
+    /**
+     * Finds cache entries that exactly match the normalized artist/title pair.
+     * Duration is ignored intentionally to support custom lyrics overwrite flows.
+     */
+    fun findExactEntries(artist: String?, title: String?): List<Map<String, Any?>> {
+        try {
+            ensureMetadataLoaded()
+            val normalizedArtist = normalizeString(artist ?: "")
+            val normalizedTitle = normalizeString(title ?: "")
+            if (normalizedTitle.isEmpty()) return emptyList()
+
+            return lock.read {
+                val index = metadataCache ?: MetadataIndex(mutableListOf())
+                index.entries
+                    .asSequence()
+                    .filter { it.title == normalizedTitle && it.artist == normalizedArtist }
+                    .mapNotNull { entry ->
+                        val file = File(cacheDir, "${entry.cacheKey}.json")
+                        if (!file.exists()) return@mapNotNull null
+                        buildEntrySummaryFromFile(entry.cacheKey, file)
+                    }
+                    .toList()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error finding exact cache entries", e)
+            return emptyList()
+        }
+    }
+
+    /**
+     * Deletes all cache entries that exactly match the normalized artist/title pair.
+     * Duration is ignored intentionally to support replacing existing entries with custom lyrics.
+     * @return Number of entries deleted
+     */
+    fun deleteExactEntries(artist: String?, title: String?): Int {
+        try {
+            ensureMetadataLoaded()
+            val normalizedArtist = normalizeString(artist ?: "")
+            val normalizedTitle = normalizeString(title ?: "")
+            if (normalizedTitle.isEmpty()) return 0
+
+            return lock.write {
+                val index = loadMetadataIndexLocked()
+                val matchingEntries = index.entries.filter {
+                    it.title == normalizedTitle && it.artist == normalizedArtist
+                }
+
+                if (matchingEntries.isEmpty()) {
+                    return@write 0
+                }
+
+                var deletedCount = 0
+                val deletedKeys = mutableSetOf<String>()
+                matchingEntries.forEach { entry ->
+                    val file = File(cacheDir, "${entry.cacheKey}.json")
+                    if (!file.exists() || file.delete()) {
+                        deletedCount++
+                        deletedKeys.add(entry.cacheKey)
+                    } else {
+                        Log.w(TAG, "Failed to delete cache file for exact match: ${entry.cacheKey}")
+                    }
+                }
+
+                if (deletedKeys.isNotEmpty()) {
+                    index.entries.removeAll { deletedKeys.contains(it.cacheKey) }
+                    writeMetadataIndexLocked(index)
+                }
+
+                deletedCount
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error deleting exact cache entries", e)
+            return 0
         }
     }
 
@@ -752,20 +822,47 @@ class LyricsCacheManager(context: Context) {
         for (entry in index.entries) {
             val artistMatch = fuzzyArtistMatch(entry.artist, artist)
             val titleMatch = entry.title == title
-            val durationMatch = Math.abs(entry.durationMs - durationMs) <= DURATION_TOLERANCE_MS
+            if (!artistMatch || !titleMatch) {
+                continue
+            }
 
-            if (artistMatch && titleMatch && durationMatch) {
-                val file = File(cacheDir, "${entry.cacheKey}.json")
-                if (file.exists()) {
-                    Log.d(TAG, "Cache match found via metadata: '${entry.artist}' - '${entry.title}' (normalized) matches query '$artist' - '$title'")
-                    return CacheFileLookupResult(file, staleKeys)
-                }
-
+            val file = File(cacheDir, "${entry.cacheKey}.json")
+            if (!file.exists()) {
                 staleKeys.add(entry.cacheKey)
+                continue
+            }
+
+            val durationMatch = Math.abs(entry.durationMs - durationMs) <= DURATION_TOLERANCE_MS
+            if (durationMatch) {
+                Log.d(
+                    TAG,
+                    "Cache match found via metadata: '${entry.artist}' - '${entry.title}' (normalized) matches query '$artist' - '$title'"
+                )
+                return CacheFileLookupResult(file, staleKeys)
+            }
+
+            val allowCustomDurationBypass = entry.durationMs <= 0L || durationMs <= 0L
+            if (allowCustomDurationBypass && isCustomSourceCacheFile(file)) {
+                Log.d(
+                    TAG,
+                    "Cache match accepted for custom source despite duration mismatch: '${entry.artist}' - '${entry.title}' " +
+                        "(entryDuration=${entry.durationMs}, queryDuration=$durationMs)"
+                )
+                return CacheFileLookupResult(file, staleKeys)
             }
         }
 
         return CacheFileLookupResult(null, staleKeys)
+    }
+
+    private fun isCustomSourceCacheFile(file: File): Boolean {
+        return try {
+            val json = JSONObject(file.readText())
+            json.optString("source", "").trim().equals("custom", ignoreCase = true)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to inspect cache file source for ${file.name}", e)
+            false
+        }
     }
 
     /**
@@ -893,6 +990,24 @@ class LyricsCacheManager(context: Context) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error parsing cached lyrics", e)
+            null
+        }
+    }
+
+    private fun buildEntrySummaryFromFile(cacheKey: String, file: File): Map<String, Any?>? {
+        return try {
+            val json = JSONObject(file.readText())
+            mapOf(
+                "cacheKey" to cacheKey,
+                "title" to json.optString("title", ""),
+                "artist" to json.optString("artist", ""),
+                "durationMs" to json.optLong("durationMs", 0L),
+                "type" to json.optString("type", "unknown"),
+                "source" to json.optString("source", "unknown"),
+                "cachedAt" to json.optLong("cachedAt", 0L)
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Error reading cache file $cacheKey", e)
             null
         }
     }

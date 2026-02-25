@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:lyricslistener/pages/manage_lyrics_page.dart';
+import 'package:lyricslistener/pages/add_custom_lyrics_page.dart';
 import 'package:lyricslistener/widgets/expressive_page_transitions.dart';
 import 'package:lyricslistener/widgets/expressive_refresh_indicator.dart'
     as expressive_refresh;
@@ -1992,9 +1993,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     width: double.infinity,
                     child: OutlinedButton.icon(
                       onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Add custom lyrics — coming soon!'),
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const AddCustomLyricsPage(),
                           ),
                         );
                       },

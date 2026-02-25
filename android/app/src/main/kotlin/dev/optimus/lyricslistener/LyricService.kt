@@ -114,6 +114,112 @@ class LyricService : NotificationListenerService() {
                 normalizedIncomingArtist == normalizedCurrentArtist
     }
 
+    private fun matchesCurrentSongContextForLyrics(data: LyricsData?): Boolean {
+        if (data == null) return false
+
+        val title = when (data) {
+            is LyricsData.Plain -> data.title
+            is LyricsData.Synced -> data.title
+            is LyricsData.Info -> data.title
+            is LyricsData.MismatchInfo -> data.title
+        }
+        val artist = when (data) {
+            is LyricsData.Plain -> data.artist
+            is LyricsData.Synced -> data.artist
+            is LyricsData.Info -> data.artist
+            is LyricsData.MismatchInfo -> data.artist
+        }
+
+        if (matchesCurrentSongContext(title, artist)) {
+            return true
+        }
+
+        if (!isCustomSourcedLyrics(data)) {
+            return false
+        }
+
+        val relaxedMatch = matchesCurrentSongContextRelaxedForCustom(title, artist)
+        if (relaxedMatch) {
+            Log.d(
+                TAG,
+                "Accepted relaxed current-song guard for custom lyrics: incoming='$title/$artist', current='$lastDetectedSongTitle/$lastDetectedSongArtist'"
+            )
+        }
+        return relaxedMatch
+    }
+
+    private fun isCustomSourcedLyrics(data: LyricsData?): Boolean {
+        return when (data) {
+            is LyricsData.Synced -> {
+                val allLines = buildList {
+                    addAll(data.lines)
+                    data.translatedLines?.let { addAll(it) }
+                }
+                allLines.any { line ->
+                    line.timestamp == ATTRIBUTION_TIMESTAMP &&
+                        line.text.contains("Lyrics provided by custom", ignoreCase = true)
+                }
+            }
+            is LyricsData.MismatchInfo -> isCustomSourcedLyrics(data.originalLyricsData)
+            else -> false
+        }
+    }
+
+    private fun matchesCurrentSongContextRelaxedForCustom(title: String?, artist: String?): Boolean {
+        val normalizedCurrentTitle = normalizeSongStringForComparison(lastDetectedSongTitle)
+        val normalizedIncomingTitle = normalizeSongStringForComparison(title)
+        if (normalizedCurrentTitle.isEmpty() || normalizedIncomingTitle.isEmpty()) {
+            return false
+        }
+
+        if (!areCustomGuardTitlesSimilar(normalizedIncomingTitle, normalizedCurrentTitle)) {
+            return false
+        }
+
+        val normalizedCurrentArtist = normalizeSongStringForComparison(lastDetectedSongArtist)
+        val normalizedIncomingArtist = normalizeSongStringForComparison(artist)
+        if (normalizedCurrentArtist.isEmpty() || normalizedIncomingArtist.isEmpty()) {
+            return true
+        }
+
+        if (normalizedIncomingArtist == normalizedCurrentArtist) {
+            return true
+        }
+
+        val currentPrimary = normalizeSongStringForComparison(extractPrimaryArtistForSearch(normalizedCurrentArtist))
+        val incomingPrimary = normalizeSongStringForComparison(extractPrimaryArtistForSearch(normalizedIncomingArtist))
+
+        if (currentPrimary.isNotEmpty() && incomingPrimary.isNotEmpty()) {
+            if (currentPrimary == incomingPrimary) return true
+            if (currentPrimary.length >= 3 && incomingPrimary.contains(currentPrimary)) return true
+            if (incomingPrimary.length >= 3 && currentPrimary.contains(incomingPrimary)) return true
+        }
+
+        return false
+    }
+
+    private fun areCustomGuardTitlesSimilar(incomingTitle: String, currentTitle: String): Boolean {
+        if (incomingTitle == currentTitle) return true
+
+        if (incomingTitle.length >= 6 && currentTitle.contains(incomingTitle)) return true
+        if (currentTitle.length >= 6 && incomingTitle.contains(currentTitle)) return true
+
+        val incomingWords = incomingTitle
+            .split(Regex("\\s+"))
+            .filter { it.length > 2 }
+            .toSet()
+        val currentWords = currentTitle
+            .split(Regex("\\s+"))
+            .filter { it.length > 2 }
+            .toSet()
+
+        if (incomingWords.isEmpty() || currentWords.isEmpty()) return false
+
+        val overlap = incomingWords.intersect(currentWords).size
+        val minSize = minOf(incomingWords.size, currentWords.size)
+        return overlap >= 2 && overlap.toDouble() / minSize >= 0.7
+    }
+
     private val lastListenerRebindAttempt = AtomicLong(0L)
     private val lastListenerHeartbeatMs = AtomicLong(0L)
     private val consecutiveListenerRecoveryAttempts = AtomicInteger(0)
@@ -1346,7 +1452,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                             is LyricsData.MismatchInfo -> preparedCachedLyrics.artist
                         }
 
-                        if (matchesCurrentSongContext(cachedTitle, cachedArtist)) {
+                        if (matchesCurrentSongContextForLyrics(preparedCachedLyrics)) {
                             fetchedLyricsDataLocal = preparedCachedLyrics
                         } else {
                             Log.w(
@@ -1764,7 +1870,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             is LyricsData.MismatchInfo -> data.artist
         }
 
-        if (data !is LyricsData.Info && !matchesCurrentSongContext(dataTitle, dataArtist)) {
+        if (data !is LyricsData.Info && !matchesCurrentSongContextForLyrics(data)) {
              Log.w(TAG, "showLyricsWindow (MainThread): Called for '$dataTitle'/'$dataArtist', but current song is '$lastDetectedSongTitle'/'$lastDetectedSongArtist'. Aborting show.")
              if (lyricsView != null && lyricsView?.isAttachedToWindow == true) {
                  val actualCurrentData = currentLyricsData
@@ -2227,7 +2333,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             Log.d(TAG, "Not starting highlighter: Conditions not met. MC Valid: ${controllerForHighlighting != null}, Token Match: ${controllerForHighlighting?.sessionToken == tokenForHighlighting}, Data is Synced: ${dataForHighlighting is LyricsData.Synced}")
             return
         }
-        if (!matchesCurrentSongContext(dataForHighlighting.title, dataForHighlighting.artist)) {
+        if (!matchesCurrentSongContextForLyrics(dataForHighlighting)) {
             Log.w(TAG, "Highlighting attempted for '${dataForHighlighting.title}/${dataForHighlighting.artist}' but current song context is '$lastDetectedSongTitle/$lastDetectedSongArtist'. Aborting.")
             return
         }

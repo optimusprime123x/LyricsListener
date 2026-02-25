@@ -21,12 +21,18 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.util.concurrent.TimeUnit
+import java.util.regex.Pattern
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "dev.optimus.lyricslistener/permissions"
     private val DEBUG_LOG_CHANNEL = "dev.optimus.lyricslistener/debugLogs"
     private val POST_NOTIFICATIONS_REQUEST_CODE = 101
     private val ENABLED_NOTIFICATION_LISTENERS_KEY = "enabled_notification_listeners"
+    private val customLrcLinePattern: Pattern =
+        Pattern.compile("(?<=\\[)(\\d{2,}):(\\d{2})([.:])(\\d{2,3})\\](.*)")
+    private val lrcMetadataTagPattern: Pattern =
+        Pattern.compile("^\\[[A-Za-z]{1,12}\\s*:[^\\]]*]$")
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -280,6 +286,76 @@ class MainActivity : FlutterActivity() {
                         result.error("ERROR_DELETE_CACHE", e.message, null)
                     }
                 }
+                "addCustomLyrics" -> {
+                    try {
+                        val title = call.argument<String>("title")?.trim().orEmpty()
+                        val artist = call.argument<String>("artist")?.trim().orEmpty()
+                        val lrc = call.argument<String>("lrc").orEmpty()
+                        val overwriteExisting = call.argument<Boolean>("overwriteExisting") ?: false
+
+                        if (title.isBlank()) {
+                            result.error("ERROR_INVALID_INPUT", "Title is required.", null)
+                            return@setMethodCallHandler
+                        }
+                        if (artist.isBlank()) {
+                            result.error("ERROR_INVALID_INPUT", "Artist is required.", null)
+                            return@setMethodCallHandler
+                        }
+                        if (lrc.isBlank()) {
+                            result.error("ERROR_INVALID_INPUT", "LRC is required.", null)
+                            return@setMethodCallHandler
+                        }
+
+                        val parsedLines = parseAndValidateCustomLrc(lrc)
+                        val cacheManager = LyricsCacheManager(this)
+                        val exactMatches = cacheManager.findExactEntries(artist, title)
+
+                        if (exactMatches.isNotEmpty() && !overwriteExisting) {
+                            result.success(
+                                mapOf(
+                                    "status" to "conflict",
+                                    "matchCount" to exactMatches.size,
+                                    "matches" to exactMatches
+                                )
+                            )
+                            return@setMethodCallHandler
+                        }
+
+                        val overwrittenCount = if (overwriteExisting) {
+                            cacheManager.deleteExactEntries(artist, title)
+                        } else {
+                            0
+                        }
+
+                        val customLyrics = LyricsData.Synced(
+                            title = title,
+                            artist = artist,
+                            lines = parsedLines,
+                            translatedLines = null,
+                            durationMs = 0L
+                        )
+                        cacheManager.put(
+                            artist = artist,
+                            title = title,
+                            durationMs = 0L,
+                            lyrics = customLyrics,
+                            source = "custom"
+                        )
+
+                        result.success(
+                            mapOf(
+                                "status" to "saved",
+                                "lineCount" to parsedLines.size,
+                                "overwrittenCount" to overwrittenCount
+                            )
+                        )
+                    } catch (e: IllegalArgumentException) {
+                        result.error("ERROR_INVALID_LRC", e.message ?: "Invalid LRC.", null)
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Error adding custom lyrics: ${e.message}", e)
+                        result.error("ERROR_ADD_CUSTOM_LYRICS", e.message, null)
+                    }
+                }
                 "startDebugActiveMediaNotification" -> {
                     try {
                         val intent = Intent(this, LyricService::class.java).apply {
@@ -301,6 +377,97 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
+    }
+
+    private fun parseAndValidateCustomLrc(rawLrc: String): List<TimedLyricLine> {
+        val lrcText = rawLrc.replace("\uFEFF", "")
+        if (lrcText.isBlank()) {
+            throw IllegalArgumentException("LRC is empty.")
+        }
+
+        val parsedLines = mutableListOf<TimedLyricLine>()
+        var parsedTimestampCount = 0
+
+        lrcText.lines().forEachIndexed { index, originalLine ->
+            val lineNumber = index + 1
+            var currentTextSegment = originalLine.trim()
+            if (currentTextSegment.isBlank()) {
+                return@forEachIndexed
+            }
+
+            if (isSupportedLrcMetadataTag(currentTextSegment)) {
+                return@forEachIndexed
+            }
+
+            val timedPlaceholders = mutableListOf<TimedLyricLine>()
+
+            while (currentTextSegment.startsWith("[")) {
+                val matcher = customLrcLinePattern.matcher(currentTextSegment)
+                if (matcher.find() && matcher.start() == 1) {
+                    val minutes = matcher.group(1)!!.toIntOrNull()
+                    val seconds = matcher.group(2)!!.toIntOrNull()
+                    val millisRaw = matcher.group(4)!!
+                    if (minutes == null || seconds == null) {
+                        throw IllegalArgumentException("Invalid timestamp number on line $lineNumber.")
+                    }
+                    if (seconds !in 0..59) {
+                        throw IllegalArgumentException("Invalid seconds value on line $lineNumber. Use 00-59.")
+                    }
+
+                    val milliseconds = when (millisRaw.length) {
+                        2 -> millisRaw.toIntOrNull()?.times(10)
+                        3 -> millisRaw.toIntOrNull()
+                        else -> null
+                    } ?: throw IllegalArgumentException("Invalid milliseconds value on line $lineNumber.")
+
+                    if (milliseconds !in 0..999) {
+                        throw IllegalArgumentException("Invalid milliseconds value on line $lineNumber.")
+                    }
+
+                    val timestampMs =
+                        TimeUnit.MINUTES.toMillis(minutes.toLong()) +
+                            TimeUnit.SECONDS.toMillis(seconds.toLong()) +
+                            milliseconds.toLong()
+
+                    timedPlaceholders.add(TimedLyricLine(timestampMs, ""))
+                    parsedTimestampCount++
+                    currentTextSegment = matcher.group(5)?.trimStart().orEmpty()
+                } else {
+                    break
+                }
+            }
+
+            if (timedPlaceholders.isNotEmpty()) {
+                val displayText = currentTextSegment.trim().ifBlank { "🎶 ... 🎶" }
+                timedPlaceholders.forEach { placeholder ->
+                    parsedLines.add(placeholder.copy(text = displayText))
+                }
+                return@forEachIndexed
+            }
+
+            if (currentTextSegment.startsWith("[")) {
+                throw IllegalArgumentException(
+                    "Invalid LRC tag on line $lineNumber. Use [mm:ss.xx] or [mm:ss.xxx]."
+                )
+            }
+
+            throw IllegalArgumentException(
+                "Line $lineNumber is missing a timestamp. Each lyric line must start with [mm:ss.xx]."
+            )
+        }
+
+        if (parsedTimestampCount == 0 || parsedLines.isEmpty()) {
+            throw IllegalArgumentException(
+                "No valid timed LRC lines were found. Add at least one line like [00:12.34] Hello."
+            )
+        }
+
+        parsedLines.sortBy { it.timestamp }
+        return parsedLines
+    }
+
+    private fun isSupportedLrcMetadataTag(line: String): Boolean {
+        return lrcMetadataTagPattern.matcher(line.trim()).matches()
     }
 
     private class LogStreamHandler : EventChannel.StreamHandler {
