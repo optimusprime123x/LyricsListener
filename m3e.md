@@ -1,255 +1,401 @@
+```markdown
 ---
 name: material-3-expressive-design
-description: Comprehensive guide and rule set for implementing Material 3 Expressive design, focusing on emotion-driven UX, motion physics, variable typography, and shape tension. Enhanced with web and X research, specifically tailored for Flutter apps.
-version: 1.1.0
+description: Comprehensive, production-ready guide and rule set for implementing Material 3 Expressive (May 2025 evolution of M3) — emotion-driven UX, spring physics, variable typography, 35-shape library, morphing, vibrant colors, and hero moments. Tailored for Flutter with community + custom implementations (official Expressive support pending).
+version: 2.0.0
 ---
 
 # Material 3 Expressive Design Skill
 
-This document provides a comprehensive context, rules, and code patterns required to implement **Material 3 Expressive**. Unlike standard Material 3 (which prioritizes utility and readability), Expressive design prioritizes **emotion, boldness, and distinctiveness** through intentional manipulation of shape, motion, and typography. This enhanced version incorporates insights from official Google Material Design guidelines (m3.material.io), research on expressive UX, and community implementations in Flutter, including GitHub issues and pub.dev packages.
+**Material 3 Expressive** is the official 2025 evolution of Google’s Material 3 design system. It is **not** a new major version (“M4”) — it is an additive layer of features, updated components, styles, and tactics that make interfaces feel emotionally alive while staying fully compatible with baseline M3.
 
-Material 3 Expressive is an evolution of the Material 3 design system, introducing new features, updated components, and design tactics for emotionally impactful UX. It builds on Material You's personalization, adding vibrant colors, intuitive motion, adaptive components, and flexible typography. Research shows expressive designs are preferred by users of all ages, improve usability (e.g., spotting UI elements 4x faster), and boost engagement.
+> “Expressive interfaces have an emotional impact, fostering connection by evoking a feeling or mood through visual design and interaction.”
 
----
+Backed by the most researched update in Material history (46 studies, 18,000+ participants):
 
-## Core Philosophy
+- Expressive designs are strongly preferred by users of **all ages**  
+- Key UI elements spotted **up to 4× faster**  
+- Higher scores on playfulness, energy, creativity, friendliness  
+- Users significantly more likely to switch to expressive products  
 
-**“Design that feels right.”**
-
-Expressive design shifts from purely functional UI to emotional UI. It introduces deliberate variance to create **Hero Moments**—interactions that feel delightful, alive, and memorable. Backed by Google's UX research, it emphasizes emotional connection through color, shape, size, motion, and containment, making products more usable and engaging.
-
-Key Benefits from Research:
-- Well-applied expressive design is strongly preferred over non-expressive.
-- Users spot key UI elements faster in expressive screens.
-- Increases product switching likelihood due to emotional appeal.
+This guide focuses on **Flutter** implementation (the primary target of the original document) while referencing official Jetpack Compose/Web patterns for completeness.
 
 ---
 
-## 1. The Four Pillars of Expressiveness
+# Core Philosophy
 
-### A. Motion Physics (The “Spring”)
+**“Design that feels right — and makes you feel something.”**
 
-- **Concept:** Replace standard easing curves (`ease-in`, `ease-out`) with **spring physics** for more natural, fluid interactions.
-- **Standard vs Expressive:**
-  - **Standard:** Direct, efficient. Ideal for scrolling, lists, and toggles (e.g., cubic easing).
-  - **Expressive:** Elastic, playful, includes **overshoot** and bounce. Reserved for hero interactions like button presses or transitions.
-- **Token Model:**  
-  `duration + easing` → `stiffness + damping`. New simplified spring-based system makes interactions feel alive.
-- **Guidelines:** Use for <20% of interactions to avoid overwhelming users. Apply to loading indicators, FAB expansions, or shape morphing.
-
-### B. Expressive Typography
-
-- **Concept:** Use **variable fonts** (e.g., Roboto Flex) to create nuanced styles between predefined ones, adding emotional emphasis.
-- **Rule:** Create emphasized variants of standard tokens.
-  - Standard: `HeadlineLarge`
-  - Expressive: `HeadlineLargeEmphasized` (e.g., bolder weight, wider width via font-variation-settings).
-- **Usage:** Short, high-impact text only (titles, metrics, editorial moments).  
-  **Never** for body copy to maintain readability.
-- **Expanded Type Scale:** Includes new emphasized styles for display, headline, title, label, and body roles. Use variable axes for emotional states (e.g., 'wght' 800, 'wdth' 110).
-
-### C. Shape & Tension
-
-- **Concept:** Visual tension via mixing **fully rounded** and **sharp** corners. Expanded library with 35 new shapes for decorative detail and morphing.
-- **Expressive Shape Rule:**  
-  Primary containers default to **extra-large or full rounding** (28dp+ or 'full' at 50% of size). Use asymmetry for tension.
-- **Morphing:** Shapes transition across states (e.g., rectangle → circle, or spiky star for playful elements).
-- **Principles:** Variety of shapes communicates tone; use for avatars, image crops, progress indicators.
-
-### D. Layout & Containment
-
-- **Concept:** Group content into bold, high-contrast containers to guide attention.
-- **Hero Areas:** Allocate significant space to a single expressive action or visual.
-- **Layout Strategy:** Split expressive and functional zones. Use contrasted shades for important elements, common regions for grouping.
-- **Tactics:** 
-  1. Variety of shapes for visual rhythm.
-  2. Rich, nuanced colors from extended palettes.
-  3. Typography to guide attention.
-  4. Containment for emphasis (e.g., rounded containers separate groups).
+M3 Expressive moves from purely functional UI to **emotional UI**. It deliberately introduces controlled variance in shape, motion, color, typography, and containment to create **Hero Moments** — brief, delightful, surprising interactions that turn ordinary screens into memorable experiences.
 
 ---
 
-## 2. Implementation Rules for Agents
-
-### Do’s and Don’ts
-
-**DO**
-- Use **spring-based motion** for expressive transitions.
-- Use distinct container colors to separate hero and utility content.
-- Use **tonal, colored shadows** derived from the primary palette.
-- Apply expressive features to boost usability and emotional impact.
-- Ensure accessibility: Semantic structure, color contrast, logical navigation.
-
-**DO NOT**
-- Apply expressive motion universally (target <20% of interactions).
-- Use gray or neutral shadows.
-- Animate high-frequency UI elements.
-- Overuse shapes without purpose—avoid cognitive overload.
-- Ignore platform specifics; adapt for Wear OS (e.g., circular form factor).
-
-### Expressive Components Overview
-15 new/updated components with more sizes, shapes, functionality:
-- Button groups: Built-in shape morph, adaptive to window sizes.
-- FAB menu: Shows multiple actions with fluid expansion.
-- Loading indicator: Captures attention with spring motion.
-- Split button: Packs actions into smaller space.
-- Toolbars: Floating or docked, with shape options.
-- Menus: Expressive variants.
-- Lists: Baseline vs. expressive.
-- Others: Avatars, carousels, switches (morphing thumbs/icons).
+# The Five Foundations of Expressiveness
 
 ---
 
-## 3. Platform-Specific Guidance
+## A. Motion Physics (The Spring System)
 
-### 📱 Jetpack Compose (Android)
-- **Material3:** `androidx.compose.material3:material3:1.3.0+`
-- Use built-in support for M3 Expressive (e.g., spring animations, shape tokens).
+Official replacement for cubic easing.
 
-```kotlin
-val expressiveSpring = spring(
-    dampingRatio = 0.8f,
-    stiffness = 300f
-)
-val Shapes = Shapes(
-    extraSmall = RoundedCornerShape(4.dp),
-    small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(32.dp)
-)
-```
+### Motion Schemes (Set Once at Theme Level)
 
-### 💙 Flutter
-- **ThemeData:** Enable with `useMaterial3: true` in `MaterialApp`.
-- **Current Status:** Official support is not yet active (GitHub issue #168813 tracks progress; community-driven for now). Use custim implementation (preferred) or community packages for expressive features:
-  - `flutter_m3shapes` for 35+ shapes and morphing.
-  - `tofu_expressive` for full theme with dynamic colors.
-  - Component packages: `icon_button_m3e`, `split_button_m3e`, `toolbar_m3e`, `navigation_bar_m3e`, `button_m3e`, `connected_button_group`.
-- **Motion:** Use `Curves.elasticOut` or custom `SpringSimulation` for physics. Experiment with `AnimatedContainer` for magnetic animations.
-- **Typography:** Load variable fonts like Roboto Flex; adjust via `FontVariation`.
-- **Shapes:** Custom `ShapeBorder` or use `flutter_m3shapes` for pixelTriangle, etc.
-- **Guidelines for Wear OS:** Center round displays; use scrolling animations tracing the curve.
-- **Implementation Tips:** Avoid native conflicts; extend `ThemeData` with `ThemeExtension` for custom expressive layers. Use `InheritedWidget` for wrapping.
+- **Expressive** (recommended default) — overshoots + natural bounce for hero moments  
+- **Standard** — clean, functional, minimal bounce (utility flows)  
+
+### Spring Attributes
+
+- `stiffness` (higher = faster snap)  
+- `damping` (1.0 = no bounce)  
+- `initialVelocity`  
+
+**Spatial springs** (position, size, corner radius) → overshoot allowed  
+**Effects springs** (color, opacity) → no overshoot  
+
+Speed tokens (`fast`, `default`, `slow`) adapt to device context.
+
+### Flutter Implementation (Custom — No Official Tokens Yet)
 
 ```dart
-// Expressive Button Morph Example
-AnimatedContainer(
-  duration: const Duration(milliseconds: 600),
-  curve: Curves.elasticOut,
-  width: isHovered ? 200 : 60,
-  height: 60,
-  decoration: BoxDecoration(
-    color: Theme.of(context).colorScheme.primary,
-    borderRadius: BorderRadius.circular(isHovered ? 16 : 30),
+import 'package:flutter/physics.dart';
+
+final expressiveSpring = SpringSimulation(
+  const SpringDescription.withDampingRatio(
+    mass: 1,
+    stiffness: 300,
+    ratio: 0.8, // lower = more playful bounce
   ),
-  child: Icon(
-    Icons.add,
-    color: Theme.of(context).colorScheme.onPrimary,
-  ),
+  0.0,
+  1.0,
+  0.0,
 );
 
-// Using flutter_m3shapes package
-M3Container.pixelTriangle(
-  color: Colors.deepOrange,
-  child: Text('Expressive Shape'),
+AnimatedBuilder(
+  animation: controller.drive(
+    Tween(begin: 0.0, end: 1.0).chain(
+      CurveTween(curve: Curves.linear),
+    ),
+  ),
+  builder: (context, child) {
+    return Transform.scale(
+      scale: animation.value,
+      child: child,
+    );
+  },
 );
-```
+````
 
-Prefer `FloatingActionButton.large` for primary actions. For adaptive layouts, use `MediaQuery` to handle window dimensions.
+Use `flutter_animate` + `Spring` or the `tofu_expressive` package for easier theming.
 
-### 🌐 Web (CSS / SCSS)
-- Load variable fonts.
-```css
-@font-face {
-  font-family: 'Roboto Flex';
-  src: url('RobotoFlex-VariableFont.ttf');
-}
-
-.expressive-headline {
-  font-variation-settings: 'wght' 800, 'wdth' 110;
-}
-```
-- Use linear() easing or libraries like Framer Motion for springs.
+**Guideline:** Limit expressive motion to **<20%** of interactions. Reserve for Hero Moments.
 
 ---
 
-## 4. Component Reference Guide
+## B. Expressive Typography
 
-| Component          | Standard M3              | Expressive M3                                      |
-|--------------------|--------------------------|----------------------------------------------------|
-| Container          | Rounded (12dp)           | Fully rounded (28dp+) or asymmetric                |
-| Motion             | Cubic easing             | Spring physics                                     |
-| FAB                | Default                  | Large / Extended with animated icon / Menu         |
-| Typography         | Static weights           | Variable font axes, emphasized styles              |
-| Palette            | Surface 1–5              | Surface Container High / Highest, vibrant palettes |
-| Switch             | Simple toggle            | Morphing thumb or icon                             |
-| Button Groups      | N/A                      | Adaptive size/shape/padding, morphing              |
-| Loading Indicator  | Basic                    | Attention-capturing with spring                    |
-| Menus              | Baseline                 | Expressive variants                                |
-| Toolbars           | Standard                 | Floating/docked, shape options                     |
+* 15 baseline styles
+* 15 emphasized styles
 
----
+Emphasized styles use heavier weight, wider tracking, or variable font axes for emotional impact.
 
-## 5. Code Scenarios
+### Recommended Variable Fonts
 
-### A. Hero Card (Flutter)
+* Roboto Flex
+* Google Sans Flex
+* Roboto Serif
+
+### Flutter Example
+
 ```dart
-Card(
-  shape: RoundedCornerShape(
-    topLeft: Radius.circular(4),
-    topRight: Radius.circular(32),
-    bottomRight: Radius.circular(32),
-    bottomLeft: Radius.circular(32),
-  ),
-  color: Theme.of(context).colorScheme.primaryContainer,
-  child: SizedBox(
-    width: 300,
-    height: 200,
-    child: // Hero content
-  ),
-);
-```
-
-### B. Expressive Loading Indicator (Flutter with Custom Animation)
-```dart
-AnimatedContainer(
-  duration: Duration(milliseconds: 800),
-  curve: Curves.elasticOut,
-  child: CircularProgressIndicator(
-    valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
-  ),
-);
-```
-
-### C. Button Group (Using button_m3e package)
-```dart
-ConnectedButtonGroup(
-  children: [
-    ButtonM3e(text: 'Action 1'),
-    ButtonM3e(text: 'Action 2'),
+TextStyle headlineLargeEmphasized = const TextStyle(
+  fontFamily: 'RobotoFlex',
+  fontVariations: [
+    FontVariation('wght', 800),
+    FontVariation('wdth', 110),
   ],
 );
+
+ThemeData(
+  textTheme: Theme.of(context).textTheme.copyWith(
+    headlineLarge: headlineLargeEmphasized,
+  ),
+);
 ```
 
-### D. Toolbar (Using toolbar_m3e package)
+**Rule:** Emphasized styles are for short, high-impact text only (titles, metrics, CTAs, editorial moments).
+Never use for body copy.
+
+---
+
+## C. Shape & Tension
+
+* 35 new shapes
+* Built-in morphing in official Material Shape Library
+
+### Updated Corner Radius Scale
+
+* Large → 20 dp
+* Extra-large → 32 dp
+* Extra-extra-large → 48 dp
+* Fully rounded → `full` (not 50% of size)
+
+Asymmetry + mixing round and sharp corners creates deliberate visual tension.
+
+Shape morphing communicates:
+
+* Press state
+* Selection
+* Loading
+* Environmental feedback
+
+### Flutter (Using `flutter_m3shapes`)
+
 ```dart
-ToolbarM3E(
-  title: 'Expressive Toolbar',
-  actions: [IconButtonM3E(icon: Icons.more_vert)],
+import 'package:flutter_m3shapes/flutter_m3shapes.dart';
+
+M3Shape.roundedRectangle(
+  borderRadius: BorderRadius.circular(32),
+);
+
+M3Shape.pixelTriangle();
+M3Shape.wavy();
+```
+
+Use `AnimatedContainer` + custom `ShapeBorder` for morph transitions.
+
+---
+
+## D. Vibrant & Nuanced Color
+
+Use dynamic color + extended palettes:
+
+* primary
+* secondary
+* tertiary
+* neutral
+* error
+* surfaceContainerHigh
+* surfaceContainerHighest
+
+### Expressive Color Tactics
+
+* Strong contrast between roles for hierarchy
+* Colored/tonal shadows instead of gray
+* Surface Container High / Highest for hero containers
+
+The `tofu_expressive` package provides ready-made expressive schemes with dynamic color support.
+
+---
+
+## E. Layout & Containment
+
+* Group content into bold, high-contrast containers
+* Create expressive zones vs functional zones
+* Use generous white space and size contrast
+
+Containment directs attention and strengthens hierarchy.
+
+---
+
+# Expressive Design Tactics (Official)
+
+* Use a variety of shapes (mix round + angular for tension)
+* Apply rich, nuanced colors with strong contrast
+* Guide attention with emphasized typography
+* Contain content for emphasis
+* Add fluid, natural motion (springs + morphing)
+* Leverage component flexibility
+* Combine tactics to create Hero Moments (limit to 1–2 per screen)
+
+---
+
+# Implementation Rules for Flutter Agents
+
+## DO
+
+* Set expressive motion scheme as default
+* Use large / extra-large rounding (28 dp+) or `full` for primary containers
+* Leverage variable fonts + emphasized styles for hero text
+* Use `tofu_expressive` + `flutter_m3shapes` + custom `ThemeExtension`
+* Create 1–2 true Hero Moments per major screen
+
+## DO NOT
+
+* Apply expressive motion everywhere
+* Use gray shadows
+* Animate high-frequency elements (lists, scroll)
+* Overuse abstract shapes
+* Ship without accessibility testing
+
+---
+
+# Flutter Implementation Status (Feb 2026)
+
+**Official Flutter SDK:** Baseline M3 only (`useMaterial3: true`)
+Full Expressive support not yet shipped.
+
+### Recommended Production Stack
+
+* `tofu_expressive` — expressive theme + dynamic color
+* `flutter_m3shapes` — 35+ shapes + morphing
+* `flutter_animate` or custom `SpringSimulation`
+* Custom `ThemeExtension<ExpressiveTheme>`
+
+---
+
+## Example: Expressive Theme Extension
+
+```dart
+class ExpressiveTheme extends ThemeExtension<ExpressiveTheme> {
+  final SpringDescription spring;
+  final TextStyle headlineEmphasized;
+
+  const ExpressiveTheme({
+    required this.spring,
+    required this.headlineEmphasized,
+  });
+
+  @override
+  ExpressiveTheme copyWith({
+    SpringDescription? spring,
+    TextStyle? headlineEmphasized,
+  }) {
+    return ExpressiveTheme(
+      spring: spring ?? this.spring,
+      headlineEmphasized:
+          headlineEmphasized ?? this.headlineEmphasized,
+    );
+  }
+
+  @override
+  ExpressiveTheme lerp(
+    ThemeExtension<ExpressiveTheme>? other,
+    double t,
+  ) {
+    return this;
+  }
+}
+
+MaterialApp(
+  theme: tofuExpressiveTheme(
+    colorScheme: dynamicColorScheme,
+    useMaterial3: true,
+  ).copyWith(
+    extensions: [
+      ExpressiveTheme(
+        spring: const SpringDescription(
+          mass: 1,
+          stiffness: 300,
+          damping: 20,
+        ),
+        headlineEmphasized: headlineLargeEmphasized,
+      ),
+    ],
+  ),
 );
 ```
 
 ---
 
-## 6. Verification Checklist
-- [ ] Spring or overshoot motion used where expressive.
-- [ ] Primary containers use large corner radii (>24dp) or full.
-- [ ] Hero text uses expressive typography with variable fonts.
-- [ ] Tonal surfaces used instead of pure black/white.
-- [ ] Components adapt to window sizes (responsive in Flutter).
-- [ ] Accessibility: Contrast ratios met, semantic structure.
-- [ ] <20% interactions are expressive to avoid overload.
-- [ ] Tested on multiple platforms (mobile, web, Wear OS).
-- [ ] Incorporated community packages for Flutter gaps.
+## Hero Button with Shape Morph + Spring
+
+```dart
+AnimatedContainer(
+  duration: const Duration(milliseconds: 600),
+  curve: Curves.easeOutBack,
+  decoration: BoxDecoration(
+    color: colorScheme.primary,
+    shape: isPressed
+        ? BoxShape.circle
+        : BoxShape.rectangle,
+    borderRadius: isPressed
+        ? null
+        : BorderRadius.circular(32),
+  ),
+  child: const Icon(Icons.play_arrow),
+);
+```
+
+---
+
+# Component Reference (Expressive Updates)
+
+| Component             | Baseline M3       | Expressive M3 Highlights                           |
+| --------------------- | ----------------- | -------------------------------------------------- |
+| Buttons               | Standard shapes   | Shape morph on press/select, more sizes            |
+| FAB                   | Default           | Large/Extended with animated icon + menu expansion |
+| Lists                 | Standard          | Segmented style, improved selection                |
+| Cards / Containers    | 12–16 dp rounding | 28–48 dp or full + asymmetric + morphing           |
+| NavigationBar / Rail  | Fixed             | Adaptive shape, emphasized icons                   |
+| Loading Indicators    | Spinner           | Morphing shapes with spring                        |
+| Toolbars / AppBars    | Standard          | Floating, shape options                            |
+| Switches              | Simple toggle     | Morphing thumb + icon                              |
+| Button Groups         | N/A               | Connected, adaptive, morphing                      |
+| Menus / Bottom Sheets | Baseline          | Variable width, expressive variants                |
+
+(15 total new/updated components with expanded configuration and emphasis.)
+
+---
+
+# Code Scenarios
+
+## A. Expressive Hero Card (Asymmetric Shape)
+
+```dart
+Card(
+  shape: const RoundedRectangleBorder(
+    borderRadius: BorderRadius.only(
+      topLeft: Radius.circular(8),
+      topRight: Radius.circular(32),
+      bottomLeft: Radius.circular(32),
+      bottomRight: Radius.circular(32),
+    ),
+  ),
+  color: colorScheme.surfaceContainerHighest,
+  elevation: 6,
+  child: // hero content
+);
+```
+
+---
+
+## B. Spring-Powered FAB Menu
+
+Use `tofu_expressive` + `flutter_animate`
+Or custom controller with `SpringSimulation`.
+
+---
+
+## C. Variable-Font Emphasized Headline
+
+```dart
+Text(
+  'Start Breathing',
+  style: Theme.of(context)
+      .textTheme
+      .headlineLarge!
+      .copyWith(
+        fontVariations: const [
+          FontVariation.weight(800),
+          FontVariation.width(110),
+        ],
+        color: colorScheme.primary,
+      ),
+);
+```
+
+# Verification Checklist
+
+* [ ] Motion scheme set to Expressive (or deliberate Standard)
+* [ ] Primary hero containers use ≥28 dp or `full` rounding
+* [ ] At least one Hero Moment per major screen (≥3 tactics combined)
+* [ ] Emphasized typography used for key text only
+* [ ] Tonal/colored surfaces and shadows (no gray)
+* [ ] Shape variety + morphing where meaningful
+* [ ] <20% of interactions use expressive motion
+* [ ] Full accessibility audit passed
+* [ ] Tested on phone, tablet, foldable, web
+* [ ] Using `tofu_expressive` + `flutter_m3shapes` or equivalent
 
 ```
+
