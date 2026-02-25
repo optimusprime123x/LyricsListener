@@ -1418,12 +1418,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     return Card(
       elevation: 0,
       color: colorScheme.secondaryContainer,
-      margin: const EdgeInsets.only(bottom: 16.0),
+      margin: const EdgeInsets.only(bottom: 12.0),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 40, 16, 16),
+            padding: const EdgeInsets.fromLTRB(16, 32, 16, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1440,7 +1441,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     color: colorScheme.onSecondaryContainer,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.tonalIcon(
@@ -1448,7 +1449,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     label: const Text('Support Me'),
                     onPressed: _launchDonateUrl,
                     style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
                       textStyle: textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
@@ -1473,7 +1474,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: colorScheme.primaryContainer,
-            borderRadius: BorderRadius.circular(32),
+            borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
                 color: colorScheme.primary.withValues(alpha: 0.25),
