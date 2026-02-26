@@ -51,6 +51,46 @@ bool _isFlutterTestEnvironment() {
   }
 }
 
+class _MascotSvgColorMapper extends ColorMapper {
+  _MascotSvgColorMapper(this.colorScheme);
+
+  final ColorScheme colorScheme;
+
+  @override
+  Color substitute(
+    String? id,
+    String elementName,
+    String attributeName,
+    Color color,
+  ) {
+    switch (color.value) {
+      case 0xFF12314D:
+      case 0xFF12316D:
+        return colorScheme.onSurfaceVariant;
+      case 0xFF32759E:
+        return colorScheme.secondary;
+      case 0xFF3795B6:
+      case 0xFF3A7DA6:
+      case 0xFF3F98BC:
+        return colorScheme.secondaryContainer;
+      case 0xFF48A1C2:
+        return colorScheme.primaryContainer;
+      case 0xFFA2D9E7:
+        return colorScheme.surface;
+      case 0xFFEC8356:
+        return colorScheme.tertiary;
+      case 0xFF2F2E41:
+        return colorScheme.onSurface;
+      case 0xFF3F3D56:
+        return colorScheme.onSurfaceVariant;
+      case 0xFF6C63FF:
+        return colorScheme.primary;
+      default:
+        return color;
+    }
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
@@ -759,7 +799,7 @@ class _DebugScreenState extends State<DebugScreen> {
                         size: 18,
                         color: musixmatchTokenStatusColor,
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 0),
                       Expanded(
                         child: Text(
                           musixmatchTokenStatusText,
@@ -1739,35 +1779,52 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            SvgPicture.asset(
-              'assets/images/cat-left.svg',
-              height: 70,
-              colorFilter: ColorFilter.mode(
-                colorScheme.secondary,
-                BlendMode.srcIn,
+            Transform.translate(
+              offset: const Offset(-16, 0),
+              child: SvgPicture.asset(
+                'assets/images/cat-left.svg',
+                height: 100,
+                colorMapper: _MascotSvgColorMapper(colorScheme),
               ),
             ),
-            const SizedBox(width: 24),
-            SvgPicture.asset(
-              'assets/images/bird-right.svg',
-              height: 70,
-              colorFilter: ColorFilter.mode(
-                colorScheme.secondary,
-                BlendMode.srcIn,
+            const SizedBox(width: 0),
+            Transform.translate(
+              offset: const Offset(-38, 0),
+              child: SizedBox(
+                width: 94,
+                height: 82,
+                child: ClipRect(
+                  child: Transform.translate(
+                    offset: const Offset(-10, 0),
+                    child: SvgPicture.asset(
+                      'assets/images/cat-right.svg',
+                      fit: BoxFit.cover,
+                      colorFilter: ColorFilter.mode(
+                        colorScheme.secondary,
+                        BlendMode.srcIn,
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 8),
       ],
     );
   }
 
-  Widget _buildSectionHeader(BuildContext context, String title) {
+  Widget _buildSectionHeader(
+    BuildContext context,
+    String title, {
+    double topPadding = 24,
+    double bottomPadding = 12,
+  }) {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 24, 8, 12),
+      padding: EdgeInsets.fromLTRB(8, topPadding, 8, bottomPadding),
       child: Text(
         title,
         style: textTheme.titleLarge?.copyWith(
@@ -2512,8 +2569,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             child: _buildWelcomeSection(context),
           ),
 
-          const Divider(height: 24, indent: 16, endIndent: 16),
-          _buildSectionHeader(context, 'App Setup & Permissions'),
+          const Divider(height: 12, indent: 16, endIndent: 16),
+          _buildSectionHeader(
+            context,
+            'App Setup & Permissions',
+            topPadding: 8,
+            bottomPadding: 8,
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: 24.0,
