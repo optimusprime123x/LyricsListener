@@ -395,6 +395,7 @@ class LyricService : NotificationListenerService() {
 
         var isServiceManuallyStarted = AtomicBoolean(false)
             private set
+        val isMusixmatchTokenAvailableForDebug = AtomicBoolean(false)
     }
 
     override fun onCreate() {
@@ -416,6 +417,7 @@ class LyricService : NotificationListenerService() {
         // Initialize lyrics cache
         cacheManager = LyricsCacheManager(this)
 
+        isMusixmatchTokenAvailableForDebug.set(false)
         initializeMusixmatchToken()
     }
 
@@ -454,13 +456,16 @@ class LyricService : NotificationListenerService() {
                 val token = response.message.body.user_token
                 if (token.isNotBlank()) {
                     musixmatchUserToken = token
+                    isMusixmatchTokenAvailableForDebug.set(true)
                     Log.i(TAG, "Successfully acquired Musixmatch user token.")
                 } else {
+                    isMusixmatchTokenAvailableForDebug.set(musixmatchUserToken != null)
                     Log.w(TAG, "Musixmatch token response was blank.")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to get Musixmatch user token", e)
                 musixmatchUserToken = null
+                isMusixmatchTokenAvailableForDebug.set(false)
             }
         }
     }
@@ -556,6 +561,7 @@ class LyricService : NotificationListenerService() {
         currentMediaSessionToken = null
         currentPlaybackState = null
         musixmatchUserToken = null
+        isMusixmatchTokenAvailableForDebug.set(false)
 
         _listenerEverConnected = false
         _isAttemptingConnection = false

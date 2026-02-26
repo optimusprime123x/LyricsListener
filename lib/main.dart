@@ -555,6 +555,9 @@ class _DebugScreenState extends State<DebugScreen> {
   final List<String> _logs = [];
   StreamSubscription<dynamic>? _logSubscription;
   String? _errorMessage;
+  bool? _isMusixmatchTokenAvailable;
+  bool _isCheckingMusixmatchToken = false;
+  String? _musixmatchTokenStatusError;
   bool _isStarting = true;
   bool _isStreaming = false;
   final ScrollController _scrollController = ScrollController();
@@ -562,6 +565,7 @@ class _DebugScreenState extends State<DebugScreen> {
   @override
   void initState() {
     super.initState();
+    _refreshMusixmatchTokenStatus();
     _startDebugSession();
   }
 
@@ -582,6 +586,39 @@ class _DebugScreenState extends State<DebugScreen> {
     });
   }
 
+  Future<void> _refreshMusixmatchTokenStatus({bool showLoading = true}) async {
+    if (showLoading && mounted) {
+      setState(() {
+        _isCheckingMusixmatchToken = true;
+        _musixmatchTokenStatusError = null;
+      });
+    }
+
+    try {
+      final bool? isAvailable = await _platformChannel.invokeMethod<bool>(
+        'getMusixmatchTokenAvailable',
+      );
+      if (!mounted) return;
+      setState(() {
+        _isMusixmatchTokenAvailable = isAvailable ?? false;
+        _isCheckingMusixmatchToken = false;
+        _musixmatchTokenStatusError = null;
+      });
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isCheckingMusixmatchToken = false;
+        _musixmatchTokenStatusError = e.message ?? e.code;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isCheckingMusixmatchToken = false;
+        _musixmatchTokenStatusError = e.toString();
+      });
+    }
+  }
+
   Future<void> _startDebugSession() async {
     setState(() {
       _logs.clear();
@@ -594,8 +631,21 @@ class _DebugScreenState extends State<DebugScreen> {
     _logSubscription = _debugLogChannel.receiveBroadcastStream().listen(
       (event) {
         if (!mounted) return;
+        final logLine = event.toString();
+        final lowerLogLine = logLine.toLowerCase();
         setState(() {
-          _logs.add(event.toString());
+          _logs.add(logLine);
+          if (lowerLogLine.contains(
+            'successfully acquired musixmatch user token',
+          )) {
+            _isMusixmatchTokenAvailable = true;
+            _musixmatchTokenStatusError = null;
+          } else if (lowerLogLine.contains(
+                'failed to get musixmatch user token',
+              ) ||
+              lowerLogLine.contains('musixmatch token response was blank')) {
+            _isMusixmatchTokenAvailable = false;
+          }
         });
         _scrollToBottom();
       },
@@ -616,6 +666,11 @@ class _DebugScreenState extends State<DebugScreen> {
       }
 
       await _platformChannel.invokeMethod('startDebugActiveMediaNotification');
+      unawaited(
+        Future<void>.delayed(const Duration(seconds: 1), () {
+          return _refreshMusixmatchTokenStatus(showLoading: false);
+        }),
+      );
     } on MissingPluginException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -654,6 +709,30 @@ class _DebugScreenState extends State<DebugScreen> {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
+    final bool isTokenAvailable = _isMusixmatchTokenAvailable == true;
+    final bool isTokenUnavailable =
+        _isMusixmatchTokenAvailable == false && !_isCheckingMusixmatchToken;
+    final String musixmatchTokenStatusText = _isCheckingMusixmatchToken
+        ? 'Musixmatch token: Checking...'
+        : _isMusixmatchTokenAvailable == null
+        ? 'Musixmatch token: Unknown'
+        : isTokenAvailable
+        ? 'Musixmatch token: Available'
+        : 'Musixmatch token: Unavailable';
+    final Color musixmatchTokenStatusColor = _isCheckingMusixmatchToken
+        ? colorScheme.primary
+        : isTokenAvailable
+        ? colorScheme.primary
+        : isTokenUnavailable
+        ? colorScheme.error
+        : colorScheme.onSurfaceVariant;
+    final IconData musixmatchTokenStatusIcon = _isCheckingMusixmatchToken
+        ? Icons.hourglass_top_rounded
+        : isTokenAvailable
+        ? Icons.check_circle_rounded
+        : isTokenUnavailable
+        ? Icons.error_outline_rounded
+        : Icons.help_outline_rounded;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Debug: Media Notification')),
@@ -662,13 +741,56 @@ class _DebugScreenState extends State<DebugScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainer,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: colorScheme.outlineVariant),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        musixmatchTokenStatusIcon,
+                        size: 18,
+                        color: musixmatchTokenStatusColor,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          musixmatchTokenStatusText,
+                          style: textTheme.bodyMedium?.copyWith(
+                            color: musixmatchTokenStatusColor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_musixmatchTokenStatusError != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Status check error: $_musixmatchTokenStatusError',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
             Text(
               'Fetches the currently active media notification and streams service logs so you can follow the parsing flow.',
               style: textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Row(
               children: [
                 FilledButton.icon(
@@ -700,13 +822,13 @@ class _DebugScreenState extends State<DebugScreen> {
               ],
             ),
             if (_errorMessage != null) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
                 'Error: $_errorMessage',
                 style: textTheme.bodyMedium?.copyWith(color: colorScheme.error),
               ),
             ],
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
@@ -1506,7 +1628,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     return Card(
       elevation: 0,
       color: colorScheme.secondaryContainer,
-      margin: const EdgeInsets.only(bottom: 12.0),
+      margin: const EdgeInsets.only(bottom: 10.0),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.only(
           topLeft: Radius.circular(14),
@@ -1519,7 +1641,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         clipBehavior: Clip.none,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 32, 16, 14),
+            padding: const EdgeInsets.fromLTRB(14, 24, 14, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1529,14 +1651,14 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     color: colorScheme.onSecondaryContainer,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Text(
                   'If you like this app, please consider supporting my work! Every little bit helps me continue to work on this, and keep it ad-free ♥',
                   style: textTheme.bodyMedium?.copyWith(
                     color: colorScheme.onSecondaryContainer,
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.tonalIcon(
@@ -1544,7 +1666,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     label: const Text('Support Me'),
                     onPressed: _launchDonateUrl,
                     style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
                       textStyle: textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
@@ -1602,7 +1724,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           ),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
           child: Text(
@@ -1871,7 +1993,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       Wrap(
                         spacing: 16.0,
                         runSpacing: 12.0,
@@ -2012,7 +2134,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 10),
                           _buildLyricsWindowColorTile(
                             context: context,
                             title: 'Title & icons',
@@ -2097,7 +2219,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
@@ -2109,13 +2231,36 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                         );
                       },
                       icon: const Icon(Icons.add_rounded),
-                      label: const Text('Add custom lyrics'),
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('Add custom lyrics'),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colorScheme.secondaryContainer,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              'Beta',
+                              style: textTheme.labelSmall?.copyWith(
+                                color: colorScheme.onSecondaryContainer,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
@@ -2382,7 +2527,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               textAlign: TextAlign.center,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
           if (_androidSdkInt != null && _androidSdkInt! >= _android13ApiLevel)
             _buildPermissionRequestTile(
@@ -2430,7 +2575,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               textAlign: TextAlign.center,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           _buildPermissionRequestTile(
             title: 'Disable Battery Optimization',
             subtitle: 'Helps the service run reliably in the background.',
@@ -2478,7 +2623,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               ],
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Center(
             child: FilledButton(
               onPressed: _isServiceActionInProgress

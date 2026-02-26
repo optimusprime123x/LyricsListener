@@ -17,7 +17,7 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:textColor="@android:color/white"
-        android:textSize="14sp"
+        android:textSize="15sp"
         android:letterSpacing="0.02"
         android:fontFamily="sans-serif-medium"
         android:layout_marginStart="2dp"

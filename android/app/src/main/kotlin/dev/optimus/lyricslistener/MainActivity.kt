@@ -30,9 +30,37 @@ class MainActivity : FlutterActivity() {
     private val POST_NOTIFICATIONS_REQUEST_CODE = 101
     private val ENABLED_NOTIFICATION_LISTENERS_KEY = "enabled_notification_listeners"
     private val customLrcLinePattern: Pattern =
-        Pattern.compile("(?<=\\[)(\\d{2,}):(\\d{2})([.:])(\\d{2,3})\\](.*)")
+        Pattern.compile("^\\[(\\d{1,}):(\\d{1,2})(?:([.:])(\\d{1,3}))?\\](.*)$")
+    private val timestampLikeTagBodyPattern: Pattern =
+        Pattern.compile("^\\d{1,3}:\\d{1,3}(?:[.:]\\d{0,4})?$")
     private val lrcMetadataTagPattern: Pattern =
         Pattern.compile("^\\[[A-Za-z]{1,12}\\s*:[^\\]]*]$")
+    private val lrcMetadataTagPrefixPattern: Pattern =
+        Pattern.compile("^\\[([A-Za-z]{1,12})\\s*:[^\\]]*\\](.*)$")
+    private val supportedLrcMetadataKeys =
+        setOf(
+            "ar",
+            "artist",
+            "ti",
+            "title",
+            "al",
+            "album",
+            "au",
+            "by",
+            "offset",
+            "length",
+            "total",
+            "re",
+            "ve",
+            "la",
+            "language",
+            "kana",
+            "id",
+            "hash",
+            "sign",
+            "qq",
+            "encoding"
+        )
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -372,6 +400,9 @@ class MainActivity : FlutterActivity() {
                         result.error("ERROR_START_DEBUG", e.message, null)
                     }
                 }
+                "getMusixmatchTokenAvailable" -> {
+                    result.success(LyricService.isMusixmatchTokenAvailableForDebug.get())
+                }
                 else -> {
                     result.notImplemented()
                 }
@@ -380,7 +411,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun parseAndValidateCustomLrc(rawLrc: String): List<TimedLyricLine> {
-        val lrcText = rawLrc.replace("\uFEFF", "")
+        val lrcText = normalizeCustomLrcInput(rawLrc)
         if (lrcText.isBlank()) {
             throw IllegalArgumentException("LRC is empty.")
         }
@@ -395,70 +426,89 @@ class MainActivity : FlutterActivity() {
                 return@forEachIndexed
             }
 
-            if (isSupportedLrcMetadataTag(currentTextSegment)) {
+            currentTextSegment = stripLeadingSupportedLrcMetadataTags(currentTextSegment)
+            if (currentTextSegment.isBlank()) {
                 return@forEachIndexed
             }
 
-            val timedPlaceholders = mutableListOf<TimedLyricLine>()
+            while (currentTextSegment.isNotBlank()) {
+                val timedPlaceholders = mutableListOf<TimedLyricLine>()
 
-            while (currentTextSegment.startsWith("[")) {
-                val matcher = customLrcLinePattern.matcher(currentTextSegment)
-                if (matcher.find() && matcher.start() == 1) {
-                    val minutes = matcher.group(1)!!.toIntOrNull()
-                    val seconds = matcher.group(2)!!.toIntOrNull()
-                    val millisRaw = matcher.group(4)!!
-                    if (minutes == null || seconds == null) {
-                        throw IllegalArgumentException("Invalid timestamp number on line $lineNumber.")
+                while (currentTextSegment.startsWith("[")) {
+                    val matcher = customLrcLinePattern.matcher(currentTextSegment)
+                    if (matcher.matches()) {
+                        val minutes = matcher.group(1)!!.toIntOrNull()
+                        val seconds = matcher.group(2)!!.toIntOrNull()
+                        val millisRaw = matcher.group(4)
+                        if (minutes == null || seconds == null) {
+                            throw IllegalArgumentException("Invalid timestamp number on line $lineNumber.")
+                        }
+                        if (seconds !in 0..59) {
+                            throw IllegalArgumentException("Invalid seconds value on line $lineNumber. Use 00-59.")
+                        }
+
+                        val milliseconds = when (millisRaw?.length ?: 0) {
+                            0 -> 0
+                            1 -> millisRaw?.toIntOrNull()?.times(100)
+                            2 -> millisRaw?.toIntOrNull()?.times(10)
+                            3 -> millisRaw?.toIntOrNull()
+                            else -> null
+                        } ?: throw IllegalArgumentException("Invalid milliseconds value on line $lineNumber.")
+
+                        if (milliseconds !in 0..999) {
+                            throw IllegalArgumentException("Invalid milliseconds value on line $lineNumber.")
+                        }
+
+                        val timestampMs =
+                            TimeUnit.MINUTES.toMillis(minutes.toLong()) +
+                                TimeUnit.SECONDS.toMillis(seconds.toLong()) +
+                                milliseconds.toLong()
+
+                        timedPlaceholders.add(TimedLyricLine(timestampMs, ""))
+                        parsedTimestampCount++
+                        currentTextSegment = matcher.group(5)?.trimStart().orEmpty()
+                    } else {
+                        break
                     }
-                    if (seconds !in 0..59) {
-                        throw IllegalArgumentException("Invalid seconds value on line $lineNumber. Use 00-59.")
-                    }
-
-                    val milliseconds = when (millisRaw.length) {
-                        2 -> millisRaw.toIntOrNull()?.times(10)
-                        3 -> millisRaw.toIntOrNull()
-                        else -> null
-                    } ?: throw IllegalArgumentException("Invalid milliseconds value on line $lineNumber.")
-
-                    if (milliseconds !in 0..999) {
-                        throw IllegalArgumentException("Invalid milliseconds value on line $lineNumber.")
-                    }
-
-                    val timestampMs =
-                        TimeUnit.MINUTES.toMillis(minutes.toLong()) +
-                            TimeUnit.SECONDS.toMillis(seconds.toLong()) +
-                            milliseconds.toLong()
-
-                    timedPlaceholders.add(TimedLyricLine(timestampMs, ""))
-                    parsedTimestampCount++
-                    currentTextSegment = matcher.group(5)?.trimStart().orEmpty()
-                } else {
-                    break
                 }
-            }
 
-            if (timedPlaceholders.isNotEmpty()) {
-                val displayText = currentTextSegment.trim().ifBlank { "🎶 ... 🎶" }
+                if (currentTextSegment.startsWith("[")) {
+                    throw IllegalArgumentException(
+                        "Invalid LRC tag on line $lineNumber. Use [m:ss], [m:ss.xx], or [m:ss.xxx]."
+                    )
+                }
+
+                if (timedPlaceholders.isEmpty()) {
+                    throw IllegalArgumentException(
+                        "Line $lineNumber is missing a timestamp. Each lyric line must start with [m:ss], [m:ss.xx], or [m:ss.xxx]."
+                    )
+                }
+
+                val nextTimestampIndex = findNextTimestampStartOrThrow(currentTextSegment, lineNumber)
+                val lyricTextForTimestamps =
+                    if (nextTimestampIndex >= 0) {
+                        currentTextSegment.substring(0, nextTimestampIndex)
+                    } else {
+                        currentTextSegment
+                    }
+
+                val displayText = lyricTextForTimestamps.trim().ifBlank { "🎶 ... 🎶" }
                 timedPlaceholders.forEach { placeholder ->
                     parsedLines.add(placeholder.copy(text = displayText))
                 }
-                return@forEachIndexed
-            }
 
-            if (currentTextSegment.startsWith("[")) {
-                throw IllegalArgumentException(
-                    "Invalid LRC tag on line $lineNumber. Use [mm:ss.xx] or [mm:ss.xxx]."
-                )
+                currentTextSegment =
+                    if (nextTimestampIndex >= 0) {
+                        currentTextSegment.substring(nextTimestampIndex).trimStart()
+                    } else {
+                        ""
+                    }
             }
-
-            throw IllegalArgumentException(
-                "Line $lineNumber is missing a timestamp. Each lyric line must start with [mm:ss.xx]."
-            )
         }
 
         if (parsedTimestampCount == 0 || parsedLines.isEmpty()) {
             throw IllegalArgumentException(
-                "No valid timed LRC lines were found. Add at least one line like [00:12.34] Hello."
+                "No valid timed LRC lines were found. Add at least one line like [0:12], [0:12.34], or [0:12.345] Hello."
             )
         }
 
@@ -466,8 +516,87 @@ class MainActivity : FlutterActivity() {
         return parsedLines
     }
 
+    private fun findNextTimestampStartOrThrow(text: String, lineNumber: Int): Int {
+        var searchIndex = 0
+        while (true) {
+            val bracketIndex = text.indexOf('[', searchIndex)
+            if (bracketIndex < 0) {
+                return -1
+            }
+
+            val candidate = text.substring(bracketIndex)
+            val matcher = customLrcLinePattern.matcher(candidate)
+            if (matcher.matches()) {
+                return bracketIndex
+            }
+
+            if (looksLikeMalformedTimestampTag(candidate)) {
+                throw IllegalArgumentException(
+                    "Invalid LRC tag on line $lineNumber. Use [m:ss], [m:ss.xx], or [m:ss.xxx]."
+                )
+            }
+
+            searchIndex = bracketIndex + 1
+        }
+    }
+
+    private fun looksLikeMalformedTimestampTag(text: String): Boolean {
+        if (!text.startsWith("[")) {
+            return false
+        }
+
+        val closingBracketIndex = text.indexOf(']')
+        if (closingBracketIndex !in 2..16) {
+            return false
+        }
+
+        val tagBody = text.substring(1, closingBracketIndex)
+        return timestampLikeTagBodyPattern.matcher(tagBody).matches()
+    }
+
+    private fun normalizeCustomLrcInput(rawLrc: String): String {
+        return rawLrc
+            .replace("\uFEFF", "")
+            .replace('\uFF3B', '[') // full-width [
+            .replace('\uFF3D', ']') // full-width ]
+            .replace('\uFF1A', ':') // full-width :
+            .replace('\uFF0E', '.') // full-width .
+            .replace('\u3000', ' ') // ideographic space
+            .replace('\u00A0', ' ') // non-breaking space
+    }
+
+    private fun stripLeadingSupportedLrcMetadataTags(text: String): String {
+        var remaining = text.trim()
+        while (remaining.startsWith("[")) {
+            val matcher = lrcMetadataTagPrefixPattern.matcher(remaining)
+            if (!matcher.matches()) {
+                break
+            }
+
+            val key = matcher.group(1)?.lowercase() ?: break
+            if (!supportedLrcMetadataKeys.contains(key)) {
+                break
+            }
+
+            remaining = matcher.group(2)?.trimStart().orEmpty()
+        }
+
+        return remaining
+    }
+
     private fun isSupportedLrcMetadataTag(line: String): Boolean {
-        return lrcMetadataTagPattern.matcher(line.trim()).matches()
+        val trimmed = line.trim()
+        if (!lrcMetadataTagPattern.matcher(trimmed).matches()) {
+            return false
+        }
+
+        val matcher = lrcMetadataTagPrefixPattern.matcher(trimmed)
+        if (!matcher.matches()) {
+            return false
+        }
+
+        val key = matcher.group(1)?.lowercase() ?: return false
+        return supportedLrcMetadataKeys.contains(key)
     }
 
     private class LogStreamHandler : EventChannel.StreamHandler {
