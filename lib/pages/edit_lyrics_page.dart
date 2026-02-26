@@ -307,7 +307,7 @@ class _EditLyricsPageState extends State<EditLyricsPage> {
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(28),
                 ),
                 child: Text(
                   '${_syncedLines.length} lines',

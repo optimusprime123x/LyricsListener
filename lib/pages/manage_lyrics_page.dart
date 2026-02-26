@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -250,7 +251,12 @@ class _ManageLyricsPageState extends State<ManageLyricsPage> {
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             color: colorScheme.primaryContainer,
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(18),
+              topRight: Radius.circular(32),
+              bottomLeft: Radius.circular(32),
+              bottomRight: Radius.circular(28),
+            ),
           ),
           child: Row(
             children: [
@@ -258,7 +264,7 @@ class _ManageLyricsPageState extends State<ManageLyricsPage> {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: colorScheme.primary,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(20),
                 ),
                 child: Icon(
                   Icons.library_music_rounded,
@@ -276,6 +282,10 @@ class _ManageLyricsPageState extends State<ManageLyricsPage> {
                       style: textTheme.headlineMedium?.copyWith(
                         color: colorScheme.onPrimaryContainer,
                         fontWeight: FontWeight.bold,
+                        fontVariations: const [
+                          FontVariation('wght', 800),
+                          FontVariation('wdth', 110),
+                        ],
                       ),
                     ),
                     Text(

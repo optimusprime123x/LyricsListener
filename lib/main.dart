@@ -36,9 +36,9 @@ const String _lyricsWindowTitleColorKey = 'lyrics_window_title_color';
 const String _lyricsWindowBackgroundColorKey = 'lyrics_window_background_color';
 const String _lyricsWindowHighlightColorKey = 'lyrics_window_highlight_color';
 
-const Color _defaultLyricsWindowTitleColor = Color(0xFFE0E0E0);
-const Color _defaultLyricsWindowBackgroundColor = Color(0xDD212121);
-const Color _defaultLyricsWindowHighlightColor = Color(0x46C8C8C8);
+const Color _defaultLyricsWindowTitleColor = Color(0xF0E8E8E8);
+const Color _defaultLyricsWindowBackgroundColor = Color(0xE6181818);
+const Color _defaultLyricsWindowHighlightColor = Color(0x55C8C8C8);
 
 const Curve expressiveSpringCurve = Curves.elasticOut;
 const Curve expressiveStandardCurve = Curves.easeOutCubic;
@@ -266,6 +266,48 @@ class _MyAppState extends State<MyApp> {
             ),
             actionTextColor: baseLightColorScheme.inversePrimary,
           ),
+          dialogTheme: DialogThemeData(
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(14),
+                topRight: Radius.circular(28),
+                bottomLeft: Radius.circular(28),
+                bottomRight: Radius.circular(28),
+              ),
+            ),
+            backgroundColor: baseLightColorScheme.surfaceContainerHigh,
+            titleTextStyle: lightTextTheme.headlineSmall?.copyWith(
+              color: baseLightColorScheme.onSurface,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          navigationBarTheme: NavigationBarThemeData(
+            indicatorShape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(28),
+            ),
+            indicatorColor: baseLightColorScheme.secondaryContainer,
+            backgroundColor: baseLightColorScheme.surfaceContainer,
+            labelTextStyle: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) {
+                return lightTextTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: baseLightColorScheme.onSurface,
+                );
+              }
+              return lightTextTheme.labelMedium?.copyWith(
+                color: baseLightColorScheme.onSurfaceVariant,
+              );
+            }),
+          ),
+          bottomSheetTheme: BottomSheetThemeData(
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(28),
+                topRight: Radius.circular(28),
+              ),
+            ),
+            backgroundColor: baseLightColorScheme.surfaceContainerLow,
+          ),
         );
 
         final baseDarkColorScheme = useDynamicColors
@@ -395,6 +437,48 @@ class _MyAppState extends State<MyApp> {
               color: baseDarkColorScheme.onInverseSurface,
             ),
             actionTextColor: baseDarkColorScheme.inversePrimary,
+          ),
+          dialogTheme: DialogThemeData(
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(14),
+                topRight: Radius.circular(28),
+                bottomLeft: Radius.circular(28),
+                bottomRight: Radius.circular(28),
+              ),
+            ),
+            backgroundColor: baseDarkColorScheme.surfaceContainerHigh,
+            titleTextStyle: darkTextTheme.headlineSmall?.copyWith(
+              color: baseDarkColorScheme.onSurface,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          navigationBarTheme: NavigationBarThemeData(
+            indicatorShape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(28),
+            ),
+            indicatorColor: baseDarkColorScheme.secondaryContainer,
+            backgroundColor: baseDarkColorScheme.surfaceContainer,
+            labelTextStyle: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) {
+                return darkTextTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: baseDarkColorScheme.onSurface,
+                );
+              }
+              return darkTextTheme.labelMedium?.copyWith(
+                color: baseDarkColorScheme.onSurfaceVariant,
+              );
+            }),
+          ),
+          bottomSheetTheme: BottomSheetThemeData(
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(28),
+                topRight: Radius.circular(28),
+              ),
+            ),
+            backgroundColor: baseDarkColorScheme.surfaceContainerLow,
           ),
         );
 
@@ -800,7 +884,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   ];
 
   static const List<Color> _lyricsWindowHighlightOptions = [
-    Color(0x46C8C8C8),
+    Color(0x55C8C8C8),
     Color(0x4DFFFFFF),
     Color(0x4D000000),
     Color(0x4D6750A4),
@@ -1423,7 +1507,14 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       elevation: 0,
       color: colorScheme.secondaryContainer,
       margin: const EdgeInsets.only(bottom: 12.0),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(14),
+          topRight: Radius.circular(32),
+          bottomLeft: Radius.circular(32),
+          bottomRight: Radius.circular(28),
+        ),
+      ),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -1475,10 +1566,15 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     return Column(
       children: [
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: colorScheme.primaryContainer,
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(32),
+              bottomLeft: Radius.circular(32),
+              bottomRight: Radius.circular(20),
+            ),
             boxShadow: [
               BoxShadow(
                 color: colorScheme.primary.withValues(alpha: 0.25),
@@ -1608,12 +1704,25 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       boxShadow: [
                         if (isSelected)
                           BoxShadow(
-                            color: colorScheme.primary.withOpacity(0.25),
+                            color: colorScheme.primary.withValues(alpha: 0.25),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
                       ],
                     ),
+                    child: isSelected
+                        ? Center(
+                            child: Icon(
+                              Icons.check_rounded,
+                              color:
+                                  ThemeData.estimateBrightnessForColor(color) ==
+                                      Brightness.dark
+                                  ? Colors.white
+                                  : Colors.black,
+                              size: 22,
+                            ),
+                          )
+                        : null,
                   ),
                 );
               }).toList(),
@@ -2195,6 +2304,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             style: textTheme.titleMedium?.copyWith(
               color: colorScheme.primary,
               fontWeight: FontWeight.bold,
+              fontVariations: const [
+                FontVariation('wght', 720),
+              ],
             ),
           ),
         ),
@@ -2439,7 +2551,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: colorScheme.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(28),
+                topRight: Radius.circular(14),
+                bottomLeft: Radius.circular(14),
+                bottomRight: Radius.circular(28),
+              ),
             ),
             child: Text(
               _isServiceRunning

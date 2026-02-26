@@ -367,9 +367,9 @@ class LyricService : NotificationListenerService() {
     private const val PREF_LYRICS_WINDOW_BACKGROUND_COLOR = "flutter.lyrics_window_background_color"
     private const val PREF_LYRICS_WINDOW_HIGHLIGHT_COLOR = "flutter.lyrics_window_highlight_color"
 
-    private val DEFAULT_STATIC_TITLE_COLOR = Color.parseColor("#FFE0E0E0")
-    private val DEFAULT_STATIC_BACKGROUND_COLOR = Color.parseColor("#DD212121")
-    private val DEFAULT_STATIC_HIGHLIGHT_COLOR = Color.argb(70, 200, 200, 200)
+    private val DEFAULT_STATIC_TITLE_COLOR = Color.parseColor("#F0E8E8E8")
+    private val DEFAULT_STATIC_BACKGROUND_COLOR = Color.parseColor("#E6181818")
+    private val DEFAULT_STATIC_HIGHLIGHT_COLOR = Color.argb(85, 200, 200, 200)
 
     private fun getStoredColorPreference(
         prefs: SharedPreferences,
@@ -2085,7 +2085,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                                     p.lightMutedSwatch ?: p.lightVibrantSwatch ?: p.vibrantSwatch ?: p.mutedSwatch
                                 }
                                 val paletteHighlightColor = highlightSwatch?.rgb?.let {
-                                    ColorUtils.setAlphaComponent(it, 70)
+                                    ColorUtils.setAlphaComponent(it, 85)
                                 } ?: finalLyricsHighlightBgColor
 
                                 Log.d(TAG, "Palette applied. BG Light: $isBackgroundLight. OverlayBG (translucent): #${Integer.toHexString(paletteOverlayBgColor)}, Title/Icon: #${Integer.toHexString(finalPaletteTitleColor)}, LyricHighlightBG: #${Integer.toHexString(paletteHighlightColor)}")
@@ -2185,6 +2185,11 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             } else {
                 view.setBackgroundColor(overlayBgColor)
             }
+
+            // Update the header divider to match the title color at low alpha
+            view.findViewById<View>(R.id.headerDivider)?.setBackgroundColor(
+                ColorUtils.setAlphaComponent(titleIconColor, 26)
+            )
         }
 
         songInfoTextView?.setTextColor(titleIconColor)
@@ -2281,7 +2286,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                             p.lightMutedSwatch ?: p.lightVibrantSwatch ?: p.vibrantSwatch ?: p.mutedSwatch
                         }
                         val paletteHighlightColor = highlightSwatch?.rgb?.let {
-                            ColorUtils.setAlphaComponent(it, 70)
+                            ColorUtils.setAlphaComponent(it, 85)
                         } ?: DEFAULT_STATIC_HIGHLIGHT_COLOR
 
                         Log.d(TAG, "updateLyricsWindowColors: Palette colors extracted and applied. BG: #${Integer.toHexString(paletteOverlayBgColor)}, Title: #${Integer.toHexString(finalPaletteTitleColor)}, Highlight: #${Integer.toHexString(paletteHighlightColor)}")
@@ -2416,7 +2421,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     }
 
                             override fun calculateSpeedPerPixel(displayMetrics: DisplayMetrics): Float {
-                                return 90f / displayMetrics.densityDpi
+                                return 120f / displayMetrics.densityDpi
                             }
                         }
                         smoothScroller.targetPosition = currentLineIndex.coerceAtLeast(0)
