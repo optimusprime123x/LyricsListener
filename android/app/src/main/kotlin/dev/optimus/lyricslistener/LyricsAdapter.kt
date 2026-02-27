@@ -9,6 +9,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 
@@ -30,6 +31,9 @@ class LyricsAdapter(
     private val highlightedTextSizeSp = 18f
     private val attributionTextSizeSp = 11f
 
+    // Spring-like interpolator for bouncy highlight animations
+    private val springInterpolator = OvershootInterpolator(2.5f)
+
     fun updateThemeColors(
         normalLineTextColor: Int,
         highlightedLineTextColor: Int,
@@ -46,6 +50,9 @@ class LyricsAdapter(
         TypedValue.COMPLEX_UNIT_DIP, 20f, context.resources.displayMetrics
     )
 
+    // Pattern for detecting instrumental/blank lyric lines
+    private val instrumentalPattern = "🎶 ... 🎶"
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val view = LayoutInflater.from(parent.context)
             .inflate(R.layout.item_lyric_line, parent, false)
@@ -54,6 +61,44 @@ class LyricsAdapter(
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val line = lyricLines[position]
+
+        // Cancel any ongoing animations on rebind
+        holder.lyricText.animate().cancel()
+        holder.visualizer.stopAnimation()
+
+        // Check if this is an instrumental/blank line
+        val isInstrumental = line.text == instrumentalPattern
+
+        if (isInstrumental) {
+            holder.lyricText.visibility = View.GONE
+            holder.visualizer.visibility = View.VISIBLE
+            holder.visualizer.setBarColor(
+                if (isSyncedMode && position == highlightedPosition) highlightedLineTextColor else normalLineTextColor
+            )
+            holder.visualizer.alpha = if (isSyncedMode && highlightedPosition != -1 && position != highlightedPosition) {
+                if (position < highlightedPosition) 0.40f else 0.60f
+            } else {
+                0.7f
+            }
+            holder.visualizer.startAnimation()
+
+            // Apply highlight background for instrumental lines too
+            if (isSyncedMode && position == highlightedPosition) {
+                val bg = GradientDrawable().apply {
+                    setColor(highlightedLineBackgroundColor)
+                    cornerRadius = highlightRadius
+                }
+                holder.itemView.background = bg
+            } else {
+                holder.itemView.background = null
+            }
+            return
+        }
+
+        // Normal lyric line — hide visualizer, show text
+        holder.lyricText.visibility = View.VISIBLE
+        holder.visualizer.visibility = View.GONE
+        holder.visualizer.stopAnimation()
         holder.lyricText.text = line.text
 
         if (line.timestamp == LyricService.ATTRIBUTION_TIMESTAMP) {
@@ -79,7 +124,7 @@ class LyricsAdapter(
 
         if (isSyncedMode) {
             if (position == highlightedPosition) {
-                // Current highlighted line — M3E rounded pill background with scale emphasis
+                // Current highlighted line — M3E rounded pill background with spring-physics scale emphasis
                 val bg = GradientDrawable().apply {
                     setColor(highlightedLineBackgroundColor)
                     cornerRadius = highlightRadius
@@ -91,23 +136,24 @@ class LyricsAdapter(
                 holder.lyricText.alpha = 1.0f
                 holder.lyricText.letterSpacing = 0.015f
 
-                // Animate scale in for the highlighted line
-                if (kotlin.math.abs(holder.lyricText.scaleX - 1.03f) > 0.005f) {
+                // Wavy stretch effect: scaleX overshoots more than scaleY for a fluid "wave" feel
+                // OvershootInterpolator gives a spring-like bounce past the target, then settles
+                if (kotlin.math.abs(holder.lyricText.scaleX - 1.05f) > 0.005f) {
                     holder.lyricText.animate()
-                        .scaleX(1.03f)
-                        .scaleY(1.03f)
-                        .setDuration(280)
-                        .setInterpolator(DecelerateInterpolator(1.5f))
+                        .scaleX(1.05f)
+                        .scaleY(1.02f)
+                        .setDuration(400)
+                        .setInterpolator(springInterpolator)
                         .start()
                 }
             } else {
-                // Animate scale back to normal for non-highlighted lines
+                // Animate scale back to normal with gentle deceleration
                 if (kotlin.math.abs(holder.lyricText.scaleX - 1.0f) > 0.005f) {
                     holder.lyricText.animate()
                         .scaleX(1.0f)
                         .scaleY(1.0f)
-                        .setDuration(200)
-                        .setInterpolator(DecelerateInterpolator())
+                        .setDuration(250)
+                        .setInterpolator(DecelerateInterpolator(2.0f))
                         .start()
                 }
 
@@ -115,10 +161,11 @@ class LyricsAdapter(
                 holder.lyricText.setTextColor(normalLineTextColor)
 
                 if (highlightedPosition != -1) { // If there is an active highlight
+                    val targetAlpha: Float
                     if (position < highlightedPosition) {
                         // Past lines — fade out progressively
                         val diff = highlightedPosition - position
-                        holder.lyricText.alpha = when {
+                        targetAlpha = when {
                             diff == 1 -> 0.50f
                             diff == 2 -> 0.38f
                             else -> 0.28f
@@ -126,13 +173,19 @@ class LyricsAdapter(
                     } else {
                         // Upcoming lines — slightly brighter than past
                         val diff = position - highlightedPosition
-                        holder.lyricText.alpha = when (diff) {
+                        targetAlpha = when (diff) {
                             1 -> 0.75f
                             2 -> 0.55f
                             3 -> 0.42f
                             else -> 0.32f
                         }
                     }
+                    // Smoothly animate alpha transitions for fluid fading
+                    holder.lyricText.animate()
+                        .alpha(targetAlpha)
+                        .setDuration(300)
+                        .setInterpolator(DecelerateInterpolator(2.0f))
+                        .start()
                 } else {
                     // Synced mode, but no line is currently highlighted
                     holder.lyricText.alpha = 0.65f
@@ -199,5 +252,6 @@ class LyricsAdapter(
 
     class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val lyricText: TextView = itemView.findViewById(R.id.lyricLineText)
+        val visualizer: InstrumentalVisualizerView = itemView.findViewById(R.id.instrumentalVisualizer)
     }
 }

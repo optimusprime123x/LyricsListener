@@ -254,6 +254,16 @@ class MainActivity : FlutterActivity() {
                         result.error("ERROR_CLEAR_CACHE", e.message, null)
                     }
                 }
+                "getLyricsCacheSize" -> {
+                    try {
+                        val cacheManager = LyricsCacheManager(this)
+                        val sizeBytes = cacheManager.getCacheSizeBytes()
+                        result.success(sizeBytes)
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Error getting lyrics cache size: ${e.message}")
+                        result.error("ERROR_GET_CACHE_SIZE", e.message, null)
+                    }
+                }
                 "getCachedLyricsList" -> {
                     try {
                         val cacheManager = LyricsCacheManager(this)

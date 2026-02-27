@@ -25,6 +25,7 @@ class _ManageLyricsPageState extends State<ManageLyricsPage> {
   List<Map<String, dynamic>> _filteredLyrics = [];
   bool _isLoading = true;
   String? _errorMessage;
+  int _cacheSizeBytes = 0;
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounce;
 
@@ -32,6 +33,7 @@ class _ManageLyricsPageState extends State<ManageLyricsPage> {
   void initState() {
     super.initState();
     _loadCachedLyrics();
+    _loadCacheSize();
   }
 
   @override
@@ -103,6 +105,86 @@ class _ManageLyricsPageState extends State<ManageLyricsPage> {
     }
   }
 
+  Future<void> _loadCacheSize() async {
+    try {
+      final int? size = await _platformChannel.invokeMethod<int>(
+        'getLyricsCacheSize',
+      );
+      if (mounted) {
+        setState(() {
+          _cacheSizeBytes = size ?? 0;
+        });
+      }
+    } on PlatformException {
+      // Ignore - cache size is non-critical
+    }
+  }
+
+  String _formatCacheSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    final kb = bytes / 1024;
+    if (kb < 1024) return '${kb.toStringAsFixed(1)} KB';
+    final mb = kb / 1024;
+    return '${mb.toStringAsFixed(1)} MB';
+  }
+
+  Future<void> _clearAllLyrics() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final colorScheme = Theme.of(context).colorScheme;
+        return AlertDialog(
+          title: const Text('Clear all lyrics'),
+          content: Text(
+            'Are you sure you want to delete all ${_cachedLyrics.length} stored lyrics? This action cannot be undone.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: colorScheme.error,
+                foregroundColor: colorScheme.onError,
+              ),
+              child: const Text('Delete all'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final int? clearedCount = await _platformChannel.invokeMethod<int>(
+        'clearLyricsCache',
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              clearedCount != null && clearedCount > 0
+                  ? 'Cleared $clearedCount lyrics'
+                  : 'Cache cleared',
+            ),
+          ),
+        );
+        _loadCachedLyrics();
+        _loadCacheSize();
+      }
+    } on PlatformException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: ${e.message ?? "Unknown error"}')),
+        );
+      }
+    }
+  }
+
   Future<void> _deleteLyrics(String cacheKey, String title) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -143,6 +225,7 @@ class _ManageLyricsPageState extends State<ManageLyricsPage> {
             SnackBar(content: Text('Deleted "$title"')),
           );
           _loadCachedLyrics();
+          _loadCacheSize();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Failed to delete lyrics')),
@@ -289,7 +372,7 @@ class _ManageLyricsPageState extends State<ManageLyricsPage> {
                       ),
                     ),
                     Text(
-                      'stored lyrics',
+                      'stored lyrics · ${_formatCacheSize(_cacheSizeBytes)}',
                       style: textTheme.bodyMedium?.copyWith(
                         color: colorScheme.onPrimaryContainer,
                       ),
@@ -297,6 +380,15 @@ class _ManageLyricsPageState extends State<ManageLyricsPage> {
                   ],
                 ),
               ),
+              if (_cachedLyrics.isNotEmpty)
+                IconButton(
+                  onPressed: _clearAllLyrics,
+                  tooltip: 'Clear all lyrics',
+                  icon: Icon(
+                    Icons.delete_sweep_rounded,
+                    color: colorScheme.onPrimaryContainer,
+                  ),
+                ),
             ],
           ),
         ),

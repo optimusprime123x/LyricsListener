@@ -2427,7 +2427,13 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     }
 
                             override fun calculateSpeedPerPixel(displayMetrics: DisplayMetrics): Float {
-                                return 120f / displayMetrics.densityDpi
+                                // Slower speed for smoother, more fluid scrolling motion
+                                return 150f / displayMetrics.densityDpi
+                            }
+
+                            override fun calculateTimeForDeceleration(dx: Int): Int {
+                                // Longer deceleration for a gentler stop
+                                return (super.calculateTimeForDeceleration(dx) * 1.4).toInt()
                             }
                         }
                         smoothScroller.targetPosition = currentLineIndex.coerceAtLeast(0)
