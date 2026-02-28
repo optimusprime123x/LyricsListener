@@ -254,6 +254,7 @@ class LyricService : NotificationListenerService() {
 
     @Volatile private var _listenerEverConnected = false
     @Volatile private var _isAttemptingConnection = false
+    @Volatile private var wasHiddenByPausePreference = false
 
     @Volatile private var currentNotificationText: String? = null
     @Volatile private var pendingDebugNotificationReset = false
@@ -524,6 +525,7 @@ class LyricService : NotificationListenerService() {
             }
             ACTION_HIDE_LYRICS -> {
                 Log.d(TAG, "ACTION_HIDE_LYRICS received.")
+                wasHiddenByPausePreference = false
                 hideLyricsWindow()
                 updatePersistentNotification(buildStatusNotificationText())
             }
@@ -551,6 +553,7 @@ class LyricService : NotificationListenerService() {
     private fun performStopActions() {
         Log.i(TAG, "performStopActions: Initiating service stop procedures.")
         isServiceManuallyStarted.set(false)
+        wasHiddenByPausePreference = false
         mainHandler.removeCallbacks(executeFindActiveMediaSessionsRunnable)
         cancelListenerHealthChecks("performStopActions")
         consecutiveListenerRecoveryAttempts.set(0)
@@ -861,13 +864,15 @@ class LyricService : NotificationListenerService() {
                                 .getBoolean(PREF_HIDE_WINDOW_ON_PAUSE, false)
                         } catch (_: Exception) { false }
 
-                        if (hideOnPause) {
-                            if (!nowPlaying && lyricsView != null) {
-                                Log.d(TAG, "Hide-on-pause: hiding lyrics window (state=${stateToString(state)})")
-                                hideLyricsWindow()
-                            } else if (nowPlaying && lyricsView == null) {
-                                Log.d(TAG, "Hide-on-pause: re-showing lyrics window (state=${stateToString(state)})")
-                                currentLyricsData?.let { showLyricsWindow(it) }
+                        if (!nowPlaying && hideOnPause && lyricsView != null) {
+                            Log.d(TAG, "Hide-on-pause: hiding lyrics window (state=${stateToString(state)})")
+                            wasHiddenByPausePreference = true
+                            hideLyricsWindow()
+                        } else if (nowPlaying && lyricsView == null && (hideOnPause || wasHiddenByPausePreference)) {
+                            Log.d(TAG, "Hide-on-pause: re-showing lyrics window (state=${stateToString(state)}, hiddenByPausePref=$wasHiddenByPausePreference)")
+                            currentLyricsData?.let {
+                                showLyricsWindow(it)
+                                wasHiddenByPausePreference = false
                             }
                         }
                     }
@@ -1147,6 +1152,7 @@ class LyricService : NotificationListenerService() {
         val tokenThatWasActive = currentMediaSessionToken
         Log.i(TAG, "clearSongContextAndHideLyrics: Starting. Was for token: $tokenThatWasActive, Title: $lastDetectedSongTitle")
 
+        wasHiddenByPausePreference = false
         lastDetectedSongTitle = null
         lastDetectedSongArtist = null
         currentSongDurationMs = 0L
@@ -1983,7 +1989,10 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             lyricsRecyclerView?.adapter = lyricsAdapter
             lyricsRecyclerView?.itemAnimator = null
 
-            closeButton?.setOnClickListener { hideLyricsWindow() }
+            closeButton?.setOnClickListener {
+                wasHiddenByPausePreference = false
+                hideLyricsWindow()
+            }
             expandCollapseButton?.setOnClickListener { toggleLyricsExpansion() }
             translateButton?.setOnClickListener { toggleTranslation() }
             lyricsView?.setOnTouchListener(ViewMover())
@@ -2203,6 +2212,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             }
         }
         lyricsRecyclerView?.isVisible = true
+        wasHiddenByPausePreference = false
 
         applyLyricsExpansionState()
         if (dataToDisplayForAdapter is LyricsData.Synced &&
