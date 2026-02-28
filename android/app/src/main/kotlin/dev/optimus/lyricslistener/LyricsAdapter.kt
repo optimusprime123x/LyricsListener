@@ -20,6 +20,7 @@ class LyricsAdapter(
 
     private var highlightedPosition = -1
     private var isSyncedMode = false
+    private var isPlaying = false
 
     private var normalLineTextColor: Int = Color.WHITE
     private var highlightedLineTextColor: Int = Color.WHITE
@@ -80,7 +81,12 @@ class LyricsAdapter(
             } else {
                 0.7f
             }
-            holder.visualizer.startAnimation()
+            // Only animate when this is the highlighted line AND music is playing
+            if (isSyncedMode && position == highlightedPosition && isPlaying) {
+                holder.visualizer.startAnimation()
+            } else {
+                holder.visualizer.stopAnimation()
+            }
 
             // Apply highlight background for instrumental lines too
             if (isSyncedMode && position == highlightedPosition) {
@@ -249,6 +255,16 @@ class LyricsAdapter(
     }
 
     fun getCurrentHighlightedPosition(): Int = highlightedPosition
+
+    fun setPlayingState(playing: Boolean) {
+        if (isPlaying == playing) return
+        isPlaying = playing
+        // Refresh the highlighted instrumental line so its animation state updates
+        if (highlightedPosition in 0 until lyricLines.size &&
+            lyricLines[highlightedPosition].text == instrumentalPattern) {
+            notifyItemChanged(highlightedPosition)
+        }
+    }
 
     class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val lyricText: TextView = itemView.findViewById(R.id.lyricLineText)

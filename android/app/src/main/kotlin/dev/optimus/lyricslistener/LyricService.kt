@@ -366,6 +366,7 @@ class LyricService : NotificationListenerService() {
         private const val PREF_LYRICS_WINDOW_TITLE_COLOR = "flutter.lyrics_window_title_color"
     private const val PREF_LYRICS_WINDOW_BACKGROUND_COLOR = "flutter.lyrics_window_background_color"
     private const val PREF_LYRICS_WINDOW_HIGHLIGHT_COLOR = "flutter.lyrics_window_highlight_color"
+    private const val PREF_HIDE_WINDOW_ON_PAUSE = "flutter.hide_lyrics_window_on_pause"
 
     private val DEFAULT_STATIC_TITLE_COLOR = Color.parseColor("#F0E8E8E8")
     private val DEFAULT_STATIC_BACKGROUND_COLOR = Color.parseColor("#E6181818")
@@ -844,8 +845,33 @@ class LyricService : NotificationListenerService() {
                     this@LyricService.currentPlaybackState = state
                     Log.d(TAG, "onPlaybackStateChanged (for $currentMediaSessionToken): ${stateToString(state)}, Pos: ${state?.position}, Speed: ${state?.playbackSpeed}")
 
+                    val nowPlaying = state?.state == PlaybackState.STATE_PLAYING
+
+                    // Update adapter playing state so instrumental visualizers animate correctly
+                    Handler(Looper.getMainLooper()).post {
+                        lyricsAdapter?.setPlayingState(nowPlaying)
+                    }
+
+                    // Hide/show lyrics window on pause if the preference is enabled
+                    if (oldStateValue != state?.state) {
+                        val hideOnPause = try {
+                            applicationContext.getSharedPreferences(FLUTTER_SHARED_PREFERENCES, Context.MODE_PRIVATE)
+                                .getBoolean(PREF_HIDE_WINDOW_ON_PAUSE, false)
+                        } catch (_: Exception) { false }
+
+                        if (hideOnPause) {
+                            if (!nowPlaying && lyricsView != null) {
+                                Log.d(TAG, "Hide-on-pause: hiding lyrics window (state=${stateToString(state)})")
+                                hideLyricsWindow()
+                            } else if (nowPlaying && lyricsView == null) {
+                                Log.d(TAG, "Hide-on-pause: re-showing lyrics window (state=${stateToString(state)})")
+                                currentLyricsData?.let { showLyricsWindow(it) }
+                            }
+                        }
+                    }
+
                     if (currentLyricsData is LyricsData.Synced) {
-                        if (state?.state == PlaybackState.STATE_PLAYING) {
+                        if (nowPlaying) {
                             if (oldStateValue != PlaybackState.STATE_PLAYING || lyricsHighlightingJob == null || lyricsHighlightingJob?.isCompleted == true) {
                                 startOrUpdateLyricsHighlighting()
                             }

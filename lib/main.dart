@@ -31,6 +31,7 @@ const _defaultSeedColor = Color(0xFF6750A4);
 const String _seedColorKey = 'seed_color';
 const String _materialYouThemingKey = 'material_you_theming';
 const String _rememberWindowPositionKey = 'remember_window_position';
+const String _hideWindowOnPauseKey = 'hide_lyrics_window_on_pause';
 const String _dynamicLyricsWindowColorsKey = 'lyrics_window_dynamic_colors';
 const String _lyricsWindowTitleColorKey = 'lyrics_window_title_color';
 const String _lyricsWindowBackgroundColorKey = 'lyrics_window_background_color';
@@ -951,6 +952,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   expressive_refresh.RefreshIndicatorStatus? _refreshStatus;
 
   bool _rememberLyricsWindowPosition = false;
+  bool _hideLyricsWindowOnPause = false;
   bool _dynamicLyricsWindowColors = true;
 
   Color _lyricsWindowTitleColor = _defaultLyricsWindowTitleColor;
@@ -1108,6 +1110,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   Future<void> _loadCustomizationPreferences() async {
     final prefs = await SharedPreferences.getInstance();
     final rememberPosition = prefs.getBool(_rememberWindowPositionKey) ?? false;
+    final hideOnPause = prefs.getBool(_hideWindowOnPauseKey) ?? false;
     final dynamicLyricsColours =
         prefs.getBool(_dynamicLyricsWindowColorsKey) ?? true;
     final storedTitleColor = prefs.getInt(_lyricsWindowTitleColorKey);
@@ -1116,6 +1119,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     if (!mounted) return;
     setState(() {
       _rememberLyricsWindowPosition = rememberPosition;
+      _hideLyricsWindowOnPause = hideOnPause;
       _dynamicLyricsWindowColors = dynamicLyricsColours;
       _lyricsWindowTitleColor = Color(
         storedTitleColor ?? _defaultLyricsWindowTitleColor.value,
@@ -1135,6 +1139,14 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_rememberWindowPositionKey, value);
+  }
+
+  Future<void> _onHideWindowOnPauseChanged(bool value) async {
+    setState(() {
+      _hideLyricsWindowOnPause = value;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_hideWindowOnPauseKey, value);
   }
 
   Future<void> _onDynamicLyricsWindowColorsChanged(bool value) async {
@@ -2242,6 +2254,26 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Text(
                 'When enabled, the floating lyrics window reopens where you last placed it.',
+                style: textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            SwitchListTile.adaptive(
+              value: _hideLyricsWindowOnPause,
+              onChanged: _onHideWindowOnPauseChanged,
+              title: Text(
+                'Hide lyrics window on pause',
+                style: textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Text(
+                'When enabled, the lyrics window will automatically be hidden when music is paused and re-appear when it starts playing again.',
                 style: textTheme.bodySmall?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),

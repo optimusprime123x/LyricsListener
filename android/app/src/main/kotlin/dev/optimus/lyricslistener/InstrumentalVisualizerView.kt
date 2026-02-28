@@ -12,8 +12,9 @@ import android.view.animation.LinearInterpolator
 import kotlin.math.sin
 
 /**
- * A mock 3-bar audio visualizer view for instrumental/blank lyric lines.
- * Each bar oscillates at a different phase to create a wave-like animation.
+ * A mock audio-equalizer visualizer view for instrumental/blank lyric lines.
+ * Five bars oscillate at different speeds and phases to mimic a classic EQ display.
+ * When not animating the bars rest at a static idle height.
  */
 class InstrumentalVisualizerView @JvmOverloads constructor(
     context: Context,
@@ -28,16 +29,19 @@ class InstrumentalVisualizerView @JvmOverloads constructor(
 
     private val barRect = RectF()
     private var animationProgress = 0f
+    private var isAnimating = false
 
-    private val barCount = 3
-    private val barWidthDp = 4f
-    private val barGapDp = 3.5f
-    private val barCornerDp = 2f
-    private val minHeightFraction = 0.2f
+    private val barCount = 5
+    private val barWidthDp = 3f
+    private val barGapDp = 2.5f
+    private val barCornerDp = 1.5f
+    private val idleHeightFraction = 0.18f
+    private val minHeightFraction = 0.12f
     private val maxHeightFraction = 1.0f
 
-    // Phase offsets for each bar to create wave effect
-    private val barPhaseOffsets = floatArrayOf(0f, 1.2f, 0.6f)
+    // Each bar has its own phase offset and speed multiplier for a realistic EQ look
+    private val barPhaseOffsets = floatArrayOf(0f, 2.1f, 0.7f, 3.5f, 1.4f)
+    private val barSpeedMultipliers = floatArrayOf(1.0f, 1.3f, 0.8f, 1.6f, 1.1f)
 
     private val density = context.resources.displayMetrics.density
     private val barWidthPx = barWidthDp * density
@@ -53,8 +57,9 @@ class InstrumentalVisualizerView @JvmOverloads constructor(
 
     fun startAnimation() {
         if (animator?.isRunning == true) return
+        isAnimating = true
         animator = ValueAnimator.ofFloat(0f, (2 * kotlin.math.PI).toFloat()).apply {
-            duration = 1200
+            duration = 1800
             repeatCount = ValueAnimator.INFINITE
             interpolator = LinearInterpolator()
             addUpdateListener { anim ->
@@ -68,6 +73,8 @@ class InstrumentalVisualizerView @JvmOverloads constructor(
     fun stopAnimation() {
         animator?.cancel()
         animator = null
+        isAnimating = false
+        invalidate()
     }
 
     override fun onDetachedFromWindow() {
@@ -83,13 +90,17 @@ class InstrumentalVisualizerView @JvmOverloads constructor(
         val maxBarHeight = height.toFloat()
 
         for (i in 0 until barCount) {
-            val phase = animationProgress + barPhaseOffsets[i]
-            val heightFraction = minHeightFraction +
-                    (maxHeightFraction - minHeightFraction) * ((sin(phase.toDouble()) + 1f) / 2f).toFloat()
+            val heightFraction = if (isAnimating) {
+                val phase = animationProgress * barSpeedMultipliers[i] + barPhaseOffsets[i]
+                minHeightFraction +
+                        (maxHeightFraction - minHeightFraction) * ((sin(phase.toDouble()) + 1.0) / 2.0).toFloat()
+            } else {
+                idleHeightFraction
+            }
 
             val barHeight = maxBarHeight * heightFraction
             val left = startX + i * (barWidthPx + barGapPx)
-            val top = (maxBarHeight - barHeight) / 2f
+            val top = maxBarHeight - barHeight  // Bars grow upward from bottom
 
             barRect.set(left, top, left + barWidthPx, top + barHeight)
             canvas.drawRoundRect(barRect, barCornerPx, barCornerPx, barPaint)
