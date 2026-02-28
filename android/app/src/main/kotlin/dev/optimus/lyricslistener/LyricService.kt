@@ -225,6 +225,7 @@ class LyricService : NotificationListenerService() {
     private val consecutiveListenerRecoveryAttempts = AtomicInteger(0)
     private val nextListenerHealthCheckAtMs = AtomicLong(0L)
     private val lastNotificationAccessDebugLogMs = AtomicLong(0L)
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private val listenerHealthHandler by lazy { Handler(Looper.getMainLooper()) }
     private val listenerHealthCheckRunnable = Runnable { evaluateListenerHealth() }
 
@@ -550,6 +551,7 @@ class LyricService : NotificationListenerService() {
     private fun performStopActions() {
         Log.i(TAG, "performStopActions: Initiating service stop procedures.")
         isServiceManuallyStarted.set(false)
+        mainHandler.removeCallbacks(executeFindActiveMediaSessionsRunnable)
         cancelListenerHealthChecks("performStopActions")
         consecutiveListenerRecoveryAttempts.set(0)
         hideLyricsWindow()
@@ -634,8 +636,8 @@ class LyricService : NotificationListenerService() {
         Log.d(TAG, "tryToConnectToActiveMediaSessions scheduled with delay: $delayMs ms. _listenerEverConnected: $_listenerEverConnected. _isAttemptingConnection: $_isAttemptingConnection")
         _isAttemptingConnection = true
 
-        Handler(Looper.getMainLooper()).removeCallbacks(executeFindActiveMediaSessionsRunnable)
-        Handler(Looper.getMainLooper()).postDelayed(executeFindActiveMediaSessionsRunnable, delayMs)
+        mainHandler.removeCallbacks(executeFindActiveMediaSessionsRunnable)
+        mainHandler.postDelayed(executeFindActiveMediaSessionsRunnable, delayMs)
     }
 
     private fun requestNotificationListenerRebind(reason: String, force: Boolean = false) {
@@ -848,7 +850,7 @@ class LyricService : NotificationListenerService() {
                     val nowPlaying = state?.state == PlaybackState.STATE_PLAYING
 
                     // Update adapter playing state so instrumental visualizers animate correctly
-                    Handler(Looper.getMainLooper()).post {
+                    mainHandler.post {
                         lyricsAdapter?.setPlayingState(nowPlaying)
                     }
 
@@ -910,7 +912,7 @@ class LyricService : NotificationListenerService() {
                     }
                 }
             }
-            newController.registerCallback(mediaControllerCallback!!, Handler(Looper.getMainLooper()))
+            newController.registerCallback(mediaControllerCallback!!, mainHandler)
 
             activeMediaController = newController
             currentMediaSessionToken = token
@@ -1885,7 +1887,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     private fun showLyricsWindow(data: LyricsData) {
         if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) { Log.w(TAG, "showLyricsWindow: Aborting. ServiceJob cancelled or service not manually started."); return }
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            Handler(Looper.getMainLooper()).post { if (!serviceJob.isCancelled && isServiceManuallyStarted.get()) showLyricsWindow(data) }
+            mainHandler.post { if (!serviceJob.isCancelled && isServiceManuallyStarted.get()) showLyricsWindow(data) }
             return
         }
 
@@ -2507,7 +2509,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     }
     private fun hideLyricsWindow() {
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            Handler(Looper.getMainLooper()).post { hideLyricsWindow() }
+            mainHandler.post { hideLyricsWindow() }
             return
         }
         Log.d(TAG, "hideLyricsWindow() called. LyricsView Null: ${lyricsView == null}, Attached: ${lyricsView?.isAttachedToWindow}")
@@ -2981,7 +2983,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             return
         }
 
-        Handler(Looper.getMainLooper()).post {
+        mainHandler.post {
             try {
                 val restartIntent = Intent(applicationContext, LyricService::class.java).apply {
                     action = ACTION_USER_INITIATED_START
@@ -3028,7 +3030,10 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         }
         currentMediaSessionToken = null
 
+        mainHandler.removeCallbacks(executeFindActiveMediaSessionsRunnable)
         cancelListenerHealthChecks("onDestroy")
+        runCatching { httpClient.close() }
+            .onFailure { Log.w(TAG, "onDestroy: Failed to close HTTP client cleanly: ${it.message}") }
         Log.i(TAG, "Service fully destroyed. Instance: ${this.hashCode()}")
         super.onDestroy()
     }

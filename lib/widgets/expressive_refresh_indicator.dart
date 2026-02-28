@@ -351,8 +351,11 @@ class ExpressiveRefreshIndicatorState extends State<ExpressiveRefreshIndicator>
     assert(_dragOffset == null);
     switch (direction) {
       case AxisDirection.down:
-      case AxisDirection.up:
         _isIndicatorAtTop = true;
+        break;
+      case AxisDirection.up:
+        _isIndicatorAtTop = false;
+        break;
       case AxisDirection.left:
       case AxisDirection.right:
         _isIndicatorAtTop = null;

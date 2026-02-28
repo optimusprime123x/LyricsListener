@@ -593,6 +593,8 @@ class DebugScreen extends StatefulWidget {
 }
 
 class _DebugScreenState extends State<DebugScreen> {
+  static const int _maxDebugLogLines = 100;
+
   final List<String> _logs = [];
   StreamSubscription<dynamic>? _logSubscription;
   String? _errorMessage;
@@ -601,6 +603,7 @@ class _DebugScreenState extends State<DebugScreen> {
   String? _musixmatchTokenStatusError;
   bool _isStarting = true;
   bool _isStreaming = false;
+  bool _logLimitReached = false;
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -666,16 +669,21 @@ class _DebugScreenState extends State<DebugScreen> {
       _errorMessage = null;
       _isStarting = true;
       _isStreaming = true;
+      _logLimitReached = false;
     });
 
     await _logSubscription?.cancel();
     _logSubscription = _debugLogChannel.receiveBroadcastStream().listen(
       (event) {
         if (!mounted) return;
+        if (_logLimitReached) return;
         final logLine = event.toString();
         final lowerLogLine = logLine.toLowerCase();
+        bool shouldStopAtLimit = false;
         setState(() {
-          _logs.add(logLine);
+          if (_logs.length < _maxDebugLogLines) {
+            _logs.add(logLine);
+          }
           if (lowerLogLine.contains(
             'successfully acquired musixmatch user token',
           )) {
@@ -687,8 +695,17 @@ class _DebugScreenState extends State<DebugScreen> {
               lowerLogLine.contains('musixmatch token response was blank')) {
             _isMusixmatchTokenAvailable = false;
           }
+          if (_logs.length >= _maxDebugLogLines) {
+            _logLimitReached = true;
+            _errorMessage =
+                'Log capture stopped at $_maxDebugLogLines lines. Tap "Rescan & start" to capture again.';
+            shouldStopAtLimit = true;
+          }
         });
         _scrollToBottom();
+        if (shouldStopAtLimit) {
+          unawaited(_stopDebugSession());
+        }
       },
       onError: (error) {
         if (!mounted) return;
