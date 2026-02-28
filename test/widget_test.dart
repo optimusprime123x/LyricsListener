@@ -9,15 +9,16 @@ import 'package:lyricslistener/widgets/expressive_refresh_indicator.dart'
     as expressive_refresh;
 
 void main() {
-  const MethodChannel channel = MethodChannel('dev.optimus.lyricslistener/permissions');
+  const MethodChannel channel = MethodChannel(
+    'dev.optimus.lyricslistener/permissions',
+  );
 
   setUp(() {
     // Set a large screen size to ensure all ListView items are rendered
     TestWidgetsFlutterBinding.ensureInitialized();
   });
 
-  tearDown(() {
-  });
+  tearDown(() {});
 
   void registerMock(WidgetTester tester) {
     tester.view.physicalSize = const Size(1080, 4000);
@@ -25,37 +26,36 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      channel,
-      (MethodCall methodCall) async {
-        switch (methodCall.method) {
-          case 'getAndroidVersion':
-            return 33; // Android 13
-          case 'isNotificationAccessGranted':
-            return true;
-          case 'canDrawOverlays':
-            return true;
-          case 'isPostNotificationsGranted':
-            return true;
-          case 'isIgnoringBatteryOptimizations':
-            return false;
-          case 'isLyricServiceRunning':
-            return false;
-          case 'clearLyricsCache':
-            return 0;
-          case 'getCachedLyricsList':
-            return <Map<String, dynamic>>[];
-          case 'getCachedLyricsContent':
-            return <String, dynamic>{};
-          case 'updateCachedLyrics':
-            return true;
-          case 'deleteCachedLyrics':
-            return true;
-          default:
-            return null;
-        }
-      },
-    );
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      MethodCall methodCall,
+    ) async {
+      switch (methodCall.method) {
+        case 'getAndroidVersion':
+          return 33; // Android 13
+        case 'isNotificationAccessGranted':
+          return true;
+        case 'canDrawOverlays':
+          return true;
+        case 'isPostNotificationsGranted':
+          return true;
+        case 'isIgnoringBatteryOptimizations':
+          return false;
+        case 'isLyricServiceRunning':
+          return false;
+        case 'clearLyricsCache':
+          return 0;
+        case 'getCachedLyricsList':
+          return <Map<String, dynamic>>[];
+        case 'getCachedLyricsContent':
+          return <String, dynamic>{};
+        case 'updateCachedLyrics':
+          return true;
+        case 'deleteCachedLyrics':
+          return true;
+        default:
+          return null;
+      }
+    });
     addTearDown(() {
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         channel,
@@ -67,27 +67,49 @@ void main() {
   testWidgets('MyApp initializes with seed color', (WidgetTester tester) async {
     registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
-    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor, initialMaterialYouThemingEnabled: true));
+    await tester.pumpWidget(
+      MyApp(
+        initialSeedColor: initialSeedColor,
+        initialMaterialYouThemingEnabled: true,
+      ),
+    );
 
     // Verify app builds without errors and MaterialApp is present
     expect(find.byType(MaterialApp), findsOneWidget);
   });
 
-  testWidgets('HomeScreen displays welcome section', (WidgetTester tester) async {
+  testWidgets('HomeScreen displays welcome section', (
+    WidgetTester tester,
+  ) async {
     registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
-    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor, initialMaterialYouThemingEnabled: true));
+    await tester.pumpWidget(
+      MyApp(
+        initialSeedColor: initialSeedColor,
+        initialMaterialYouThemingEnabled: true,
+      ),
+    );
     await tester.pumpAndSettle(); // Wait for async loading to settle
 
     // Check for welcome text in HomeScreen
     expect(find.text('Welcome to Lyric Listener!'), findsOneWidget);
-    expect(find.text('A purr-fectly synced lyric experience for your favorite tunes!'), findsOneWidget);
+    expect(
+      find.text(
+        'A purr-fectly synced lyric experience for your favorite tunes!',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('Theme toggle button works', (WidgetTester tester) async {
     registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
-    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor, initialMaterialYouThemingEnabled: true));
+    await tester.pumpWidget(
+      MyApp(
+        initialSeedColor: initialSeedColor,
+        initialMaterialYouThemingEnabled: true,
+      ),
+    );
     await tester.pumpAndSettle(); // Wait for async loading to settle
 
     // Find and tap theme toggle button in AppBar
@@ -106,17 +128,25 @@ void main() {
     expect(find.byIcon(Icons.light_mode_rounded), findsOneWidget);
   });
 
-  testWidgets('Expressive theme shapes are applied', (WidgetTester tester) async {
+  testWidgets('Expressive theme shapes are applied', (
+    WidgetTester tester,
+  ) async {
     registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
-    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor, initialMaterialYouThemingEnabled: true));
+    await tester.pumpWidget(
+      MyApp(
+        initialSeedColor: initialSeedColor,
+        initialMaterialYouThemingEnabled: true,
+      ),
+    );
 
     final materialApp = tester.widget<MaterialApp>(find.byType(MaterialApp));
     final theme = materialApp.theme;
     final cardShape = theme?.cardTheme.shape as RoundedRectangleBorder?;
     final cardRadius = cardShape?.borderRadius as BorderRadius?;
-    final filledButtonShape =
-        theme?.filledButtonTheme.style?.shape?.resolve({});
+    final filledButtonShape = theme?.filledButtonTheme.style?.shape?.resolve(
+      {},
+    );
 
     // Updated expectations for Material 3 Expressive (28 radius)
     expect(cardRadius?.topLeft.x, 28);
@@ -127,10 +157,17 @@ void main() {
     );
   });
 
-  testWidgets('Permission status icons display correctly', (WidgetTester tester) async {
+  testWidgets('Permission status icons display correctly', (
+    WidgetTester tester,
+  ) async {
     registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
-    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor, initialMaterialYouThemingEnabled: true));
+    await tester.pumpWidget(
+      MyApp(
+        initialSeedColor: initialSeedColor,
+        initialMaterialYouThemingEnabled: true,
+      ),
+    );
     await tester.pumpAndSettle(); // Wait for async loading to settle
 
     // Since we mocked permissions to true, we expect check circles
@@ -139,10 +176,17 @@ void main() {
     expect(find.byIcon(Icons.info_outline_rounded), findsOneWidget);
   });
 
-  testWidgets('Service control buttons are present', (WidgetTester tester) async {
+  testWidgets('Service control buttons are present', (
+    WidgetTester tester,
+  ) async {
     registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
-    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor, initialMaterialYouThemingEnabled: true));
+    await tester.pumpWidget(
+      MyApp(
+        initialSeedColor: initialSeedColor,
+        initialMaterialYouThemingEnabled: true,
+      ),
+    );
     await tester.pumpAndSettle(); // Wait for async loading to settle
 
     // Mocked 'isLyricServiceRunning' to false.
@@ -155,7 +199,12 @@ void main() {
   testWidgets('Settings tab is accessible', (WidgetTester tester) async {
     registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
-    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor, initialMaterialYouThemingEnabled: true));
+    await tester.pumpWidget(
+      MyApp(
+        initialSeedColor: initialSeedColor,
+        initialMaterialYouThemingEnabled: true,
+      ),
+    );
     await tester.pumpAndSettle(); // Wait for async loading to settle
 
     // Find and tap Settings tab in NavigationBar
@@ -174,7 +223,12 @@ void main() {
   testWidgets('Help tab is accessible', (WidgetTester tester) async {
     registerMock(tester);
     const initialSeedColor = Color(0xFF6750A4);
-    await tester.pumpWidget(MyApp(initialSeedColor: initialSeedColor, initialMaterialYouThemingEnabled: true));
+    await tester.pumpWidget(
+      MyApp(
+        initialSeedColor: initialSeedColor,
+        initialMaterialYouThemingEnabled: true,
+      ),
+    );
     await tester.pumpAndSettle(); // Wait for async loading to settle
 
     // Find and tap Help tab in NavigationBar
@@ -188,11 +242,62 @@ void main() {
     expect(find.textContaining('Lyrics popup is not shown'), findsOneWidget);
   });
 
-  testWidgets('Refresh subtitle appears immediately', (WidgetTester tester) async {
+  testWidgets('Back from Settings returns to Home first', (
+    WidgetTester tester,
+  ) async {
+    registerMock(tester);
+    const initialSeedColor = Color(0xFF6750A4);
+    await tester.pumpWidget(
+      MyApp(
+        initialSeedColor: initialSeedColor,
+        initialMaterialYouThemingEnabled: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+    expect(find.text('Theme Color'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Welcome to Lyric Listener!'), findsOneWidget);
+    expect(find.text('Theme Color'), findsNothing);
+  });
+
+  testWidgets('Back from Help returns to Home first', (
+    WidgetTester tester,
+  ) async {
+    registerMock(tester);
+    const initialSeedColor = Color(0xFF6750A4);
+    await tester.pumpWidget(
+      MyApp(
+        initialSeedColor: initialSeedColor,
+        initialMaterialYouThemingEnabled: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.help_outline_rounded));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Lyrics popup is not shown'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Welcome to Lyric Listener!'), findsOneWidget);
+    expect(find.textContaining('Lyrics popup is not shown'), findsNothing);
+  });
+
+  testWidgets('Refresh subtitle appears immediately', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1080, 2400);
     addTearDown(tester.view.resetPhysicalSize);
 
-    final refreshKey = GlobalKey<expressive_refresh.ExpressiveRefreshIndicatorState>();
+    final refreshKey =
+        GlobalKey<expressive_refresh.ExpressiveRefreshIndicatorState>();
     final completer = Completer<void>();
 
     await tester.pumpWidget(
@@ -213,7 +318,9 @@ void main() {
     await tester.drag(find.byType(ListView), const Offset(0, 300));
     await tester.pump(const Duration(milliseconds: 300));
 
-    final subtitleFinder = find.text('Launch service below to enjoy synced lyrics!');
+    final subtitleFinder = find.text(
+      'Launch service below to enjoy synced lyrics!',
+    );
     expect(subtitleFinder, findsOneWidget);
 
     final opacityWidget = tester.widget<AnimatedOpacity>(

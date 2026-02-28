@@ -2396,7 +2396,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   _buildFaqItem(
                     context,
                     question:
-                        'Lyrics popup is not shown while music is playing, and the notification says "Connecting listener…" or "Notification access missing. Tap to fix."',
+                        'Lyrics popup is not shown, or shows waiting for song even when music is playing.',
                     answerParts: [
                       const TextSpan(
                         text: "Why this happens? ",
@@ -2404,7 +2404,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       ),
                       const TextSpan(
                         text:
-                            'The persistent notification shows those messages when Android(for whatever reason) has revoked notification access.\n\n',
+                            'Notification access might be missing, see below.\n\n',
                       ),
                       const TextSpan(
                         text: "What to do? ",
@@ -2412,7 +2412,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       ),
                       const TextSpan(
                         text:
-                            'Open the persistent Lyrics Listener notification and tap the Fix notification access action. This usually restores access immediately. If the shortcut does not work, follow these steps:\n1. Stop the Lyric Service.\n2. Tap ',
+                            'Open the persistent Lyrics Listener notification and tap the Fix notification access action. This usually restores access immediately. If the shortcut is not shown, or does not work, follow these steps:\n1. Stop the Lyric Service.\n2. Tap ',
                       ),
                       TextSpan(
                         text: 'here',
@@ -2472,7 +2472,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       ),
                       const TextSpan(
                         text:
-                            "You may try again after some days, or try a different song.",
+                            "You can try a different song, or a few days later, or if you have the LRC files for that song, add it yourself from Settings > Lyrics > Add custom lyrics.",
                       ),
                     ],
                   ),
@@ -2538,9 +2538,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             style: textTheme.titleMedium?.copyWith(
               color: colorScheme.primary,
               fontWeight: FontWeight.bold,
-              fontVariations: const [
-                FontVariation('wght', 720),
-              ],
+              fontVariations: const [FontVariation('wght', 720)],
             ),
           ),
         ),
@@ -2911,55 +2909,64 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         break;
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        centerTitle: true,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_selectedIndex == 0) ...[
-              Icon(Icons.lyrics_rounded, color: colorScheme.primary),
-              const SizedBox(width: 12),
+    return PopScope<void>(
+      canPop: _selectedIndex == 0,
+      onPopInvoked: (didPop) {
+        if (didPop || _selectedIndex == 0) return;
+        setState(() {
+          _selectedIndex = 0;
+        });
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          centerTitle: true,
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_selectedIndex == 0) ...[
+                Icon(Icons.lyrics_rounded, color: colorScheme.primary),
+                const SizedBox(width: 12),
+              ],
+              GestureDetector(
+                onTap: _selectedIndex == 1 ? _onDebugTriggerTapped : null,
+                child: Text(appBarTitle),
+              ),
             ],
-            GestureDetector(
-              onTap: _selectedIndex == 1 ? _onDebugTriggerTapped : null,
-              child: Text(appBarTitle),
+          ),
+          actions: [
+            IconButton(
+              icon: Icon(
+                Theme.of(context).brightness == Brightness.dark
+                    ? Icons.light_mode_rounded
+                    : Icons.dark_mode_rounded,
+              ),
+              onPressed: widget.toggleTheme,
+              tooltip: 'Toggle Theme',
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: Icon(
-              Theme.of(context).brightness == Brightness.dark
-                  ? Icons.light_mode_rounded
-                  : Icons.dark_mode_rounded,
+        body: SafeArea(child: body),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _selectedIndex,
+          onDestinationSelected: _onItemTapped,
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home_rounded),
+              label: 'Home',
             ),
-            onPressed: widget.toggleTheme,
-            tooltip: 'Toggle Theme',
-          ),
-        ],
-      ),
-      body: SafeArea(child: body),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: _onItemTapped,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home_rounded),
-            label: 'Home',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings_rounded),
-            label: 'Settings',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.help_outline_rounded),
-            selectedIcon: Icon(Icons.help_rounded),
-            label: 'Help',
-          ),
-        ],
+            NavigationDestination(
+              icon: Icon(Icons.settings_outlined),
+              selectedIcon: Icon(Icons.settings_rounded),
+              label: 'Settings',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.help_outline_rounded),
+              selectedIcon: Icon(Icons.help_rounded),
+              label: 'Help',
+            ),
+          ],
+        ),
       ),
     );
   }
