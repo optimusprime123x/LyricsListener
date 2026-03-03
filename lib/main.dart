@@ -2429,7 +2429,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       ),
                       const TextSpan(
                         text:
-                            'Open the persistent Lyrics Listener notification and tap the Fix notification access action. This usually restores access immediately. If the shortcut is not shown, or does not work, follow these steps:\n1. Stop the Lyric Service.\n2. Tap ',
+                            'Open the persistent Lyrics Listener notification and tap the Fix notification access action. This usually restores access immediately. If the shortcut is not shown, or does not work, follow these steps:\n1. Stop the Lyric Service.\0n2. Tap ',
                       ),
                       TextSpan(
                         text: 'here',
@@ -2442,7 +2442,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       ),
                       const TextSpan(
                         text:
-                            " to open the system Notification Access settings only if the notification shortcut fails.\n3. Turn OFF access for 'Lyric Listener'.\n4. Return to this app.\n5. Re-grant 'Notification Access' above.\n6. Launch the Lyric Service again.",
+                            " to open the system Notification Access settings.\n3. Turn OFF access for 'Lyric Listener'.\n4. Return to this app.\n5. Re-grant 'Notification Access' above.\n6. Launch the Lyric Service again.",
                       ),
                     ],
                   ),
