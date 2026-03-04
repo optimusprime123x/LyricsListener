@@ -2203,8 +2203,18 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 lyricsAdapter?.updateLyrics(linesWithAttribution, false)
             }
             is LyricsData.Info -> {
-                Log.d(TAG, "Displaying Info: $finalMessageForInfo")
-                lyricsAdapter?.updateLyrics(listOf(TimedLyricLine(0, finalMessageForInfo)), false)
+                if (dataToDisplayForAdapter.message.contains("instrumental", ignoreCase = true)) {
+                    Log.d(TAG, "Displaying instrumental visualizer placeholder for info response.")
+                    lyricsAdapter?.updateLyrics(listOf(TimedLyricLine(0, "🎶 ... 🎶")), true)
+                    val isCurrentlyPlaying =
+                        activeMediaController?.sessionToken == currentMediaSessionToken &&
+                            activeMediaController?.playbackState?.state == PlaybackState.STATE_PLAYING
+                    lyricsAdapter?.setPlayingState(isCurrentlyPlaying)
+                    lyricsAdapter?.setHighlight(0)
+                } else {
+                    Log.d(TAG, "Displaying Info: $finalMessageForInfo")
+                    lyricsAdapter?.updateLyrics(listOf(TimedLyricLine(0, finalMessageForInfo)), false)
+                }
             }
             is LyricsData.MismatchInfo -> {
                  Log.e(TAG, "Internal error: MismatchInfo was not unwrapped. Displaying error.")
