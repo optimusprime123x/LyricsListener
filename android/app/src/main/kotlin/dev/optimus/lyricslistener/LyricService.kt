@@ -80,6 +80,8 @@ class LyricService : NotificationListenerService() {
     @Volatile private var windowManager: WindowManager? = null
     @Volatile private var lyricsView: View? = null
     @Volatile private var params: WindowManager.LayoutParams? = null
+    // Keep track of every overlay instance so we can clean up a residual window even if the main reference drifts.
+    private val knownLyricsOverlayViews = mutableSetOf<View>()
     private var lyricsRecyclerView: RecyclerView? = null
     private var songInfoTextView: TextView? = null
     private var expandCollapseButton: ImageButton? = null
@@ -253,6 +255,7 @@ class LyricService : NotificationListenerService() {
 
 
     @Volatile private var _listenerEverConnected = false
+    @Volatile private var _listenerCurrentlyBound = false
     @Volatile private var _isAttemptingConnection = false
     @Volatile private var wasHiddenByPausePreference = false
 
@@ -413,6 +416,7 @@ class LyricService : NotificationListenerService() {
         startForegroundWithNotification("Initializing...")
         isLyricsExpanded = false
         _listenerEverConnected = false
+        _listenerCurrentlyBound = false
         _isAttemptingConnection = false
         consecutiveListenerRecoveryAttempts.set(0)
         lastListenerHeartbeatMs.set(SystemClock.elapsedRealtime())
@@ -425,10 +429,34 @@ class LyricService : NotificationListenerService() {
     }
 
     private fun markListenerConnected(reason: String) {
+        if (!_listenerCurrentlyBound) {
+            _listenerCurrentlyBound = true
+            Log.i(TAG, "markListenerConnected: Listener is currently bound ($reason).")
+        }
         if (!_listenerEverConnected) {
             _listenerEverConnected = true
             Log.i(TAG, "markListenerConnected: Listener considered connected ($reason).")
         }
+    }
+
+    private fun isListenerBoundBySystem(): Boolean {
+        return try {
+            currentInterruptionFilter != INTERRUPTION_FILTER_UNKNOWN
+        } catch (e: Exception) {
+            Log.w(TAG, "isListenerBoundBySystem: Unable to read interruption filter: ${e.message}")
+            false
+        }
+    }
+
+    private fun refreshListenerBindingState(reason: String): Boolean {
+        val isBound = isListenerBoundBySystem()
+        if (isBound) {
+            markListenerConnected(reason)
+        } else if (_listenerCurrentlyBound) {
+            _listenerCurrentlyBound = false
+            Log.w(TAG, "refreshListenerBindingState: Listener no longer appears bound ($reason).")
+        }
+        return isBound
     }
 
     private fun startForegroundWithNotification(text: String) {
@@ -499,6 +527,7 @@ class LyricService : NotificationListenerService() {
                 Log.i(TAG, "ACTION_USER_INITIATED_START received. Forcing full re-initialization.")
                 startForegroundWithNotification("Service starting...")
                 _listenerEverConnected = false
+                _listenerCurrentlyBound = false
                 _isAttemptingConnection = false
                 lastListenerRebindAttempt.set(0L)
                 clearSongContextAndHideLyrics()
@@ -511,7 +540,7 @@ class LyricService : NotificationListenerService() {
                 startForegroundWithNotification(buildStatusNotificationText())
                 val dataToShow = currentLyricsData ?: LyricsData.Info(
                     lastDetectedSongTitle, lastDetectedSongArtist,
-                    if (lastDetectedSongTitle != null) "Loading lyrics..." else if (_listenerEverConnected) "Waiting for song..." else "Connecting listener...",
+                    if (lastDetectedSongTitle != null) "Loading lyrics..." else if (refreshListenerBindingState("ACTION_SHOW_LYRICS status")) "Waiting for song..." else "Connecting listener...",
                     currentSongDurationMs
                 )
                 showLyricsWindow(dataToShow)
@@ -570,6 +599,7 @@ class LyricService : NotificationListenerService() {
         isMusixmatchTokenAvailableForDebug.set(false)
 
         _listenerEverConnected = false
+        _listenerCurrentlyBound = false
         _isAttemptingConnection = false
 
 
@@ -613,6 +643,7 @@ class LyricService : NotificationListenerService() {
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
         _listenerEverConnected = false
+        _listenerCurrentlyBound = false
         _isAttemptingConnection = false
         lastListenerHeartbeatMs.set(SystemClock.elapsedRealtime())
         Log.w(TAG, "Notification Listener disconnected by system! (Instance: ${this.hashCode()}) Cleaning up.")
@@ -727,6 +758,17 @@ class LyricService : NotificationListenerService() {
                 return
             }
             Log.d(TAG, "executeFindActiveMediaSessions: Starting media scan. _listenerEverConnected: $_listenerEverConnected. Current token: $currentMediaSessionToken")
+
+            if (!refreshListenerBindingState("executeFindActiveMediaSessions start")) {
+                Log.w(TAG, "executeFindActiveMediaSessions: Listener is not currently bound. Requesting recovery before media scan.")
+                updatePersistentNotification("Waiting for notification listener...")
+                requestNotificationListenerRebind("Listener not bound before media scan")
+                _isAttemptingConnection = false
+                tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
+                if (currentMediaSessionToken != null) clearSongContextAndHideLyrics()
+                return
+            }
+
             var activeNotificationsInternal: Array<StatusBarNotification>? = null
             try {
                 activeNotificationsInternal = this.activeNotifications
@@ -764,10 +806,18 @@ class LyricService : NotificationListenerService() {
             }
 
             if (activeNotificationsInternal.isEmpty()) {
-                Log.d(TAG, "No active media notifications found (list is empty).")
-                if (!_listenerEverConnected) {
-                    requestNotificationListenerRebind("activeNotifications empty while listener never connected")
+                val listenerStillBound = refreshListenerBindingState("activeNotifications empty")
+                if (!listenerStillBound) {
+                    Log.w(TAG, "executeFindActiveMediaSessions: activeNotifications was empty because the listener is no longer bound.")
+                    updatePersistentNotification("Waiting for notification listener...")
+                    requestNotificationListenerRebind("activeNotifications empty while listener unbound")
+                    _isAttemptingConnection = false
+                    tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
+                    if (currentMediaSessionToken != null) clearSongContextAndHideLyrics()
+                    return
                 }
+
+                Log.d(TAG, "No active media notifications found (list is empty).")
                 updatePersistentNotification(buildStatusNotificationText())
 
                 if (currentMediaSessionToken != null) {
@@ -1890,6 +1940,151 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         }
     }
     private fun Int.dpToPx(): Int = (this * resources.displayMetrics.density).toInt()
+
+    private fun bindLyricsWindowView(view: View) {
+        lyricsView = view
+        knownLyricsOverlayViews.add(view)
+
+        songInfoTextView = view.findViewById(R.id.songInfoTextView)
+        lyricsRecyclerView = view.findViewById(R.id.lyricsRecyclerView)
+        expandCollapseButton = view.findViewById(R.id.expandCollapseButton)
+        translateButton = view.findViewById(R.id.translateButton)
+        val closeButton = view.findViewById<ImageButton>(R.id.closeButton)
+
+        val existingLayoutManager = lyricsRecyclerView?.layoutManager as? LinearLayoutManager
+        linearLayoutManager = existingLayoutManager ?: LinearLayoutManager(this).also {
+            lyricsRecyclerView?.layoutManager = it
+        }
+
+        val existingAdapter = lyricsRecyclerView?.adapter as? LyricsAdapter
+        lyricsAdapter = existingAdapter ?: LyricsAdapter(this, emptyList<TimedLyricLine>()).also {
+            lyricsRecyclerView?.adapter = it
+        }
+        lyricsRecyclerView?.itemAnimator = null
+
+        closeButton?.setOnClickListener {
+            wasHiddenByPausePreference = false
+            hideLyricsWindow()
+        }
+        expandCollapseButton?.setOnClickListener { toggleLyricsExpansion() }
+        translateButton?.setOnClickListener { toggleTranslation() }
+        view.setOnTouchListener(ViewMover())
+    }
+
+    private fun clearLyricsWindowReferences(clearTrackedView: Boolean = true) {
+        if (clearTrackedView) {
+            lyricsView = null
+            params = null
+            windowManager = null
+        }
+        songInfoTextView = null
+        lyricsRecyclerView = null
+        expandCollapseButton = null
+        translateButton = null
+        lyricsAdapter = null
+    }
+
+    private fun knownLyricsOverlayViewSnapshot(): List<View> {
+        val views = mutableListOf<View>()
+        lyricsView?.let { views.add(it) }
+        views.addAll(knownLyricsOverlayViews)
+        return views.distinct()
+    }
+
+    private fun ensureLyricsViewBoundToAttachedOverlay(reason: String): Boolean {
+        val currentView = lyricsView
+        if (currentView?.isAttachedToWindow == true) {
+            if (windowManager == null) {
+                windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            }
+            if (params == null) {
+                params = currentView.layoutParams as? WindowManager.LayoutParams
+            }
+            return true
+        }
+
+        val attachedView = knownLyricsOverlayViewSnapshot().firstOrNull { it.isAttachedToWindow }
+        if (attachedView != null) {
+            Log.w(TAG, "Rebinding lyrics window references to an attached overlay for $reason.")
+            if (windowManager == null) {
+                windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            }
+            params = params ?: (attachedView.layoutParams as? WindowManager.LayoutParams)
+            bindLyricsWindowView(attachedView)
+            return true
+        }
+
+        knownLyricsOverlayViews.removeAll { !it.isAttachedToWindow }
+        return false
+    }
+
+    private fun createLyricsWindowLayoutParams(): WindowManager.LayoutParams {
+        val overlayFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+        val savedWindowPosition = loadSavedWindowPosition()
+        return WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            overlayFlag,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            x = savedWindowPosition?.first ?: 0
+            y = savedWindowPosition?.second ?: 100
+        }
+    }
+
+    private fun detachKnownLyricsOverlayViews(reason: String): Boolean {
+        val knownViews = knownLyricsOverlayViewSnapshot()
+        if (knownViews.isEmpty()) {
+            return true
+        }
+
+        val currentWindowManager = windowManager ?: (getSystemService(Context.WINDOW_SERVICE) as WindowManager).also {
+            windowManager = it
+        }
+
+        var allDetached = true
+        val stillAttachedViews = mutableListOf<View>()
+
+        for (view in knownViews) {
+            if (!view.isAttachedToWindow) {
+                knownLyricsOverlayViews.remove(view)
+                continue
+            }
+
+            try {
+                currentWindowManager.removeViewImmediate(view)
+                Log.d(TAG, "Detached lyrics overlay for $reason.")
+            } catch (e: IllegalArgumentException) {
+                Log.w(TAG, "Lyrics overlay was already detached during $reason: ${e.message}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error detaching lyrics overlay during $reason", e)
+            }
+
+            if (view.isAttachedToWindow) {
+                allDetached = false
+                stillAttachedViews.add(view)
+            } else {
+                knownLyricsOverlayViews.remove(view)
+            }
+        }
+
+        if (!allDetached) {
+            stillAttachedViews.firstOrNull()?.let { attachedView ->
+                Log.w(TAG, "A lyrics overlay is still attached after $reason. Keeping it bound so later actions target the real window.")
+                params = params ?: (attachedView.layoutParams as? WindowManager.LayoutParams)
+                bindLyricsWindowView(attachedView)
+            }
+        }
+
+        return allDetached
+    }
+
     private fun showLyricsWindow(data: LyricsData) {
         if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) { Log.w(TAG, "showLyricsWindow: Aborting. ServiceJob cancelled or service not manually started."); return }
         if (Looper.myLooper() != Looper.getMainLooper()) {
@@ -1917,7 +2112,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                  if (actualCurrentData != null && actualCurrentData != data) {
                     showLyricsWindow(actualCurrentData)
                  } else if (actualCurrentData == null) {
-                    showLyricsWindow(LyricsData.Info(null, null, if (_listenerEverConnected) "Waiting for song..." else "Connecting listener... If stuck here, see the help section in the app", 0L))
+                    showLyricsWindow(LyricsData.Info(null, null, if (refreshListenerBindingState("showLyricsWindow waiting state")) "Waiting for song..." else "Connecting listener... If stuck here, see the help section in the app", 0L))
                  }
              }
              return
@@ -1957,6 +2152,13 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             return
         }
 
+        ensureLyricsViewBoundToAttachedOverlay("showLyricsWindow")
+        if (lyricsView != null && lyricsView?.isAttachedToWindow != true) {
+            Log.w(TAG, "showLyricsWindow: Found a stale detached overlay reference. Clearing it before recreating the window.")
+            lyricsView?.let { knownLyricsOverlayViews.remove(it) }
+            clearLyricsWindowReferences()
+        }
+
         if (lyricsView == null) {
             Log.d(TAG, "Inflating lyrics_overlay. Current song title for display: ${
                 when (data) {
@@ -1968,81 +2170,38 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             }")
             this.windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             val inflater = getSystemService(Context.LAYOUT_INFLATER_SERVICE) as LayoutInflater
+            val inflatedLyricsView: View
             try {
-                lyricsView = inflater.inflate(R.layout.lyrics_overlay, null)
+                inflatedLyricsView = inflater.inflate(R.layout.lyrics_overlay, null)
             } catch (e: Exception) {
                  Log.e(TAG, "Error inflating R.layout.lyrics_overlay: ${e.message}", e)
-                 lyricsView = null
+                 clearLyricsWindowReferences()
                  return
             }
-
-            songInfoTextView = lyricsView?.findViewById(R.id.songInfoTextView)
-            lyricsRecyclerView = lyricsView?.findViewById(R.id.lyricsRecyclerView)
-            expandCollapseButton = lyricsView?.findViewById(R.id.expandCollapseButton)
-            translateButton = lyricsView?.findViewById(R.id.translateButton)
-            val closeButton = lyricsView?.findViewById<ImageButton>(R.id.closeButton)
-
-            lyricsAdapter = LyricsAdapter(this, emptyList<TimedLyricLine>())
-            linearLayoutManager = LinearLayoutManager(this)
-
-            lyricsRecyclerView?.layoutManager = linearLayoutManager
-            lyricsRecyclerView?.adapter = lyricsAdapter
-            lyricsRecyclerView?.itemAnimator = null
-
-            closeButton?.setOnClickListener {
-                wasHiddenByPausePreference = false
-                hideLyricsWindow()
-            }
-            expandCollapseButton?.setOnClickListener { toggleLyricsExpansion() }
-            translateButton?.setOnClickListener { toggleTranslation() }
-            lyricsView?.setOnTouchListener(ViewMover())
-
-            val overlayFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            } else {
-                @Suppress("DEPRECATION")
-                WindowManager.LayoutParams.TYPE_PHONE
-            }
-            val savedWindowPosition = loadSavedWindowPosition()
-            this.params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                overlayFlag,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                PixelFormat.TRANSLUCENT
-            ).apply {
-                x = savedWindowPosition?.first ?: 0
-                y = savedWindowPosition?.second ?: 100
-            }
+            bindLyricsWindowView(inflatedLyricsView)
+            this.params = createLyricsWindowLayoutParams()
 
             try {
-                if (lyricsView?.isAttachedToWindow == false) {
-                    this.windowManager?.addView(lyricsView, this.params)
+                val currentLyricsView = lyricsView ?: return
+                if (!currentLyricsView.isAttachedToWindow) {
+                    this.windowManager?.addView(currentLyricsView, this.params)
                     Log.d(TAG, "Lyrics window added to WindowManager.")
-                } else if (lyricsView == null) {
-                    Log.e(TAG, "lyricsView became null after inflation before addView.")
-                    return
-                }
-                 else {
+                } else {
                     Log.w(TAG, "LyricsView was unexpectedly already attached before initial addView.")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error adding lyrics view to WindowManager: ${e.message}", e)
-                this.lyricsView = null
-                this.songInfoTextView = null
-                this.lyricsRecyclerView = null
-                this.expandCollapseButton = null
-                this.translateButton = null
-                this.lyricsAdapter = null
+                lyricsView?.let { knownLyricsOverlayViews.remove(it) }
+                clearLyricsWindowReferences()
                 return
             }
         } else {
             Log.d(TAG, "Lyrics window already exists. Updating content. Attached: ${lyricsView?.isAttachedToWindow}")
-             if (this.windowManager == null || this.params == null) {
-                Log.w(TAG, "WindowManager or LayoutParams became null while lyricsView exists. Re-initializing by hiding and showing.")
-                hideLyricsWindow()
-                showLyricsWindow(data)
-                return
+            if (this.windowManager == null) {
+                this.windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            }
+            if (this.params == null) {
+                this.params = (lyricsView?.layoutParams as? WindowManager.LayoutParams) ?: createLyricsWindowLayoutParams()
             }
         }
 
@@ -2537,30 +2696,11 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
 
         persistWindowPositionIfEnabled()
 
-        val wm = this.windowManager
-        val lv = this.lyricsView
-
-        if (lv != null && wm != null) {
-            try {
-                if (lv.isAttachedToWindow) {
-                    wm.removeView(lv)
-                    Log.d(TAG, "Lyrics window removed from WindowManager.")
-                } else {
-                    Log.d(TAG, "Lyrics window was not attached or already removed prior to hide call.")
-                }
-            }
-            catch (e: Exception) { Log.e(TAG, "Error hiding lyrics window", e) }
-            finally {
-                this.lyricsView = null
-                this.songInfoTextView = null
-                this.lyricsRecyclerView = null
-                this.expandCollapseButton = null
-                this.translateButton = null
-                this.lyricsAdapter = null
-                Log.d(TAG, "Lyrics UI components nulled after hide.")
-            }
+        if (detachKnownLyricsOverlayViews("hideLyricsWindow")) {
+            clearLyricsWindowReferences()
+            Log.d(TAG, "Lyrics UI components cleared after hide.")
         } else {
-            Log.d(TAG, "hideLyricsWindow: lyricsView or windowManager was already null. No action needed.")
+            Log.w(TAG, "hideLyricsWindow: At least one overlay could not be detached yet. Keeping references for retry to avoid orphaned duplicates.")
         }
 
         if (isServiceManuallyStarted.get()) {
@@ -2834,7 +2974,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             return "Notification access missing. Tap to fix."
         }
 
-        if (!_listenerEverConnected) {
+        if (!refreshListenerBindingState("buildStatusNotificationText")) {
             return "Waiting for notification listener..."
         }
 
@@ -2902,7 +3042,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             handleMissingNotificationAccess("Health check detected missing notification access")
             consecutiveListenerRecoveryAttempts.set(0)
             nextDelay = LISTENER_HEALTH_SHORT_INTERVAL_MS
-        } else if (!_listenerEverConnected) {
+        } else if (!refreshListenerBindingState("evaluateListenerHealth")) {
             // Don't show floating window for status messages - only use persistent notification
             // maybeShowStatusInfo("Waiting for notification listener connection… If stuck here, Go to the app's help and support section and follow the steps under question 1. ")
             updatePersistentNotification("Waiting for notification listener...")
@@ -3049,6 +3189,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             cleanupMediaController()
         }
         currentMediaSessionToken = null
+        _listenerCurrentlyBound = false
 
         mainHandler.removeCallbacks(executeFindActiveMediaSessionsRunnable)
         cancelListenerHealthChecks("onDestroy")
