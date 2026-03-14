@@ -25,6 +25,7 @@ const EventChannel _debugLogChannel = EventChannel(
 );
 
 const int _android13ApiLevel = 33;
+const int _android12ApiLevel = 31;
 
 const _defaultSeedColor = Color(0xFF6750A4);
 
@@ -33,6 +34,7 @@ const String _materialYouThemingKey = 'material_you_theming';
 const String _rememberWindowPositionKey = 'remember_window_position';
 const String _hideWindowOnPauseKey = 'hide_lyrics_window_on_pause';
 const String _dynamicLyricsWindowColorsKey = 'lyrics_window_dynamic_colors';
+const String _simulateLegacyOverlayKey = 'simulate_legacy_overlay';
 const String _lyricsWindowTitleColorKey = 'lyrics_window_title_color';
 const String _lyricsWindowBackgroundColorKey = 'lyrics_window_background_color';
 const String _lyricsWindowHighlightColorKey = 'lyrics_window_highlight_color';
@@ -971,6 +973,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   bool _rememberLyricsWindowPosition = false;
   bool _hideLyricsWindowOnPause = false;
   bool _dynamicLyricsWindowColors = true;
+  bool _isLyricsWindowBlurEnabled = true;
 
   Color _lyricsWindowTitleColor = _defaultLyricsWindowTitleColor;
   Color _lyricsWindowBackgroundColor = _defaultLyricsWindowBackgroundColor;
@@ -1130,6 +1133,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     final hideOnPause = prefs.getBool(_hideWindowOnPauseKey) ?? false;
     final dynamicLyricsColours =
         prefs.getBool(_dynamicLyricsWindowColorsKey) ?? true;
+    final simulateLegacyOverlay =
+        prefs.getBool(_simulateLegacyOverlayKey) ?? false;
     final storedTitleColor = prefs.getInt(_lyricsWindowTitleColorKey);
     final storedBackgroundColor = prefs.getInt(_lyricsWindowBackgroundColorKey);
     final storedHighlightColor = prefs.getInt(_lyricsWindowHighlightColorKey);
@@ -1138,6 +1143,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _rememberLyricsWindowPosition = rememberPosition;
       _hideLyricsWindowOnPause = hideOnPause;
       _dynamicLyricsWindowColors = dynamicLyricsColours;
+      _isLyricsWindowBlurEnabled = !simulateLegacyOverlay;
       _lyricsWindowTitleColor = Color(
         storedTitleColor ?? _defaultLyricsWindowTitleColor.value,
       );
@@ -1172,6 +1178,14 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_dynamicLyricsWindowColorsKey, value);
+  }
+
+  Future<void> _onLyricsWindowBlurEnabledChanged(bool value) async {
+    setState(() {
+      _isLyricsWindowBlurEnabled = value;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_simulateLegacyOverlayKey, !value);
   }
 
   Future<void> _onLyricsWindowTitleColorChanged(Color color) async {
@@ -2196,12 +2210,36 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: Text(
-                'Album art tones will be used automatically when this is on. Changes will apply from next song onwards.',
+                'Album art will be used for the lyrics window. Changes will apply from next song onwards.',
                 style: textTheme.bodySmall?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
+            if (_androidSdkInt != null && _androidSdkInt! >= _android12ApiLevel)
+              const Divider(indent: 16, endIndent: 16),
+            if (_androidSdkInt != null && _androidSdkInt! >= _android12ApiLevel)
+              SwitchListTile.adaptive(
+                value: _isLyricsWindowBlurEnabled,
+                onChanged: _onLyricsWindowBlurEnabledChanged,
+                title: Text(
+                  'Blur effect on lyrics window',
+                  style: textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              ),
+            if (_androidSdkInt != null && _androidSdkInt! >= _android12ApiLevel)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Text(
+                  'On newer (Android 12+) devices, the lyrics window gets a more polished look with a blur over the album art. Changes will apply from next song onwards.',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 600),
               switchInCurve: expressiveStandardCurve,

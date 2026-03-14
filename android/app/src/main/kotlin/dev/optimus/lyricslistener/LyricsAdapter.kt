@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.TextView
+import androidx.core.graphics.ColorUtils
 import androidx.recyclerview.widget.RecyclerView
 
 class LyricsAdapter(
@@ -25,6 +26,8 @@ class LyricsAdapter(
     private var normalLineTextColor: Int = Color.WHITE
     private var highlightedLineTextColor: Int = Color.WHITE
     private var highlightedLineBackgroundColor: Int = Color.argb(70, 200, 200, 200)
+    private var inactiveSyncedLineTextColor: Int = Color.parseColor("#8CFFFFFF")
+    private var showHighlightedLineBackground: Boolean = true
     private val attributionTextColor: Int = Color.parseColor("#A0A0A0")
 
     // Base text size for lyrics
@@ -38,11 +41,14 @@ class LyricsAdapter(
     fun updateThemeColors(
         normalLineTextColor: Int,
         highlightedLineTextColor: Int,
-        highlightedLineBackgroundColor: Int
+        highlightedLineBackgroundColor: Int,
+        showHighlightedLineBackground: Boolean
     ) {
         this.normalLineTextColor = normalLineTextColor
         this.highlightedLineTextColor = highlightedLineTextColor
         this.highlightedLineBackgroundColor = highlightedLineBackgroundColor
+        this.showHighlightedLineBackground = showHighlightedLineBackground
+        inactiveSyncedLineTextColor = ColorUtils.setAlphaComponent(highlightedLineTextColor, 0x8C)
         notifyDataSetChanged()
     }
 
@@ -74,7 +80,13 @@ class LyricsAdapter(
             holder.lyricText.visibility = View.GONE
             holder.visualizer.visibility = View.VISIBLE
             holder.visualizer.setBarColor(
-                if (isSyncedMode && position == highlightedPosition) highlightedLineTextColor else normalLineTextColor
+                if (isSyncedMode && position == highlightedPosition) {
+                    highlightedLineTextColor
+                } else if (isSyncedMode) {
+                    inactiveSyncedLineTextColor
+                } else {
+                    normalLineTextColor
+                }
             )
             holder.visualizer.alpha = if (isSyncedMode && highlightedPosition != -1 && position != highlightedPosition) {
                 if (position < highlightedPosition) 0.40f else 0.60f
@@ -89,7 +101,7 @@ class LyricsAdapter(
             }
 
             // Apply highlight background for instrumental lines too
-            if (isSyncedMode && position == highlightedPosition) {
+            if (isSyncedMode && position == highlightedPosition && showHighlightedLineBackground) {
                 val bg = GradientDrawable().apply {
                     setColor(highlightedLineBackgroundColor)
                     cornerRadius = highlightRadius
@@ -122,7 +134,7 @@ class LyricsAdapter(
 
         // Reset default appearance first
         holder.itemView.background = null
-        holder.lyricText.setTextColor(normalLineTextColor)
+        holder.lyricText.setTextColor(if (isSyncedMode) inactiveSyncedLineTextColor else normalLineTextColor)
         holder.lyricText.setTypeface(null, Typeface.NORMAL)
         holder.lyricText.setTextSize(TypedValue.COMPLEX_UNIT_SP, normalTextSizeSp)
         holder.lyricText.alpha = 1.0f
@@ -131,11 +143,13 @@ class LyricsAdapter(
         if (isSyncedMode) {
             if (position == highlightedPosition) {
                 // Current highlighted line — M3E rounded pill background with spring-physics scale emphasis
-                val bg = GradientDrawable().apply {
-                    setColor(highlightedLineBackgroundColor)
-                    cornerRadius = highlightRadius
+                if (showHighlightedLineBackground) {
+                    val bg = GradientDrawable().apply {
+                        setColor(highlightedLineBackgroundColor)
+                        cornerRadius = highlightRadius
+                    }
+                    holder.itemView.background = bg
                 }
-                holder.itemView.background = bg
                 holder.lyricText.setTextColor(highlightedLineTextColor)
                 holder.lyricText.setTypeface(null, Typeface.BOLD)
                 holder.lyricText.setTextSize(TypedValue.COMPLEX_UNIT_SP, highlightedTextSizeSp)
@@ -169,21 +183,21 @@ class LyricsAdapter(
                 if (highlightedPosition != -1) { // If there is an active highlight
                     val targetAlpha: Float
                     if (position < highlightedPosition) {
-                        // Past lines — fade out progressively
+                        // Past lines sit below the 55%-white baseline and fall off gently.
                         val diff = highlightedPosition - position
                         targetAlpha = when {
-                            diff == 1 -> 0.50f
-                            diff == 2 -> 0.38f
-                            else -> 0.28f
+                            diff == 1 -> 0.82f
+                            diff == 2 -> 0.68f
+                            else -> 0.54f
                         }
                     } else {
-                        // Upcoming lines — slightly brighter than past
+                        // Upcoming lines keep the baseline readability until they become current.
                         val diff = position - highlightedPosition
                         targetAlpha = when (diff) {
-                            1 -> 0.75f
-                            2 -> 0.55f
-                            3 -> 0.42f
-                            else -> 0.32f
+                            1 -> 1.0f
+                            2 -> 0.82f
+                            3 -> 0.68f
+                            else -> 0.54f
                         }
                     }
                     // Smoothly animate alpha transitions for fluid fading
@@ -193,8 +207,8 @@ class LyricsAdapter(
                         .setInterpolator(DecelerateInterpolator(2.0f))
                         .start()
                 } else {
-                    // Synced mode, but no line is currently highlighted
-                    holder.lyricText.alpha = 0.65f
+                    // Synced mode, but no line is currently highlighted: stick to the 55%-white baseline.
+                    holder.lyricText.alpha = 1.0f
                 }
             }
         } else {

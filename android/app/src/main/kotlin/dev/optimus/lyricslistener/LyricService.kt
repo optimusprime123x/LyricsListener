@@ -8,6 +8,7 @@ import android.util.Log
 import android.app.Notification
 import android.content.ComponentName
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -53,7 +54,12 @@ import androidx.core.view.isVisible
 import androidx.palette.graphics.Palette
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Matrix
 import android.graphics.PorterDuff
+import android.graphics.RenderEffect
+import android.graphics.Shader
 import android.graphics.drawable.GradientDrawable
 import androidx.recyclerview.widget.LinearSmoothScroller
 import io.ktor.serialization.kotlinx.KotlinxSerializationConverter
@@ -62,6 +68,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.selects.select
+import android.widget.ImageView
 
 
 class LyricService : NotificationListenerService() {
@@ -71,11 +78,16 @@ class LyricService : NotificationListenerService() {
     private val NOTIFICATION_ID = 1
     private val HIGHLIGHT_UPDATE_INTERVAL_MS = 200L
     private val CONNECT_RETRY_DELAY_MS = 3000L
+    private val SONG_TRANSITION_CLEAR_GRACE_MS = 750L
     private val MIN_REBIND_INTERVAL_MS = 9000L
+    private val INITIAL_BIND_REBIND_INTERVAL_MS = 2500L
     private val LISTENER_HEALTH_SHORT_INTERVAL_MS = TimeUnit.SECONDS.toMillis(15)
     private val LISTENER_HEALTH_LONG_INTERVAL_MS = TimeUnit.MINUTES.toMillis(1)
     private val LISTENER_STALE_NOTIFICATION_THRESHOLD_MS = TimeUnit.MINUTES.toMillis(1)
     private val MAX_CONSECUTIVE_RECOVERY_ATTEMPTS = 3
+    private val LISTENER_COMPONENT_RESET_DELAY_MS = TimeUnit.SECONDS.toMillis(6)
+    private val LISTENER_COMPONENT_RESET_INTERVAL_MS = TimeUnit.SECONDS.toMillis(30)
+    private val LISTENER_COMPONENT_REENABLE_DELAY_MS = 350L
 
     @Volatile private var windowManager: WindowManager? = null
     @Volatile private var lyricsView: View? = null
@@ -86,6 +98,8 @@ class LyricService : NotificationListenerService() {
     private var songInfoTextView: TextView? = null
     private var expandCollapseButton: ImageButton? = null
     private var translateButton: ImageButton? = null
+    private var overlayAlbumArtImageView: ImageView? = null
+    private var overlayScrimView: View? = null
     private var lyricsAdapter: LyricsAdapter? = null
     private lateinit var linearLayoutManager: LinearLayoutManager
 
@@ -224,12 +238,15 @@ class LyricService : NotificationListenerService() {
 
     private val lastListenerRebindAttempt = AtomicLong(0L)
     private val lastListenerHeartbeatMs = AtomicLong(0L)
+    private val listenerUnboundSinceMs = AtomicLong(0L)
+    private val lastListenerComponentResetAttemptMs = AtomicLong(0L)
     private val consecutiveListenerRecoveryAttempts = AtomicInteger(0)
     private val nextListenerHealthCheckAtMs = AtomicLong(0L)
     private val lastNotificationAccessDebugLogMs = AtomicLong(0L)
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private val listenerHealthHandler by lazy { Handler(Looper.getMainLooper()) }
     private val listenerHealthCheckRunnable = Runnable { evaluateListenerHealth() }
+    private var pendingSongContextClearRunnable: Runnable? = null
 
     @Volatile private var activeMediaController: MediaController? = null
     private var mediaControllerCallback: MediaController.Callback? = null
@@ -240,6 +257,21 @@ class LyricService : NotificationListenerService() {
     private val COLLAPSED_LYRICS_MAX_HEIGHT_DP = 100
     private lateinit var notificationManager: NotificationManager
     private val EXPANDED_LYRICS_MAX_HEIGHT_DP = 300
+    private val OVERLAY_ARTWORK_ZOOM = 1.25f
+    private val OVERLAY_ARTWORK_VERTICAL_BIAS = 0.08f
+    private val overlayArtworkColorFilter by lazy {
+        val saturationMatrix = ColorMatrix().apply { setSaturation(1.2f) }
+        val brightnessMatrix = ColorMatrix(
+            floatArrayOf(
+                0.5f, 0f, 0f, 0f, 0f,
+                0f, 0.5f, 0f, 0f, 0f,
+                0f, 0f, 0.5f, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f
+            )
+        )
+        saturationMatrix.postConcat(brightnessMatrix)
+        ColorMatrixColorFilter(saturationMatrix)
+    }
 
     private enum class LyricsProvider {
         MUSIXMATCH,
@@ -368,6 +400,7 @@ class LyricService : NotificationListenerService() {
         private const val PREF_REMEMBER_WINDOW_POSITION_X = "flutter.remember_window_position_x"
         private const val PREF_REMEMBER_WINDOW_POSITION_Y = "flutter.remember_window_position_y"
         private const val PREF_DYNAMIC_LYRICS_WINDOW_COLORS = "flutter.lyrics_window_dynamic_colors"
+        private const val PREF_SIMULATE_LEGACY_OVERLAY = "flutter.simulate_legacy_overlay"
         private const val PREF_LYRICS_WINDOW_TITLE_COLOR = "flutter.lyrics_window_title_color"
     private const val PREF_LYRICS_WINDOW_BACKGROUND_COLOR = "flutter.lyrics_window_background_color"
     private const val PREF_LYRICS_WINDOW_HIGHLIGHT_COLOR = "flutter.lyrics_window_highlight_color"
@@ -429,6 +462,7 @@ class LyricService : NotificationListenerService() {
     }
 
     private fun markListenerConnected(reason: String) {
+        listenerUnboundSinceMs.set(0L)
         if (!_listenerCurrentlyBound) {
             _listenerCurrentlyBound = true
             Log.i(TAG, "markListenerConnected: Listener is currently bound ($reason).")
@@ -436,6 +470,20 @@ class LyricService : NotificationListenerService() {
         if (!_listenerEverConnected) {
             _listenerEverConnected = true
             Log.i(TAG, "markListenerConnected: Listener considered connected ($reason).")
+        }
+    }
+
+    private fun markListenerUnbound(reason: String) {
+        val now = SystemClock.elapsedRealtime()
+        val previousUnboundSince = listenerUnboundSinceMs.getAndUpdate { existing ->
+            if (existing == 0L) now else existing
+        }
+
+        if (_listenerCurrentlyBound) {
+            _listenerCurrentlyBound = false
+            Log.w(TAG, "refreshListenerBindingState: Listener no longer appears bound ($reason).")
+        } else if (previousUnboundSince == 0L) {
+            Log.w(TAG, "Notification listener service not yet bound.")
         }
     }
 
@@ -452,11 +500,57 @@ class LyricService : NotificationListenerService() {
         val isBound = isListenerBoundBySystem()
         if (isBound) {
             markListenerConnected(reason)
-        } else if (_listenerCurrentlyBound) {
-            _listenerCurrentlyBound = false
-            Log.w(TAG, "refreshListenerBindingState: Listener no longer appears bound ($reason).")
+        } else {
+            markListenerUnbound(reason)
         }
         return isBound
+    }
+
+    private fun cancelPendingSongContextClear(reason: String) {
+        val pendingRunnable = pendingSongContextClearRunnable ?: return
+        mainHandler.removeCallbacks(pendingRunnable)
+        pendingSongContextClearRunnable = null
+        Log.d(TAG, "cancelPendingSongContextClear: Cancelled pending clear. Reason: $reason")
+    }
+
+    private fun scheduleSongContextClearAndHideLyrics(reason: String) {
+        if (!isServiceManuallyStarted.get()) return
+
+        val expectedToken = currentMediaSessionToken
+        val expectedTitle = lastDetectedSongTitle
+        val expectedArtist = lastDetectedSongArtist
+
+        cancelPendingSongContextClear("reschedule for $reason")
+
+        lateinit var runnable: Runnable
+        runnable = Runnable {
+            if (pendingSongContextClearRunnable !== runnable) {
+                return@Runnable
+            }
+            pendingSongContextClearRunnable = null
+
+            val tokenUnchanged = currentMediaSessionToken == expectedToken
+            val titleUnchanged = lastDetectedSongTitle == expectedTitle
+            val artistUnchanged = lastDetectedSongArtist == expectedArtist
+
+            if (!tokenUnchanged || !titleUnchanged || !artistUnchanged) {
+                Log.d(
+                    TAG,
+                    "scheduleSongContextClearAndHideLyrics: Skipping delayed clear for $reason because context changed to '$lastDetectedSongTitle'/'$lastDetectedSongArtist' ($currentMediaSessionToken)."
+                )
+                return@Runnable
+            }
+
+            Log.i(TAG, "scheduleSongContextClearAndHideLyrics: Executing delayed clear. Reason: $reason")
+            clearSongContextAndHideLyrics()
+        }
+
+        pendingSongContextClearRunnable = runnable
+        mainHandler.postDelayed(runnable, SONG_TRANSITION_CLEAR_GRACE_MS)
+        Log.d(
+            TAG,
+            "scheduleSongContextClearAndHideLyrics: Scheduled clear in ${SONG_TRANSITION_CLEAR_GRACE_MS}ms. Reason: $reason. Token=$expectedToken, Title='$expectedTitle'"
+        )
     }
 
     private fun startForegroundWithNotification(text: String) {
@@ -529,7 +623,9 @@ class LyricService : NotificationListenerService() {
                 _listenerEverConnected = false
                 _listenerCurrentlyBound = false
                 _isAttemptingConnection = false
+                listenerUnboundSinceMs.set(0L)
                 lastListenerRebindAttempt.set(0L)
+                lastListenerComponentResetAttemptMs.set(0L)
                 clearSongContextAndHideLyrics()
                 requestNotificationListenerRebind("User initiated start", force = true)
                 if(musixmatchUserToken == null) initializeMusixmatchToken()
@@ -583,6 +679,7 @@ class LyricService : NotificationListenerService() {
         Log.i(TAG, "performStopActions: Initiating service stop procedures.")
         isServiceManuallyStarted.set(false)
         wasHiddenByPausePreference = false
+        cancelPendingSongContextClear("performStopActions")
         mainHandler.removeCallbacks(executeFindActiveMediaSessionsRunnable)
         cancelListenerHealthChecks("performStopActions")
         consecutiveListenerRecoveryAttempts.set(0)
@@ -601,6 +698,8 @@ class LyricService : NotificationListenerService() {
         _listenerEverConnected = false
         _listenerCurrentlyBound = false
         _isAttemptingConnection = false
+        listenerUnboundSinceMs.set(0L)
+        lastListenerComponentResetAttemptMs.set(0L)
 
 
         lyricsHighlightingJob?.cancel()
@@ -674,6 +773,67 @@ class LyricService : NotificationListenerService() {
         mainHandler.postDelayed(executeFindActiveMediaSessionsRunnable, delayMs)
     }
 
+    private fun currentListenerRebindIntervalMs(): Long {
+        return if (!_listenerEverConnected || !_listenerCurrentlyBound) {
+            INITIAL_BIND_REBIND_INTERVAL_MS
+        } else {
+            MIN_REBIND_INTERVAL_MS
+        }
+    }
+
+    private fun maybeResetNotificationListenerComponent(reason: String) {
+        if (!isServiceManuallyStarted.get()) return
+        if (!hasNotificationAccess()) return
+
+        val unboundSince = listenerUnboundSinceMs.get()
+        if (unboundSince == 0L) return
+
+        val now = SystemClock.elapsedRealtime()
+        if (now - unboundSince < LISTENER_COMPONENT_RESET_DELAY_MS) {
+            return
+        }
+
+        val lastResetAttempt = lastListenerComponentResetAttemptMs.get()
+        if (now - lastResetAttempt < LISTENER_COMPONENT_RESET_INTERVAL_MS) {
+            return
+        }
+        if (!lastListenerComponentResetAttemptMs.compareAndSet(lastResetAttempt, now)) {
+            return
+        }
+
+        val componentName = ComponentName(this, javaClass)
+        val packageManager = packageManager
+
+        Log.w(TAG, "Forcing notification listener component reset. Reason: $reason")
+
+        try {
+            packageManager.setComponentEnabledSetting(
+                componentName,
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to disable notification listener component during recovery: ${e.message}", e)
+            return
+        }
+
+        mainHandler.postDelayed({
+            try {
+                packageManager.setComponentEnabledSetting(
+                    componentName,
+                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    PackageManager.DONT_KILL_APP
+                )
+                lastListenerRebindAttempt.set(0L)
+                _listenerCurrentlyBound = false
+                requestNotificationListenerRebind("Component reset recovery: $reason", force = true)
+                tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to re-enable notification listener component during recovery: ${e.message}", e)
+            }
+        }, LISTENER_COMPONENT_REENABLE_DELAY_MS)
+    }
+
     private fun requestNotificationListenerRebind(reason: String, force: Boolean = false) {
         if (!isServiceManuallyStarted.get()) {
             Log.d(TAG, "requestNotificationListenerRebind: Skipping ($reason) because service is not marked as manually started.")
@@ -689,8 +849,10 @@ class LyricService : NotificationListenerService() {
         val now = SystemClock.elapsedRealtime()
         if (!force) {
             val lastAttempt = lastListenerRebindAttempt.get()
-            if (now - lastAttempt < MIN_REBIND_INTERVAL_MS) {
+            val minIntervalMs = currentListenerRebindIntervalMs()
+            if (now - lastAttempt < minIntervalMs) {
                 Log.d(TAG, "requestNotificationListenerRebind: Recent attempt ${now - lastAttempt}ms ago. Skipping. Reason: $reason")
+                maybeResetNotificationListenerComponent("rebind throttled: $reason")
                 return
             }
             if (!lastListenerRebindAttempt.compareAndSet(lastAttempt, now)) {
@@ -763,6 +925,7 @@ class LyricService : NotificationListenerService() {
                 Log.w(TAG, "executeFindActiveMediaSessions: Listener is not currently bound. Requesting recovery before media scan.")
                 updatePersistentNotification("Waiting for notification listener...")
                 requestNotificationListenerRebind("Listener not bound before media scan")
+                maybeResetNotificationListenerComponent("Listener not bound before media scan")
                 _isAttemptingConnection = false
                 tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
                 if (currentMediaSessionToken != null) clearSongContextAndHideLyrics()
@@ -811,6 +974,7 @@ class LyricService : NotificationListenerService() {
                     Log.w(TAG, "executeFindActiveMediaSessions: activeNotifications was empty because the listener is no longer bound.")
                     updatePersistentNotification("Waiting for notification listener...")
                     requestNotificationListenerRebind("activeNotifications empty while listener unbound")
+                    maybeResetNotificationListenerComponent("activeNotifications empty while listener unbound")
                     _isAttemptingConnection = false
                     tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
                     if (currentMediaSessionToken != null) clearSongContextAndHideLyrics()
@@ -821,8 +985,8 @@ class LyricService : NotificationListenerService() {
                 updatePersistentNotification(buildStatusNotificationText())
 
                 if (currentMediaSessionToken != null) {
-                    Log.d(TAG, "executeFindActiveMediaSessions: activeNotifications empty, clearing existing song context for token $currentMediaSessionToken.")
-                    clearSongContextAndHideLyrics()
+                    Log.d(TAG, "executeFindActiveMediaSessions: activeNotifications empty, scheduling delayed clear for token $currentMediaSessionToken.")
+                    scheduleSongContextClearAndHideLyrics("activeNotifications empty while listener still bound")
                 }
                 return
             }
@@ -875,6 +1039,7 @@ class LyricService : NotificationListenerService() {
 
     private fun setupMediaController(token: MediaSession.Token) {
         if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) { Log.w(TAG, "setupMediaController: Aborting. ServiceJob cancelled or service not manually started."); return }
+        cancelPendingSongContextClear("setupMediaController($token)")
         if (activeMediaController != null && currentMediaSessionToken == token && activeMediaController!!.sessionToken == token) {
             Log.d(TAG, "MediaController already set up for this token ($token). Forcing metadata/playback state update.")
             activeMediaController?.playbackState?.let { mediaControllerCallback?.onPlaybackStateChanged(it) }
@@ -956,8 +1121,8 @@ class LyricService : NotificationListenerService() {
                     super.onSessionDestroyed()
                     Log.d(TAG, "onSessionDestroyed received for token ${newController.sessionToken} from pkg ${newController.packageName}. Current service token: $currentMediaSessionToken")
                     if (newController.sessionToken == currentMediaSessionToken) {
-                        Log.i(TAG, "MediaSession Destroyed for active token $currentMediaSessionToken (pkg: ${newController.packageName}). Cleaning up context.")
-                        clearSongContextAndHideLyrics()
+                        Log.i(TAG, "MediaSession Destroyed for active token $currentMediaSessionToken (pkg: ${newController.packageName}). Scheduling delayed cleanup.")
+                        scheduleSongContextClearAndHideLyrics("active session destroyed for ${newController.packageName}")
                     } else {
                         Log.w(TAG, "MediaSession Destroyed for a token ${newController.sessionToken} (pkg: ${newController.packageName}) that is NOT the current active token ($currentMediaSessionToken).")
                          if (activeMediaController != null && activeMediaController?.sessionToken == newController.sessionToken) {
@@ -997,12 +1162,15 @@ class LyricService : NotificationListenerService() {
         val newDuration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
 
         Log.d(TAG, "Processing Meta ($source): Title='$newTitle', Artist='$newArtist', Duration='${newDuration}ms', PlaybackState: ${stateToString(playbackState)}")
+        if (!newTitle.isNullOrBlank()) {
+            cancelPendingSongContextClear("metadata update for '$newTitle'")
+        }
 
         if (newTitle.isNullOrBlank() && metadata != null) {
             Log.d(TAG, "Media metadata ($source) missing title. Not processing as new song.")
             if (lastDetectedSongTitle != null && (activeMediaController?.sessionToken == currentMediaSessionToken || currentMediaSessionToken == null)) {
-                 Log.d(TAG, "Title became null/blank for current session $currentMediaSessionToken, previously was '$lastDetectedSongTitle'. Clearing context.")
-                 clearSongContextAndHideLyrics()
+                 Log.d(TAG, "Title became null/blank for current session $currentMediaSessionToken, previously was '$lastDetectedSongTitle'. Scheduling delayed clear.")
+                 scheduleSongContextClearAndHideLyrics("metadata title became blank")
             }
             return
         }
@@ -1118,6 +1286,7 @@ class LyricService : NotificationListenerService() {
     private fun _onNotificationPosted(sbn: StatusBarNotification, source: String) {
         if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) { Log.w(TAG, "_onNotificationPosted: Ignoring. ServiceJob cancelled or service not manually started."); return }
         Log.d(TAG, "_onNotificationPosted (source: $source, pkg: ${sbn.packageName})")
+        cancelPendingSongContextClear("notification posted from ${sbn.packageName}")
         markListenerConnected("onNotificationPosted from ${sbn.packageName}")
         registerActivity()
         scheduleListenerHealthCheck(LISTENER_HEALTH_LONG_INTERVAL_MS, "notification from ${sbn.packageName}")
@@ -1199,6 +1368,7 @@ class LyricService : NotificationListenerService() {
         }
     }
     private fun clearSongContextAndHideLyrics() {
+        cancelPendingSongContextClear("clearSongContextAndHideLyrics immediate")
         val tokenThatWasActive = currentMediaSessionToken
         Log.i(TAG, "clearSongContextAndHideLyrics: Starting. Was for token: $tokenThatWasActive, Title: $lastDetectedSongTitle")
 
@@ -1949,6 +2119,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         lyricsRecyclerView = view.findViewById(R.id.lyricsRecyclerView)
         expandCollapseButton = view.findViewById(R.id.expandCollapseButton)
         translateButton = view.findViewById(R.id.translateButton)
+        overlayAlbumArtImageView = view.findViewById(R.id.overlayAlbumArtImageView)
+        overlayScrimView = view.findViewById(R.id.overlayScrimView)
         val closeButton = view.findViewById<ImageButton>(R.id.closeButton)
 
         val existingLayoutManager = lyricsRecyclerView?.layoutManager as? LinearLayoutManager
@@ -1963,12 +2135,25 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         lyricsRecyclerView?.itemAnimator = null
 
         closeButton?.setOnClickListener {
+            if (handleLyricsOverlayInteraction(view, "close button")) {
+                return@setOnClickListener
+            }
             wasHiddenByPausePreference = false
             hideLyricsWindow()
         }
-        expandCollapseButton?.setOnClickListener { toggleLyricsExpansion() }
-        translateButton?.setOnClickListener { toggleTranslation() }
-        view.setOnTouchListener(ViewMover())
+        expandCollapseButton?.setOnClickListener {
+            if (handleLyricsOverlayInteraction(view, "expand button")) {
+                return@setOnClickListener
+            }
+            toggleLyricsExpansion()
+        }
+        translateButton?.setOnClickListener {
+            if (handleLyricsOverlayInteraction(view, "translate button")) {
+                return@setOnClickListener
+            }
+            toggleTranslation()
+        }
+        view.setOnTouchListener(ViewMover(view))
     }
 
     private fun clearLyricsWindowReferences(clearTrackedView: Boolean = true) {
@@ -1981,6 +2166,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         lyricsRecyclerView = null
         expandCollapseButton = null
         translateButton = null
+        overlayAlbumArtImageView = null
+        overlayScrimView = null
         lyricsAdapter = null
     }
 
@@ -1991,29 +2178,177 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         return views.distinct()
     }
 
-    private fun ensureLyricsViewBoundToAttachedOverlay(reason: String): Boolean {
-        val currentView = lyricsView
-        if (currentView?.isAttachedToWindow == true) {
-            if (windowManager == null) {
-                windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            }
-            if (params == null) {
-                params = currentView.layoutParams as? WindowManager.LayoutParams
-            }
+    private fun syncLyricsOverlayBinding(view: View) {
+        lyricsView = view
+        knownLyricsOverlayViews.add(view)
+        if (windowManager == null) {
+            windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        }
+        params = view.layoutParams as? WindowManager.LayoutParams ?: params
+    }
+
+    private fun detachLyricsOverlayView(view: View, reason: String): Boolean {
+        if (!view.isAttachedToWindow) {
+            knownLyricsOverlayViews.remove(view)
             return true
         }
 
-        val attachedView = knownLyricsOverlayViewSnapshot().firstOrNull { it.isAttachedToWindow }
+        val currentWindowManager = windowManager ?: (getSystemService(Context.WINDOW_SERVICE) as WindowManager).also {
+            windowManager = it
+        }
+
+        try {
+            currentWindowManager.removeViewImmediate(view)
+            Log.d(TAG, "Detached lyrics overlay for $reason.")
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "Lyrics overlay was already detached during $reason: ${e.message}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error detaching lyrics overlay during $reason", e)
+        }
+
+        if (!view.isAttachedToWindow) {
+            knownLyricsOverlayViews.remove(view)
+            return true
+        }
+
+        return false
+    }
+
+    private fun pruneDuplicateLyricsOverlayViews(reason: String, preferredView: View? = lyricsView): View? {
+        val attachedViews = knownLyricsOverlayViewSnapshot().filter { it.isAttachedToWindow }
+        if (attachedViews.isEmpty()) {
+            knownLyricsOverlayViews.removeAll { !it.isAttachedToWindow }
+            return null
+        }
+
+        val survivingView = when {
+            preferredView?.isAttachedToWindow == true -> preferredView
+            else -> attachedViews.lastOrNull()
+        } ?: return null
+
+        val duplicateViews = attachedViews.filter { it !== survivingView }
+        if (duplicateViews.isNotEmpty()) {
+            Log.w(TAG, "Pruning ${duplicateViews.size} duplicate lyrics overlay(s) during $reason.")
+        }
+
+        var attachedDuplicateRemains = false
+        duplicateViews.forEach { duplicateView ->
+            if (!detachLyricsOverlayView(duplicateView, "$reason duplicate cleanup")) {
+                attachedDuplicateRemains = true
+            }
+        }
+
+        if (
+            lyricsView !== survivingView ||
+            songInfoTextView == null ||
+            lyricsRecyclerView == null ||
+            expandCollapseButton == null ||
+            translateButton == null ||
+            overlayAlbumArtImageView == null ||
+            overlayScrimView == null ||
+            lyricsAdapter == null
+        ) {
+            Log.w(TAG, "Rebinding lyrics window references to surviving overlay for $reason.")
+            bindLyricsWindowView(survivingView)
+        } else {
+            syncLyricsOverlayBinding(survivingView)
+        }
+
+        if (attachedDuplicateRemains) {
+            Log.w(TAG, "At least one duplicate lyrics overlay remained attached during $reason.")
+        }
+
+        return survivingView
+    }
+
+    private fun handleLyricsOverlayInteraction(view: View, reason: String): Boolean {
+        knownLyricsOverlayViews.add(view)
+
+        if (!view.isAttachedToWindow) {
+            knownLyricsOverlayViews.remove(view)
+            if (lyricsView === view) {
+                clearLyricsWindowReferences()
+            }
+            Log.d(TAG, "Ignoring lyrics overlay interaction for detached view during $reason.")
+            return true
+        }
+
+        if (lyricsView !== view) {
+            Log.w(TAG, "Interaction came from a stale lyrics overlay during $reason. Removing stale view.")
+            detachLyricsOverlayView(view, "stale interaction: $reason")
+            ensureLyricsViewBoundToAttachedOverlay("after stale interaction: $reason")
+            return true
+        }
+
+        syncLyricsOverlayBinding(view)
+        ensureLyricsViewBoundToAttachedOverlay(reason)
+        return false
+    }
+
+    private fun songContextForLyricsData(data: LyricsData): Pair<String?, String?> {
+        return when (data) {
+            is LyricsData.Plain -> data.title to data.artist
+            is LyricsData.Synced -> data.title to data.artist
+            is LyricsData.Info -> data.title to data.artist
+            is LyricsData.MismatchInfo -> data.title to data.artist
+        }
+    }
+
+    private fun shouldApplyAsyncOverlayTheme(
+        targetView: View?,
+        expectedToken: MediaSession.Token?,
+        expectedTitle: String?,
+        expectedArtist: String?,
+        reason: String
+    ): Boolean {
+        if (targetView == null) {
+            Log.d(TAG, "$reason: overlay view reference cleared before async theme update.")
+            return false
+        }
+
+        if (!targetView.isAttachedToWindow) {
+            knownLyricsOverlayViews.remove(targetView)
+            Log.d(TAG, "$reason: overlay view detached before async theme update.")
+            return false
+        }
+
+        if (lyricsView !== targetView) {
+            Log.d(TAG, "$reason: async theme result belongs to a stale overlay instance. Skipping.")
+            return false
+        }
+
+        if (expectedToken != currentMediaSessionToken) {
+            Log.d(TAG, "$reason: media session changed from $expectedToken to $currentMediaSessionToken. Skipping.")
+            return false
+        }
+
+        if (!matchesCurrentSongContext(expectedTitle, expectedArtist)) {
+            Log.d(
+                TAG,
+                "$reason: song context changed from '$expectedTitle'/'$expectedArtist' to '$lastDetectedSongTitle'/'$lastDetectedSongArtist'. Skipping."
+            )
+            return false
+        }
+
+        return true
+    }
+
+    private fun ensureLyricsViewBoundToAttachedOverlay(reason: String): Boolean {
+        pruneDuplicateLyricsOverlayViews(reason, lyricsView)?.let { survivingView ->
+            syncLyricsOverlayBinding(survivingView)
+            return true
+        }
+
+        val currentView = lyricsView
+        val attachedView = knownLyricsOverlayViewSnapshot().lastOrNull { it.isAttachedToWindow }
         if (attachedView != null) {
             Log.w(TAG, "Rebinding lyrics window references to an attached overlay for $reason.")
-            if (windowManager == null) {
-                windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            }
-            params = params ?: (attachedView.layoutParams as? WindowManager.LayoutParams)
+            syncLyricsOverlayBinding(attachedView)
             bindLyricsWindowView(attachedView)
             return true
         }
 
+        currentView?.let { knownLyricsOverlayViews.remove(it) }
         knownLyricsOverlayViews.removeAll { !it.isAttachedToWindow }
         return false
     }
@@ -2030,11 +2365,114 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             overlayFlag,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
             PixelFormat.TRANSLUCENT
         ).apply {
             x = savedWindowPosition?.first ?: 0
             y = savedWindowPosition?.second ?: 100
+        }
+    }
+
+    private fun getCurrentAlbumArtBitmap(): Bitmap? {
+        val currentActiveMc = activeMediaController
+        if (currentActiveMc == null || currentActiveMc.sessionToken != currentMediaSessionToken) {
+            return null
+        }
+
+        val metadata = currentActiveMc.metadata ?: return null
+        return metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+            ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
+    }
+
+    private fun areDynamicLyricsWindowColorsEnabled(): Boolean {
+        return applicationContext
+            .getSharedPreferences(FLUTTER_SHARED_PREFERENCES, Context.MODE_PRIVATE)
+            .getBoolean(PREF_DYNAMIC_LYRICS_WINDOW_COLORS, true)
+    }
+
+    private fun isBlurOverlayEffectActive(): Boolean {
+        if (!areDynamicLyricsWindowColorsEnabled()) {
+            return false
+        }
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return false
+        }
+
+        val simulateLegacyOverlay = applicationContext
+            .getSharedPreferences(FLUTTER_SHARED_PREFERENCES, Context.MODE_PRIVATE)
+            .getBoolean(PREF_SIMULATE_LEGACY_OVERLAY, false)
+        return !simulateLegacyOverlay
+    }
+
+    private fun applyOverlayArtwork(bitmap: Bitmap?) {
+        overlayAlbumArtImageView?.let { imageView ->
+            if (bitmap == null || !areDynamicLyricsWindowColorsEnabled()) {
+                imageView.setImageDrawable(null)
+                imageView.imageMatrix = Matrix()
+                imageView.scaleType = ImageView.ScaleType.CENTER_CROP
+                imageView.isVisible = false
+                overlayScrimView?.isVisible = false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    imageView.setRenderEffect(null)
+                }
+                return
+            }
+
+            imageView.setImageBitmap(bitmap)
+            imageView.scaleType = ImageView.ScaleType.MATRIX
+            applyOverlayArtworkTransform(imageView)
+            imageView.colorFilter = overlayArtworkColorFilter
+            imageView.isVisible = true
+            overlayScrimView?.isVisible = true
+
+            if (isBlurOverlayEffectActive()) {
+                imageView.setRenderEffect(
+                    RenderEffect.createBlurEffect(40f, 40f, Shader.TileMode.CLAMP)
+                )
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                imageView.setRenderEffect(null)
+            }
+        }
+    }
+
+    private fun applyOverlayArtworkTransform(imageView: ImageView) {
+        val drawable = imageView.drawable ?: return
+        val drawableWidth = drawable.intrinsicWidth.toFloat()
+        val drawableHeight = drawable.intrinsicHeight.toFloat()
+        if (drawableWidth <= 0f || drawableHeight <= 0f) {
+            return
+        }
+
+        val viewWidth = imageView.width.toFloat()
+        val viewHeight = imageView.height.toFloat()
+        if (viewWidth <= 0f || viewHeight <= 0f) {
+            imageView.post {
+                if (overlayAlbumArtImageView === imageView && imageView.drawable != null) {
+                    applyOverlayArtworkTransform(imageView)
+                }
+            }
+            return
+        }
+
+        val baseScale = maxOf(viewWidth / drawableWidth, viewHeight / drawableHeight)
+        val scale = baseScale * OVERLAY_ARTWORK_ZOOM
+        val scaledWidth = drawableWidth * scale
+        val scaledHeight = drawableHeight * scale
+        val horizontalExcess = (scaledWidth - viewWidth).coerceAtLeast(0f)
+        val verticalExcess = (scaledHeight - viewHeight).coerceAtLeast(0f)
+
+        val dx = -horizontalExcess / 2f
+        val centeredDy = -verticalExcess / 2f
+        val desiredDy = centeredDy - (verticalExcess * OVERLAY_ARTWORK_VERTICAL_BIAS)
+        val dy = desiredDy.coerceIn(-verticalExcess, 0f)
+
+        imageView.imageMatrix = Matrix().apply {
+            setScale(scale, scale)
+            postTranslate(dx, dy)
         }
     }
 
@@ -2044,33 +2482,13 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             return true
         }
 
-        val currentWindowManager = windowManager ?: (getSystemService(Context.WINDOW_SERVICE) as WindowManager).also {
-            windowManager = it
-        }
-
         var allDetached = true
         val stillAttachedViews = mutableListOf<View>()
 
         for (view in knownViews) {
-            if (!view.isAttachedToWindow) {
-                knownLyricsOverlayViews.remove(view)
-                continue
-            }
-
-            try {
-                currentWindowManager.removeViewImmediate(view)
-                Log.d(TAG, "Detached lyrics overlay for $reason.")
-            } catch (e: IllegalArgumentException) {
-                Log.w(TAG, "Lyrics overlay was already detached during $reason: ${e.message}")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error detaching lyrics overlay during $reason", e)
-            }
-
-            if (view.isAttachedToWindow) {
+            if (!detachLyricsOverlayView(view, reason)) {
                 allDetached = false
                 stillAttachedViews.add(view)
-            } else {
-                knownLyricsOverlayViews.remove(view)
             }
         }
 
@@ -2206,6 +2624,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         }
 
         translateButton?.isVisible = currentLyricsHasTranslation
+        applyOverlayArtwork(getCurrentAlbumArtBitmap())
 
         val songDisplayTitle = when (data) {
             is LyricsData.Synced -> data.artist?.takeIf { it.isNotBlank() }?.let { "${data.title} - $it" } ?: data.title
@@ -2233,8 +2652,12 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             DEFAULT_STATIC_HIGHLIGHT_COLOR
         )
         val finalLyricsTextColor = Color.WHITE
+        val themeContext = songContextForLyricsData(data)
+        val overlayViewForTheme = lyricsView
+        val sessionTokenForTheme = currentMediaSessionToken
 
         if (!dynamicColoursEnabled) {
+            applyOverlayArtwork(null)
             applyThemeToOverlayElements(storedBackgroundColor, storedTitleColor, finalLyricsTextColor, storedHighlightColor)
         } else {
             var finalOverlayBackgroundColor = DEFAULT_STATIC_BACKGROUND_COLOR
@@ -2253,6 +2676,17 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
 
                         // Extract palette colors asynchronously and update when ready
                         Palette.from(albumArtBitmap).generate { palette ->
+                            if (!shouldApplyAsyncOverlayTheme(
+                                    targetView = overlayViewForTheme,
+                                    expectedToken = sessionTokenForTheme,
+                                    expectedTitle = themeContext.first,
+                                    expectedArtist = themeContext.second,
+                                    reason = "showLyricsWindow palette"
+                                )
+                            ) {
+                                return@generate
+                            }
+
                             palette?.let { p ->
                                 var selectedBackgroundColorRgb: Int? = p.dominantSwatch?.rgb
                                 if (selectedBackgroundColorRgb == null) {
@@ -2267,16 +2701,12 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                                 } ?: DEFAULT_STATIC_BACKGROUND_COLOR
 
                                 val isBackgroundLight = ColorUtils.calculateLuminance(opaqueChosenBgColor) > 0.5
-                                val paletteTitleColor = if (isBackgroundLight) {
-                                    p.darkVibrantSwatch?.rgb ?: p.darkMutedSwatch?.rgb ?: p.mutedSwatch?.rgb ?: Color.BLACK
-                                } else {
-                                    p.lightVibrantSwatch?.rgb ?: p.lightMutedSwatch?.rgb ?: p.vibrantSwatch?.rgb ?: Color.WHITE
-                                }
+                                val paletteTitleColor = DEFAULT_STATIC_TITLE_COLOR
 
                                 val contrastTitleBg = ColorUtils.calculateContrast(paletteTitleColor, opaqueChosenBgColor)
                                 val finalPaletteTitleColor = if (contrastTitleBg < 5.0) {
-                                    Log.w(TAG, "Low contrast ($contrastTitleBg) between title color (${Integer.toHexString(paletteTitleColor)}) and OPAQUE BG (${Integer.toHexString(opaqueChosenBgColor)}). Forcing default title color.")
-                                    if (isBackgroundLight) Color.BLACK else Color.WHITE
+                                    Log.w(TAG, "Low contrast ($contrastTitleBg) between title color (${Integer.toHexString(paletteTitleColor)}) and OPAQUE BG (${Integer.toHexString(opaqueChosenBgColor)}). Keeping default bright title color for blurred artwork treatment.")
+                                    DEFAULT_STATIC_TITLE_COLOR
                                 } else {
                                     paletteTitleColor
                                 }
@@ -2414,7 +2844,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         lyricsAdapter?.updateThemeColors(
             normalLineTextColor = lyricTextColor,
             highlightedLineTextColor = lyricTextColor,
-            highlightedLineBackgroundColor = lyricHighlightBgColor
+            highlightedLineBackgroundColor = lyricHighlightBgColor,
+            showHighlightedLineBackground = !areDynamicLyricsWindowColorsEnabled()
         )
     }
 
@@ -2427,9 +2858,14 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
 
         val prefs = applicationContext.getSharedPreferences(FLUTTER_SHARED_PREFERENCES, Context.MODE_PRIVATE)
         val dynamicColoursEnabled = prefs.getBoolean(PREF_DYNAMIC_LYRICS_WINDOW_COLORS, true)
+        val overlayViewForTheme = lyricsView
+        val sessionTokenForTheme = currentMediaSessionToken
+        val titleForTheme = lastDetectedSongTitle
+        val artistForTheme = lastDetectedSongArtist
 
         if (!dynamicColoursEnabled) {
             Log.d(TAG, "Dynamic colours disabled, skipping color update")
+            applyOverlayArtwork(null)
             // Apply the stored static colors when dynamic colors are disabled
             val storedBackgroundColor = getStoredColorPreference(
                 prefs,
@@ -2459,12 +2895,24 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         currentActiveMc.metadata?.let { metadata ->
             val albumArtBitmap = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
                 ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
+            applyOverlayArtwork(albumArtBitmap)
 
             if (albumArtBitmap != null) {
                 val finalLyricsTextColor = Color.WHITE
 
                 // Extract palette colors asynchronously and update when ready
                 Palette.from(albumArtBitmap).generate { palette ->
+                    if (!shouldApplyAsyncOverlayTheme(
+                            targetView = overlayViewForTheme,
+                            expectedToken = sessionTokenForTheme,
+                            expectedTitle = titleForTheme,
+                            expectedArtist = artistForTheme,
+                            reason = "updateLyricsWindowColors palette"
+                        )
+                    ) {
+                        return@generate
+                    }
+
                     palette?.let { p ->
                         var selectedBackgroundColorRgb: Int? = p.dominantSwatch?.rgb
                         if (selectedBackgroundColorRgb == null) {
@@ -2479,16 +2927,12 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                         } ?: DEFAULT_STATIC_BACKGROUND_COLOR
 
                         val isBackgroundLight = ColorUtils.calculateLuminance(opaqueChosenBgColor) > 0.5
-                        val paletteTitleColor = if (isBackgroundLight) {
-                            p.darkVibrantSwatch?.rgb ?: p.darkMutedSwatch?.rgb ?: p.mutedSwatch?.rgb ?: Color.BLACK
-                        } else {
-                            p.lightVibrantSwatch?.rgb ?: p.lightMutedSwatch?.rgb ?: p.vibrantSwatch?.rgb ?: Color.WHITE
-                        }
+                        val paletteTitleColor = DEFAULT_STATIC_TITLE_COLOR
 
                         val contrastTitleBg = ColorUtils.calculateContrast(paletteTitleColor, opaqueChosenBgColor)
                         val finalPaletteTitleColor = if (contrastTitleBg < 5.0) {
-                            Log.w(TAG, "updateLyricsWindowColors: Low contrast ($contrastTitleBg). Forcing default title color.")
-                            if (isBackgroundLight) Color.BLACK else Color.WHITE
+                            Log.w(TAG, "updateLyricsWindowColors: Low contrast ($contrastTitleBg). Keeping default bright title color for blurred artwork treatment.")
+                            DEFAULT_STATIC_TITLE_COLOR
                         } else {
                             paletteTitleColor
                         }
@@ -2510,8 +2954,12 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 }
             } else {
                 Log.d(TAG, "updateLyricsWindowColors: No album art bitmap available")
+                applyOverlayArtwork(null)
             }
-        } ?: Log.d(TAG, "updateLyricsWindowColors: No metadata available")
+        } ?: run {
+            applyOverlayArtwork(null)
+            Log.d(TAG, "updateLyricsWindowColors: No metadata available")
+        }
     }
     
     private fun toggleTranslation() {
@@ -2538,6 +2986,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             if (isLyricsExpanded) R.drawable.ic_round_keyboard_arrow_up_24
             else R.drawable.ic_round_keyboard_arrow_down_24
         )
+        applyOverlayArtwork(getCurrentAlbumArtBitmap())
     }
     private fun startOrUpdateLyricsHighlighting() {
         if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) { Log.w(TAG, "startOrUpdateLyricsHighlighting: Aborting. ServiceJob cancelled or service not manually started."); return }
@@ -3047,6 +3496,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             // maybeShowStatusInfo("Waiting for notification listener connection… If stuck here, Go to the app's help and support section and follow the steps under question 1. ")
             updatePersistentNotification("Waiting for notification listener...")
             requestNotificationListenerRebind("Health check: listener never connected")
+            maybeResetNotificationListenerComponent("Health check: listener never connected")
             tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
             val attempts = consecutiveListenerRecoveryAttempts.incrementAndGet()
             if (attempts >= MAX_CONSECUTIVE_RECOVERY_ATTEMPTS) {
@@ -3175,6 +3625,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         
         // Now proceed with cleanup
         isServiceManuallyStarted.set(false)
+        cancelPendingSongContextClear("onDestroy")
 
         if (serviceJob.isActive) { // Check if active before cancelling
             Log.d(TAG, "onDestroy: serviceJob was still active, cancelling.")
@@ -3199,18 +3650,22 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         super.onDestroy()
     }
 
-    private inner class ViewMover : View.OnTouchListener {
+    private inner class ViewMover(private val targetView: View) : View.OnTouchListener {
         private var initialX: Int = 0; private var initialY: Int = 0
         private var initialTouchX: Float = 0f; private var initialTouchY: Float = 0f
         private val touchSlop by lazy { android.view.ViewConfiguration.get(applicationContext).scaledTouchSlop }
         private var isDragging = false
 
         override fun onTouch(v: View, event: MotionEvent): Boolean {
+            if (event.action == MotionEvent.ACTION_DOWN || lyricsView !== targetView) {
+                if (handleLyricsOverlayInteraction(targetView, "drag")) {
+                    return true
+                }
+            }
+
             val currentParams = this@LyricService.params ?: return false
             val currentWindowManager = this@LyricService.windowManager ?: return false
-            val currentLyricsView = this@LyricService.lyricsView ?: return false
-
-            if (!currentLyricsView.isAttachedToWindow) return false
+            if (!targetView.isAttachedToWindow) return false
 
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
@@ -3226,7 +3681,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                     }
                     if (isDragging) {
                         currentParams.x = initialX + dx.toInt(); currentParams.y = initialY + dy.toInt()
-                        try { currentWindowManager.updateViewLayout(currentLyricsView, currentParams) }
+                        try { currentWindowManager.updateViewLayout(targetView, currentParams) }
                         catch (e: Exception) { Log.e(TAG, "Error updating view layout move: ${e.message}")}
                     }
                     return true
