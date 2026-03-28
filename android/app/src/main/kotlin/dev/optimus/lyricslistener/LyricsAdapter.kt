@@ -22,6 +22,8 @@ class LyricsAdapter(
     private var highlightedPosition = -1
     private var isSyncedMode = false
     private var isPlaying = false
+    private var isMiniMode = false
+    private var isExpanded = false
 
     private var normalLineTextColor: Int = Color.WHITE
     private var highlightedLineTextColor: Int = Color.WHITE
@@ -73,6 +75,20 @@ class LyricsAdapter(
         holder.lyricText.animate().cancel()
         holder.visualizer.stopAnimation()
 
+        // Mini mode: only show the highlighted line
+        if (isMiniMode && isSyncedMode && position != highlightedPosition) {
+            holder.itemView.visibility = View.GONE
+            holder.itemView.layoutParams = holder.itemView.layoutParams.apply {
+                height = 0
+            }
+            return
+        } else {
+            holder.itemView.visibility = View.VISIBLE
+            holder.itemView.layoutParams = holder.itemView.layoutParams.apply {
+                height = ViewGroup.LayoutParams.WRAP_CONTENT
+            }
+        }
+
         // Check if this is an instrumental/blank line
         val isInstrumental = line.text == instrumentalPattern
 
@@ -89,7 +105,11 @@ class LyricsAdapter(
                 }
             )
             holder.visualizer.alpha = if (isSyncedMode && highlightedPosition != -1 && position != highlightedPosition) {
-                if (position < highlightedPosition) 0.40f else 0.60f
+                if (isExpanded) {
+                    if (position < highlightedPosition) 0.30f else 0.45f
+                } else {
+                    if (position < highlightedPosition) 0.20f else 0.35f
+                }
             } else {
                 0.7f
             }
@@ -183,21 +203,37 @@ class LyricsAdapter(
                 if (highlightedPosition != -1) { // If there is an active highlight
                     val targetAlpha: Float
                     if (position < highlightedPosition) {
-                        // Past lines sit below the 55%-white baseline and fall off gently.
+                        // Past lines fade out more aggressively
                         val diff = highlightedPosition - position
-                        targetAlpha = when {
-                            diff == 1 -> 0.82f
-                            diff == 2 -> 0.68f
-                            else -> 0.54f
+                        targetAlpha = if (isExpanded) {
+                            when {
+                                diff == 1 -> 0.7f
+                                diff == 2 -> 0.5f
+                                else -> 0.35f
+                            }
+                        } else {
+                            when {
+                                diff == 1 -> 0.6f
+                                diff == 2 -> 0.4f
+                                else -> 0.25f
+                            }
                         }
                     } else {
-                        // Upcoming lines keep the baseline readability until they become current.
+                        // Upcoming lines keep some readability
                         val diff = position - highlightedPosition
-                        targetAlpha = when (diff) {
-                            1 -> 1.0f
-                            2 -> 0.82f
-                            3 -> 0.68f
-                            else -> 0.54f
+                        targetAlpha = if (isExpanded) {
+                            when (diff) {
+                                1 -> 0.85f
+                                2 -> 0.65f
+                                3 -> 0.5f
+                                else -> 0.35f
+                            }
+                        } else {
+                            when (diff) {
+                                1 -> 0.75f
+                                2 -> 0.5f
+                                else -> 0.25f
+                            }
                         }
                     }
                     // Smoothly animate alpha transitions for fluid fading
@@ -270,13 +306,25 @@ class LyricsAdapter(
 
     fun getCurrentHighlightedPosition(): Int = highlightedPosition
 
+    fun setWindowMode(mini: Boolean, expanded: Boolean) {
+        if (isMiniMode == mini && isExpanded == expanded) return
+        isMiniMode = mini
+        isExpanded = expanded
+        notifyDataSetChanged()
+    }
+
+    fun isSynced(): Boolean = isSyncedMode
+
     fun setPlayingState(playing: Boolean) {
-        if (isPlaying == playing) return
+        val changed = isPlaying != playing
         isPlaying = playing
-        // Refresh the highlighted instrumental line so its animation state updates
+        // Always refresh the highlighted instrumental line — even if isPlaying hasn't
+        // changed — to recover from any rebind that may have seen stale state.
         if (highlightedPosition in 0 until lyricLines.size &&
             lyricLines[highlightedPosition].text == instrumentalPattern) {
             notifyItemChanged(highlightedPosition)
+        } else if (changed) {
+            // No instrumental highlighted, but state changed — future binds will pick it up
         }
     }
 

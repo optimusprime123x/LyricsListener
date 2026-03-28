@@ -38,6 +38,7 @@ const String _simulateLegacyOverlayKey = 'simulate_legacy_overlay';
 const String _lyricsWindowTitleColorKey = 'lyrics_window_title_color';
 const String _lyricsWindowBackgroundColorKey = 'lyrics_window_background_color';
 const String _lyricsWindowHighlightColorKey = 'lyrics_window_highlight_color';
+const String _lyricsWindowSizeKey = 'lyrics_window_size';
 
 const Color _defaultLyricsWindowTitleColor = Color(0xF0E8E8E8);
 const Color _defaultLyricsWindowBackgroundColor = Color(0xE6181818);
@@ -974,6 +975,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   bool _hideLyricsWindowOnPause = false;
   bool _dynamicLyricsWindowColors = true;
   bool _isLyricsWindowBlurEnabled = true;
+  String _lyricsWindowSize = 'compact';
 
   Color _lyricsWindowTitleColor = _defaultLyricsWindowTitleColor;
   Color _lyricsWindowBackgroundColor = _defaultLyricsWindowBackgroundColor;
@@ -1138,12 +1140,14 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     final storedTitleColor = prefs.getInt(_lyricsWindowTitleColorKey);
     final storedBackgroundColor = prefs.getInt(_lyricsWindowBackgroundColorKey);
     final storedHighlightColor = prefs.getInt(_lyricsWindowHighlightColorKey);
+    final lyricsWindowSize = prefs.getString(_lyricsWindowSizeKey) ?? 'compact';
     if (!mounted) return;
     setState(() {
       _rememberLyricsWindowPosition = rememberPosition;
       _hideLyricsWindowOnPause = hideOnPause;
       _dynamicLyricsWindowColors = dynamicLyricsColours;
       _isLyricsWindowBlurEnabled = !simulateLegacyOverlay;
+      _lyricsWindowSize = lyricsWindowSize;
       _lyricsWindowTitleColor = Color(
         storedTitleColor ?? _defaultLyricsWindowTitleColor.value,
       );
@@ -1210,6 +1214,14 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_lyricsWindowHighlightColorKey, color.value);
+  }
+
+  Future<void> _onLyricsWindowSizeChanged(String size) async {
+    setState(() {
+      _lyricsWindowSize = size;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lyricsWindowSizeKey, size);
   }
 
   Future<void> _loadInitialData({bool showLoading = true}) async {
@@ -2075,105 +2087,97 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           context,
           title: 'Appearance',
           children: [
-            Opacity(
-              opacity: isMaterialYouThemingEnabled ? 0.45 : 1,
-              child: IgnorePointer(
-                ignoring: isMaterialYouThemingEnabled,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Theme Color',
-                        style: textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 400),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              child: isMaterialYouThemingEnabled
+                  ? const SizedBox.shrink(key: ValueKey('color-picker-hidden'))
+                  : Padding(
+                      key: const ValueKey('color-picker-visible'),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
                       ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 16.0,
-                        runSpacing: 12.0,
-                        children: _predefinedSeedColors.map((color) {
-                          final isSelected = widget.seedColor == color;
-                          return InkWell(
-                            borderRadius: BorderRadius.circular(
-                              _seedColorChipRadius,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Theme Color',
+                            style: textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
                             ),
-                            onTap: () => widget.onSeedColorChanged(color),
-                            child: Tooltip(
-                              message:
-                                  'Set theme color to #${color.value.toRadixString(16).substring(2).toUpperCase()}',
-                              child: AnimatedScale(
-                                duration: const Duration(milliseconds: 700),
-                                curve: const ElasticOutCurve(0.8),
-                                scale: isSelected ? 1.15 : 1.0,
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 700),
-                                  curve: const ElasticOutCurve(0.8),
-                                  width: _seedColorChipSize,
-                                  height: _seedColorChipSize,
-                                  decoration: BoxDecoration(
-                                    color: color,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.outlineVariant,
-                                      width: isSelected ? 2.5 : 1.5,
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .primary
-                                            .withValues(
-                                              alpha: isSelected ? 0.35 : 0.15,
-                                            ),
-                                        blurRadius: isSelected ? 12 : 8,
-                                        offset: const Offset(0, 4),
-                                      ),
-                                    ],
-                                  ),
-                                  child: isSelected
-                                      ? Center(
-                                          child: Icon(
-                                            Icons.check_rounded,
-                                            color:
-                                                ThemeData.estimateBrightnessForColor(
-                                                      color,
-                                                    ) ==
-                                                    Brightness.dark
-                                                ? Colors.white
-                                                : Colors.black,
-                                            size: 24,
-                                          ),
-                                        )
-                                      : null,
+                          ),
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 16.0,
+                            runSpacing: 12.0,
+                            children: _predefinedSeedColors.map((color) {
+                              final isSelected = widget.seedColor == color;
+                              return InkWell(
+                                borderRadius: BorderRadius.circular(
+                                  _seedColorChipRadius,
                                 ),
-                              ),
-                            ),
-                          );
-                        }).toList(),
+                                onTap: () => widget.onSeedColorChanged(color),
+                                child: Tooltip(
+                                  message:
+                                      'Set theme color to #${color.value.toRadixString(16).substring(2).toUpperCase()}',
+                                  child: AnimatedScale(
+                                    duration: const Duration(milliseconds: 700),
+                                    curve: const ElasticOutCurve(0.8),
+                                    scale: isSelected ? 1.15 : 1.0,
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 700),
+                                      curve: const ElasticOutCurve(0.8),
+                                      width: _seedColorChipSize,
+                                      height: _seedColorChipSize,
+                                      decoration: BoxDecoration(
+                                        color: color,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.outlineVariant,
+                                          width: isSelected ? 2.5 : 1.5,
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary
+                                                .withValues(
+                                                  alpha: isSelected ? 0.35 : 0.15,
+                                                ),
+                                            blurRadius: isSelected ? 12 : 8,
+                                            offset: const Offset(0, 4),
+                                          ),
+                                        ],
+                                      ),
+                                      child: isSelected
+                                          ? Center(
+                                              child: Icon(
+                                                Icons.check_rounded,
+                                                color:
+                                                    ThemeData.estimateBrightnessForColor(
+                                                          color,
+                                                        ) ==
+                                                        Brightness.dark
+                                                    ? Colors.white
+                                                    : Colors.black,
+                                                size: 24,
+                                              ),
+                                            )
+                                          : null,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-              ),
+                    ),
             ),
-            if (isMaterialYouThemingEnabled)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: Text(
-                  'Disable Material You theming below to use custom theme colors',
-                  style: textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
             const Divider(indent: 16, endIndent: 16),
             SwitchListTile.adaptive(
               value: isMaterialYouThemingEnabled,
@@ -2334,6 +2338,41 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 ),
               ),
             ),
+            const Divider(indent: 16, endIndent: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Lyrics window size',
+                    style: textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Default size when the lyrics window opens. You can still cycle through sizes using the expand button.',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'mini', label: Text('Minimal')),
+                      ButtonSegment(value: 'compact', label: Text('Compact')),
+                      ButtonSegment(value: 'expanded', label: Text('Expanded')),
+                    ],
+                    selected: {_lyricsWindowSize},
+                    onSelectionChanged: (selected) {
+                      _onLyricsWindowSizeChanged(selected.first);
+                    },
+                    showSelectedIcon: false,
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 16),
@@ -2467,7 +2506,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       ),
                       const TextSpan(
                         text:
-                            'Open the persistent Lyrics Listener notification and tap the Fix notification access action. This usually restores access immediately. If the shortcut is not shown, or does not work, follow these steps:\n1. Stop the Lyric Service.\0n2. Tap ',
+                            'Open the persistent Lyrics Listener notification and tap the Fix notification access action. This usually restores access immediately. If the shortcut is not shown, or does not work, follow these steps:\n1. Stop the Lyric Service.\n2. Tap ',
                       ),
                       TextSpan(
                         text: 'here',

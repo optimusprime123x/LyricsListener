@@ -78,8 +78,7 @@
             android:scaleType="fitCenter"
             app:tint="@android:color/white"
             android:contentDescription="Toggle translated lyrics"
-            app:layout_constraintTop_toTopOf="@id/songInfoTextView"
-            app:layout_constraintBottom_toBottomOf="@id/songInfoTextView"
+            app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintEnd_toStartOf="@id/expandCollapseButton"
             android:layout_marginEnd="10dp"
             android:visibility="gone"
@@ -95,8 +94,7 @@
             android:scaleType="fitCenter"
             app:tint="@android:color/white"
             android:contentDescription="Expand or collapse lyrics"
-            app:layout_constraintTop_toTopOf="@id/songInfoTextView"
-            app:layout_constraintBottom_toBottomOf="@id/songInfoTextView"
+            app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintEnd_toStartOf="@id/closeButton"
             android:layout_marginEnd="10dp"
             android:alpha="0.85"/>
@@ -110,8 +108,7 @@
             android:scaleType="fitCenter"
             app:tint="@android:color/white"
             android:contentDescription="Close lyrics window"
-            app:layout_constraintTop_toTopOf="@id/songInfoTextView"
-            app:layout_constraintBottom_toBottomOf="@id/songInfoTextView"
+            app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             android:alpha="0.85"/>
 
