@@ -49,4 +49,5 @@ app.*.map.json
 key.properties
 *.mp3
 *.m4a
-cloudfared
+cloudflared
+*.pem
