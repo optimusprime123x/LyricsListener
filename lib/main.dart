@@ -2506,7 +2506,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       ),
                       const TextSpan(
                         text:
-                            'Open the persistent Lyrics Listener notification and tap the Fix notification access action. This usually restores access immediately. If the shortcut is not shown, or does not work, follow these steps:\n1. Stop the Lyric Service.\n2. Tap ',
+                            'Open the persistent Lyrics Listener notification and tap the Fix notification access action. This usually restores access immediately. If the shortcut is not shown, or does not work, follow these steps:\n1. Stop the Lyric Service.\n 2. Tap ',
                       ),
                       TextSpan(
                         text: 'here',

@@ -80,9 +80,9 @@ class LyricService : NotificationListenerService() {
     private val NOTIFICATION_CHANNEL_ID = "LyricServiceChannel"
     private val NOTIFICATION_ID = 1
     private val HIGHLIGHT_UPDATE_INTERVAL_MS = 200L
-    private val CONNECT_RETRY_DELAY_MS = 3000L
+    private val CONNECT_RETRY_DELAY_MS = 2500L
     private val SONG_TRANSITION_CLEAR_GRACE_MS = 750L
-    private val MIN_REBIND_INTERVAL_MS = 9000L
+    private val MIN_REBIND_INTERVAL_MS = 8000L
     private val INITIAL_BIND_REBIND_INTERVAL_MS = 2500L
     private val LISTENER_HEALTH_SHORT_INTERVAL_MS = TimeUnit.SECONDS.toMillis(15)
     private val LISTENER_HEALTH_LONG_INTERVAL_MS = TimeUnit.MINUTES.toMillis(1)
