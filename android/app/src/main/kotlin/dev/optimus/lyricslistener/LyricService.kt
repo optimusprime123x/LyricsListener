@@ -82,6 +82,8 @@ class LyricService : NotificationListenerService() {
     private val NOTIFICATION_ID = 1
     private val HIGHLIGHT_UPDATE_INTERVAL_MS = 200L
     private val CONNECT_RETRY_DELAY_MS = 2500L
+    private val CONNECT_FAST_RETRY_DELAY_MS = 1000L
+    private val CONNECT_FAST_RETRY_ATTEMPTS = 2
     private val SONG_TRANSITION_CLEAR_GRACE_MS = 750L
     private val MIN_REBIND_INTERVAL_MS = 8000L
     private val INITIAL_BIND_REBIND_INTERVAL_MS = 2500L
@@ -249,6 +251,7 @@ class LyricService : NotificationListenerService() {
     private val listenerUnboundSinceMs = AtomicLong(0L)
     private val lastListenerComponentResetAttemptMs = AtomicLong(0L)
     private val consecutiveListenerRecoveryAttempts = AtomicInteger(0)
+    private val scanRetryAttempt = AtomicInteger(0)
     private val nextListenerHealthCheckAtMs = AtomicLong(0L)
     private val lastNotificationAccessDebugLogMs = AtomicLong(0L)
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
@@ -670,7 +673,14 @@ class LyricService : NotificationListenerService() {
                 lastListenerRebindAttempt.set(0L)
                 lastListenerComponentResetAttemptMs.set(0L)
                 clearSongContextAndHideLyrics()
+                scanRetryAttempt.set(0)
                 requestNotificationListenerRebind("User initiated start", force = true)
+                if (!refreshListenerBindingState("user initiated start")) {
+                    // requestRebind() only re-registers a listener that was snoozed via requestUnbind(),
+                    // so a listener dropped by a process kill needs the component toggled to reconnect.
+                    Log.w(TAG, "Notification listener not bound at user start. Forcing component reset to reconnect.")
+                    maybeResetNotificationListenerComponent("User initiated start while listener unbound", force = true)
+                }
                 if (musixmatchUserToken == null) initializeMusixmatchToken("user initiated start")
                 tryToConnectToActiveMediaSessions(delayMs = 0L)
             }
@@ -779,6 +789,7 @@ class LyricService : NotificationListenerService() {
         markListenerConnected("onListenerConnected")
         _isAttemptingConnection = false
         consecutiveListenerRecoveryAttempts.set(0)
+        scanRetryAttempt.set(0)
         lastListenerHeartbeatMs.set(SystemClock.elapsedRealtime())
         Log.i(TAG, "Notification Listener connected by system. (Instance: ${this.hashCode()})")
         updatePersistentNotification("Listener connected, scanning media...")
@@ -820,6 +831,12 @@ class LyricService : NotificationListenerService() {
         mainHandler.postDelayed(executeFindActiveMediaSessionsRunnable, delayMs)
     }
 
+    /** Delay before re-running the media scan after a failed attempt: quick first, then back off. */
+    private fun nextScanRetryDelayMs(slowMultiplier: Int = 1): Long {
+        val attempt = scanRetryAttempt.getAndIncrement()
+        return if (attempt < CONNECT_FAST_RETRY_ATTEMPTS) CONNECT_FAST_RETRY_DELAY_MS else CONNECT_RETRY_DELAY_MS * slowMultiplier
+    }
+
     private fun currentListenerRebindIntervalMs(): Long {
         return if (!_listenerEverConnected || !_listenerCurrentlyBound) {
             INITIAL_BIND_REBIND_INTERVAL_MS
@@ -828,24 +845,28 @@ class LyricService : NotificationListenerService() {
         }
     }
 
-    private fun maybeResetNotificationListenerComponent(reason: String) {
+    private fun maybeResetNotificationListenerComponent(reason: String, force: Boolean = false) {
         if (!isServiceManuallyStarted.get()) return
         if (!hasNotificationAccess()) return
 
-        val unboundSince = listenerUnboundSinceMs.get()
-        if (unboundSince == 0L) return
-
         val now = SystemClock.elapsedRealtime()
-        if (now - unboundSince < LISTENER_COMPONENT_RESET_DELAY_MS) {
-            return
-        }
+        if (force) {
+            lastListenerComponentResetAttemptMs.set(now)
+        } else {
+            val unboundSince = listenerUnboundSinceMs.get()
+            if (unboundSince == 0L) return
 
-        val lastResetAttempt = lastListenerComponentResetAttemptMs.get()
-        if (now - lastResetAttempt < LISTENER_COMPONENT_RESET_INTERVAL_MS) {
-            return
-        }
-        if (!lastListenerComponentResetAttemptMs.compareAndSet(lastResetAttempt, now)) {
-            return
+            if (now - unboundSince < LISTENER_COMPONENT_RESET_DELAY_MS) {
+                return
+            }
+
+            val lastResetAttempt = lastListenerComponentResetAttemptMs.get()
+            if (now - lastResetAttempt < LISTENER_COMPONENT_RESET_INTERVAL_MS) {
+                return
+            }
+            if (!lastListenerComponentResetAttemptMs.compareAndSet(lastResetAttempt, now)) {
+                return
+            }
         }
 
         val componentName = ComponentName(this, javaClass)
@@ -874,7 +895,7 @@ class LyricService : NotificationListenerService() {
                 lastListenerRebindAttempt.set(0L)
                 _listenerCurrentlyBound = false
                 requestNotificationListenerRebind("Component reset recovery: $reason", force = true)
-                tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
+                tryToConnectToActiveMediaSessions(nextScanRetryDelayMs())
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to re-enable notification listener component during recovery: ${e.message}", e)
             }
@@ -974,7 +995,7 @@ class LyricService : NotificationListenerService() {
                 requestNotificationListenerRebind("Listener not bound before media scan")
                 maybeResetNotificationListenerComponent("Listener not bound before media scan")
                 _isAttemptingConnection = false
-                tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
+                tryToConnectToActiveMediaSessions(nextScanRetryDelayMs())
                 if (currentMediaSessionToken != null) clearSongContextAndHideLyrics()
                 return
             }
@@ -987,6 +1008,7 @@ class LyricService : NotificationListenerService() {
                         Log.i(TAG, "executeFindActiveMediaSessions: Got active notifications, considering listener active for this scan.")
                     }
                     markListenerConnected("activeNotifications accessible")
+                    scanRetryAttempt.set(0)
                 }
             } catch (e: SecurityException) {
                 Log.e(TAG, "SecurityException getting active notifications: ${e.message}. Listener permission might be revoked.")
@@ -999,7 +1021,7 @@ class LyricService : NotificationListenerService() {
                 Log.e(TAG, "Exception getting active notifications: ${e.message}", e)
                 updatePersistentNotification("Error accessing notifications. Retrying...")
                 _isAttemptingConnection = false
-                tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
+                tryToConnectToActiveMediaSessions(nextScanRetryDelayMs())
                 return
             }
 
@@ -1010,7 +1032,7 @@ class LyricService : NotificationListenerService() {
                     requestNotificationListenerRebind("activeNotifications returned null")
                 }
                 _isAttemptingConnection = false
-                tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS * 2)
+                tryToConnectToActiveMediaSessions(nextScanRetryDelayMs(slowMultiplier = 2))
                 if (currentMediaSessionToken != null) clearSongContextAndHideLyrics()
                 return
             }
@@ -1023,7 +1045,7 @@ class LyricService : NotificationListenerService() {
                     requestNotificationListenerRebind("activeNotifications empty while listener unbound")
                     maybeResetNotificationListenerComponent("activeNotifications empty while listener unbound")
                     _isAttemptingConnection = false
-                    tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
+                    tryToConnectToActiveMediaSessions(nextScanRetryDelayMs())
                     if (currentMediaSessionToken != null) clearSongContextAndHideLyrics()
                     return
                 }
@@ -2097,7 +2119,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         return try {
             val encodedTitle = URLEncoder.encode(title, StandardCharsets.UTF_8.toString())
             val encodedArtist = URLEncoder.encode(artist, StandardCharsets.UTF_8.toString())
-            val url = "$CUSTOM_LYRIC_API_BASE_URL?title=$encodedTitle&artist=$encodedArtist"
+            val durationParam = if (durationFromMediaMs > 0) "&durationMs=$durationFromMediaMs" else ""
+            val url = "$CUSTOM_LYRIC_API_BASE_URL?title=$encodedTitle&artist=$encodedArtist$durationParam"
             Log.d(TAG, "Fetching from custom lyrics API: $url")
 
             val response: CustomLyricsResponse = httpClient.get(url).body()
