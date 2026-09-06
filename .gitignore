@@ -34,6 +34,7 @@ node_modules/
 .pub-cache/
 .pub/
 /build/
+.local/bin/
 
 # Symbolication related
 app.*.symbols

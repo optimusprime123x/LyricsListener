@@ -503,7 +503,7 @@ class _ManageLyricsPageState extends State<ManageLyricsPage> {
 
   Widget _buildLyricsList(ColorScheme colorScheme, TextTheme textTheme) {
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      padding: EdgeInsets.fromLTRB(16, 4, 16, 16 + MediaQuery.paddingOf(context).bottom),
       itemCount: _filteredLyrics.length,
       itemBuilder: (context, index) {
         final entry = _filteredLyrics[index];

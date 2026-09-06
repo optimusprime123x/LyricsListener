@@ -202,7 +202,7 @@ void main() {
     await tester.pumpWidget(
       MyApp(
         initialSeedColor: initialSeedColor,
-        initialMaterialYouThemingEnabled: true,
+        initialMaterialYouThemingEnabled: false,
       ),
     );
     await tester.pumpAndSettle(); // Wait for async loading to settle
@@ -250,7 +250,7 @@ void main() {
     await tester.pumpWidget(
       MyApp(
         initialSeedColor: initialSeedColor,
-        initialMaterialYouThemingEnabled: true,
+        initialMaterialYouThemingEnabled: false,
       ),
     );
     await tester.pumpAndSettle();

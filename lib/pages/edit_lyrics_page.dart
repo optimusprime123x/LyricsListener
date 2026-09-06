@@ -256,7 +256,7 @@ class _EditLyricsPageState extends State<EditLyricsPage> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.paddingOf(context).bottom),
       child: Container(
         decoration: BoxDecoration(
           color: colorScheme.surfaceContainerHigh,
@@ -322,7 +322,7 @@ class _EditLyricsPageState extends State<EditLyricsPage> {
         ),
         Expanded(
           child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            padding: EdgeInsets.fromLTRB(16, 4, 16, 16 + MediaQuery.paddingOf(context).bottom),
             itemCount: _syncedLines.length,
             itemBuilder: (context, index) {
               final line = _syncedLines[index];
