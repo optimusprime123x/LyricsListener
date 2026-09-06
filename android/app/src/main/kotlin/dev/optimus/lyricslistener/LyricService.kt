@@ -82,6 +82,8 @@ class LyricService : NotificationListenerService() {
     private val NOTIFICATION_ID = 1
     private val HIGHLIGHT_UPDATE_INTERVAL_MS = 200L
     private val CONNECT_RETRY_DELAY_MS = 2500L
+    private val CONNECT_FAST_RETRY_DELAY_MS = 1000L
+    private val CONNECT_FAST_RETRY_ATTEMPTS = 2
     private val SONG_TRANSITION_CLEAR_GRACE_MS = 750L
     private val MIN_REBIND_INTERVAL_MS = 8000L
     private val INITIAL_BIND_REBIND_INTERVAL_MS = 2500L
@@ -249,6 +251,7 @@ class LyricService : NotificationListenerService() {
     private val listenerUnboundSinceMs = AtomicLong(0L)
     private val lastListenerComponentResetAttemptMs = AtomicLong(0L)
     private val consecutiveListenerRecoveryAttempts = AtomicInteger(0)
+    private val scanRetryAttempt = AtomicInteger(0)
     private val nextListenerHealthCheckAtMs = AtomicLong(0L)
     private val lastNotificationAccessDebugLogMs = AtomicLong(0L)
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
@@ -325,8 +328,14 @@ class LyricService : NotificationListenerService() {
 
     @Serializable data class MacroCalls(
         @SerialName("track.lyrics.get") val trackLyricsGet: MMXTrackLyricsGet? = null,
-        @SerialName("track.subtitles.get") val trackSubtitlesGet: MMXTrackSubtitlesGet? = null
+        @SerialName("track.subtitles.get") val trackSubtitlesGet: MMXTrackSubtitlesGet? = null,
+        @SerialName("matcher.track.get") val matcherTrackGet: MMXMatcherTrackGet? = null
     )
+
+    @Serializable data class MMXMatcherTrackGet(val message: MMXMatcherTrackGetMessage? = null)
+    @Serializable data class MMXMatcherTrackGetMessage(val body: MMXMatcherTrackBody? = null)
+    @Serializable data class MMXMatcherTrackBody(val track: MMXMatchedTrack? = null)
+    @Serializable data class MMXMatchedTrack(val track_length: Int = 0)
 
     @Serializable data class MMXTrackLyricsGet(val message: MMXTrackLyricsGetMessage? = null)
     @Serializable data class MMXTrackLyricsGetMessage(val body: MMXLyricsBody? = null)
@@ -404,6 +413,7 @@ class LyricService : NotificationListenerService() {
         const val ATTRIBUTION_TIMESTAMP = -999L
 
         private const val LYRIC_API_BASE_URL = "https://lrclib.net/api/search"
+        private const val PROVIDER_DURATION_TOLERANCE_MS = 3000L
         private const val CUSTOM_LYRIC_API_BASE_URL = "https://lyrics-hiwayajcyq-uw.a.run.app/"
         private val LRC_LINE_PATTERN: Pattern = Pattern.compile("(?<=\\[)(\\d{2,}):(\\d{2})([.:])(\\d{2,3})\\](.*)")
 
@@ -663,7 +673,14 @@ class LyricService : NotificationListenerService() {
                 lastListenerRebindAttempt.set(0L)
                 lastListenerComponentResetAttemptMs.set(0L)
                 clearSongContextAndHideLyrics()
+                scanRetryAttempt.set(0)
                 requestNotificationListenerRebind("User initiated start", force = true)
+                if (!refreshListenerBindingState("user initiated start")) {
+                    // requestRebind() only re-registers a listener that was snoozed via requestUnbind(),
+                    // so a listener dropped by a process kill needs the component toggled to reconnect.
+                    Log.w(TAG, "Notification listener not bound at user start. Forcing component reset to reconnect.")
+                    maybeResetNotificationListenerComponent("User initiated start while listener unbound", force = true)
+                }
                 if (musixmatchUserToken == null) initializeMusixmatchToken("user initiated start")
                 tryToConnectToActiveMediaSessions(delayMs = 0L)
             }
@@ -772,6 +789,7 @@ class LyricService : NotificationListenerService() {
         markListenerConnected("onListenerConnected")
         _isAttemptingConnection = false
         consecutiveListenerRecoveryAttempts.set(0)
+        scanRetryAttempt.set(0)
         lastListenerHeartbeatMs.set(SystemClock.elapsedRealtime())
         Log.i(TAG, "Notification Listener connected by system. (Instance: ${this.hashCode()})")
         updatePersistentNotification("Listener connected, scanning media...")
@@ -813,6 +831,12 @@ class LyricService : NotificationListenerService() {
         mainHandler.postDelayed(executeFindActiveMediaSessionsRunnable, delayMs)
     }
 
+    /** Delay before re-running the media scan after a failed attempt: quick first, then back off. */
+    private fun nextScanRetryDelayMs(slowMultiplier: Int = 1): Long {
+        val attempt = scanRetryAttempt.getAndIncrement()
+        return if (attempt < CONNECT_FAST_RETRY_ATTEMPTS) CONNECT_FAST_RETRY_DELAY_MS else CONNECT_RETRY_DELAY_MS * slowMultiplier
+    }
+
     private fun currentListenerRebindIntervalMs(): Long {
         return if (!_listenerEverConnected || !_listenerCurrentlyBound) {
             INITIAL_BIND_REBIND_INTERVAL_MS
@@ -821,24 +845,28 @@ class LyricService : NotificationListenerService() {
         }
     }
 
-    private fun maybeResetNotificationListenerComponent(reason: String) {
+    private fun maybeResetNotificationListenerComponent(reason: String, force: Boolean = false) {
         if (!isServiceManuallyStarted.get()) return
         if (!hasNotificationAccess()) return
 
-        val unboundSince = listenerUnboundSinceMs.get()
-        if (unboundSince == 0L) return
-
         val now = SystemClock.elapsedRealtime()
-        if (now - unboundSince < LISTENER_COMPONENT_RESET_DELAY_MS) {
-            return
-        }
+        if (force) {
+            lastListenerComponentResetAttemptMs.set(now)
+        } else {
+            val unboundSince = listenerUnboundSinceMs.get()
+            if (unboundSince == 0L) return
 
-        val lastResetAttempt = lastListenerComponentResetAttemptMs.get()
-        if (now - lastResetAttempt < LISTENER_COMPONENT_RESET_INTERVAL_MS) {
-            return
-        }
-        if (!lastListenerComponentResetAttemptMs.compareAndSet(lastResetAttempt, now)) {
-            return
+            if (now - unboundSince < LISTENER_COMPONENT_RESET_DELAY_MS) {
+                return
+            }
+
+            val lastResetAttempt = lastListenerComponentResetAttemptMs.get()
+            if (now - lastResetAttempt < LISTENER_COMPONENT_RESET_INTERVAL_MS) {
+                return
+            }
+            if (!lastListenerComponentResetAttemptMs.compareAndSet(lastResetAttempt, now)) {
+                return
+            }
         }
 
         val componentName = ComponentName(this, javaClass)
@@ -867,7 +895,7 @@ class LyricService : NotificationListenerService() {
                 lastListenerRebindAttempt.set(0L)
                 _listenerCurrentlyBound = false
                 requestNotificationListenerRebind("Component reset recovery: $reason", force = true)
-                tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
+                tryToConnectToActiveMediaSessions(nextScanRetryDelayMs())
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to re-enable notification listener component during recovery: ${e.message}", e)
             }
@@ -967,7 +995,7 @@ class LyricService : NotificationListenerService() {
                 requestNotificationListenerRebind("Listener not bound before media scan")
                 maybeResetNotificationListenerComponent("Listener not bound before media scan")
                 _isAttemptingConnection = false
-                tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
+                tryToConnectToActiveMediaSessions(nextScanRetryDelayMs())
                 if (currentMediaSessionToken != null) clearSongContextAndHideLyrics()
                 return
             }
@@ -980,6 +1008,7 @@ class LyricService : NotificationListenerService() {
                         Log.i(TAG, "executeFindActiveMediaSessions: Got active notifications, considering listener active for this scan.")
                     }
                     markListenerConnected("activeNotifications accessible")
+                    scanRetryAttempt.set(0)
                 }
             } catch (e: SecurityException) {
                 Log.e(TAG, "SecurityException getting active notifications: ${e.message}. Listener permission might be revoked.")
@@ -992,7 +1021,7 @@ class LyricService : NotificationListenerService() {
                 Log.e(TAG, "Exception getting active notifications: ${e.message}", e)
                 updatePersistentNotification("Error accessing notifications. Retrying...")
                 _isAttemptingConnection = false
-                tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
+                tryToConnectToActiveMediaSessions(nextScanRetryDelayMs())
                 return
             }
 
@@ -1003,7 +1032,7 @@ class LyricService : NotificationListenerService() {
                     requestNotificationListenerRebind("activeNotifications returned null")
                 }
                 _isAttemptingConnection = false
-                tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS * 2)
+                tryToConnectToActiveMediaSessions(nextScanRetryDelayMs(slowMultiplier = 2))
                 if (currentMediaSessionToken != null) clearSongContextAndHideLyrics()
                 return
             }
@@ -1016,7 +1045,7 @@ class LyricService : NotificationListenerService() {
                     requestNotificationListenerRebind("activeNotifications empty while listener unbound")
                     maybeResetNotificationListenerComponent("activeNotifications empty while listener unbound")
                     _isAttemptingConnection = false
-                    tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
+                    tryToConnectToActiveMediaSessions(nextScanRetryDelayMs())
                     if (currentMediaSessionToken != null) clearSongContextAndHideLyrics()
                     return
                 }
@@ -1666,6 +1695,9 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 cacheSource = "lrclib"
             )
         })
+        // Plain (unsynced) lyrics are only used if no provider delivers a synced result.
+        var heldPlainResult: ProviderLyricsResult? = null
+
         while (pendingRequests.isNotEmpty()) {
             val completedRequestAndResult = select<Pair<Deferred<ProviderLyricsResult>, ProviderLyricsResult>> {
                 pendingRequests.forEach { request ->
@@ -1676,32 +1708,56 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             val completedRequest = completedRequestAndResult.first
             val providerResult = completedRequestAndResult.second
             pendingRequests.remove(completedRequest)
-            if (isValidInitialProviderResult(providerResult.data)) {
+
+            if (!isValidInitialProviderResult(providerResult.data)) {
                 Log.d(
                     TAG,
-                    "Initial concurrent fetch winner: ${providerResult.provider}. Discarding slower provider requests."
+                    "Initial concurrent fetch from ${providerResult.provider} was not valid. Waiting for remaining providers."
                 )
-                pendingRequests.forEach { request ->
-                    if (request.isActive) {
-                        request.cancel("Discarding slower provider after ${providerResult.provider} returned a valid result.")
-                    }
+                continue
+            }
+
+            if (providerResult.data is LyricsData.Plain) {
+                if (heldPlainResult == null) {
+                    Log.d(
+                        TAG,
+                        "Initial concurrent fetch: ${providerResult.provider} returned plain lyrics. Holding them while waiting for a synced result."
+                    )
+                    heldPlainResult = providerResult
                 }
-                cacheConcurrentWinnerIfEligible(
-                    providerResult = providerResult,
-                    requestedTitle = title,
-                    requestedArtist = artist,
-                    requestedDurationMs = durationFromMediaMs
-                )
-                return@coroutineScope providerResult.data
+                continue
             }
 
             Log.d(
                 TAG,
-                "Initial concurrent fetch from ${providerResult.provider} was not valid. Waiting for remaining provider."
+                "Initial concurrent fetch winner: ${providerResult.provider}. Discarding slower provider requests."
             )
+            pendingRequests.forEach { request ->
+                if (request.isActive) {
+                    request.cancel("Discarding slower provider after ${providerResult.provider} returned a valid result.")
+                }
+            }
+            cacheConcurrentWinnerIfEligible(
+                providerResult = providerResult,
+                requestedTitle = title,
+                requestedArtist = artist,
+                requestedDurationMs = durationFromMediaMs
+            )
+            return@coroutineScope providerResult.data
         }
 
-        Log.d(TAG, "Initial concurrent fetch did not produce a valid result from either provider.")
+        heldPlainResult?.let { plainResult ->
+            Log.d(TAG, "Initial concurrent fetch: no synced result. Using plain lyrics from ${plainResult.provider}.")
+            cacheConcurrentWinnerIfEligible(
+                providerResult = plainResult,
+                requestedTitle = title,
+                requestedArtist = artist,
+                requestedDurationMs = durationFromMediaMs
+            )
+            return@coroutineScope plainResult.data
+        }
+
+        Log.d(TAG, "Initial concurrent fetch did not produce a valid result from any provider.")
         null
     }
     private fun fetchAndDisplayLyrics(title: String, artist: String, durationFromMediaMs: Long) {
@@ -1855,12 +1911,25 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             val macroCalls = response.message.body.macro_calls
             val subtitlesGet = macroCalls.trackSubtitlesGet?.message?.body
             val lyricsGet = macroCalls.trackLyricsGet?.message?.body
+            val subtitleHolder = subtitlesGet?.subtitle_list?.firstOrNull()?.subtitle
+
+            // track_length is the guard: a matched track must report a length that agrees with the player.
+            val trackLengthSec = macroCalls.matcherTrackGet?.message?.body?.track?.track_length ?: 0
+            if (durationFromMediaMs > 0) {
+                if (trackLengthSec <= 0) {
+                    Log.d(TAG, "Musixmatch: no track length in response for '$title'. Discarding result.")
+                    return null
+                }
+                if (kotlin.math.abs(trackLengthSec * 1000L - durationFromMediaMs) > PROVIDER_DURATION_TOLERANCE_MS) {
+                    Log.d(TAG, "Musixmatch: track length ${trackLengthSec}s does not match media duration ${durationFromMediaMs / 1000}s for '$title'. Discarding result.")
+                    return null
+                }
+            }
 
             if (lyricsGet?.lyrics?.instrumental == 1) {
                 return LyricsData.Info(title, artist, "This is an instrumental song... 🎵", durationFromMediaMs)
             }
 
-            val subtitleHolder = subtitlesGet?.subtitle_list?.firstOrNull()?.subtitle
             val syncedLrc = subtitleHolder?.subtitle_body
             val translatedLrc = subtitleHolder?.subtitle_translated?.subtitle_body
 
@@ -2050,11 +2119,22 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         return try {
             val encodedTitle = URLEncoder.encode(title, StandardCharsets.UTF_8.toString())
             val encodedArtist = URLEncoder.encode(artist, StandardCharsets.UTF_8.toString())
-            val url = "$CUSTOM_LYRIC_API_BASE_URL?title=$encodedTitle&artist=$encodedArtist"
+            val durationParam = if (durationFromMediaMs > 0) "&durationMs=$durationFromMediaMs" else ""
+            val url = "$CUSTOM_LYRIC_API_BASE_URL?title=$encodedTitle&artist=$encodedArtist$durationParam"
             Log.d(TAG, "Fetching from custom lyrics API: $url")
 
             val response: CustomLyricsResponse = httpClient.get(url).body()
             val source = response.source?.trim().takeUnless { it.isNullOrEmpty() } ?: "custom"
+
+            // Compare durations only when both sides report one; custom lyrics may carry none.
+            val responseDurationMs = response.durationMs ?: 0L
+            if (durationFromMediaMs > 0 && responseDurationMs > 0 &&
+                kotlin.math.abs(responseDurationMs - durationFromMediaMs) > PROVIDER_DURATION_TOLERANCE_MS
+            ) {
+                Log.d(TAG, "Custom lyrics API: duration ${responseDurationMs / 1000}s does not match media duration ${durationFromMediaMs / 1000}s for '$title'. Discarding result.")
+                return ProviderLyricsResult(LyricsProvider.CUSTOM, null, source)
+            }
+
             val sortedLines = response.lrc
                 .orEmpty()
                 .mapNotNull { line ->
