@@ -595,23 +595,118 @@ class DebugScreen extends StatefulWidget {
   State<DebugScreen> createState() => _DebugScreenState();
 }
 
-class _DebugScreenState extends State<DebugScreen> {
-  static const int _maxDebugLogLines = 100;
+/// Categories of log lines that are worth showing on screen. Anything that
+/// doesn't fit one of these is kept in the full log but hidden by default.
+enum _DebugLogKind { error, token, notification, lyrics, service }
 
-  final List<String> _logs = [];
+class _DebugLogEntry {
+  const _DebugLogEntry({
+    required this.raw,
+    required this.time,
+    required this.level,
+    required this.message,
+    required this.kind,
+  });
+
+  /// The unmodified logcat line, used for the full log export.
+  final String raw;
+
+  /// HH:MM:SS, or empty when the line wasn't a standard logcat line.
+  final String time;
+
+  /// Logcat priority letter (D, I, W, E) or '?' when unknown.
+  final String level;
+  final String message;
+  final _DebugLogKind? kind;
+
+  bool get isImportant => kind != null;
+
+  // logcat -v time: "09-06 12:34:56.789 D/LyricService( 1234): message"
+  static final RegExp _logcatLine = RegExp(
+    r'^\d{2}-\d{2} (\d{2}:\d{2}:\d{2})\.\d+ ([VDIWEF])/\S+?\(\s*\d+\): (.*)$',
+  );
+  static final RegExp _warnErrorPattern = RegExp(r'failed|error');
+  static final RegExp _noisePattern = RegExp(
+    r'ignoring|stale|overlay|rebind|health|heartbeat|highlight|contrast|'
+    r'window position|layout|lyrics ?window|lyricsview|album art|colou?rs',
+  );
+  // Lines that must never be hidden by the noise filter.
+  static final RegExp _priorityPattern = RegExp(
+    r'access|permission|not granted|listener (connected|disconnected)|'
+    r'new song|switching session',
+  );
+  static final RegExp _tokenPattern = RegExp(r'musixmatch (user )?token');
+  static final RegExp _notificationPattern = RegExp(
+    r'notification|new song|switching session|mediacontroller|media ?session|'
+    r'metadata|listener (connected|disconnected)|access',
+  );
+  static final RegExp _lyricsPattern = RegExp(
+    r'lyrics|lrclib|musixmatch|cache hit',
+  );
+  static final RegExp _servicePattern = RegExp(
+    r'action_|onstartcommand|ondestroy|performstopactions|service',
+  );
+
+  factory _DebugLogEntry.parse(String raw) {
+    final match = _logcatLine.firstMatch(raw);
+    final level = match?.group(2) ?? '?';
+    final message = match?.group(3) ?? raw;
+    return _DebugLogEntry(
+      raw: raw,
+      time: match?.group(1) ?? '',
+      level: level,
+      message: message,
+      kind: _classify(level, message),
+    );
+  }
+
+  static _DebugLogKind? _classify(String level, String message) {
+    if (message.startsWith('--------- beginning of')) return null;
+    final lower = message.toLowerCase();
+    if (level == 'E' || lower.contains('exception')) return _DebugLogKind.error;
+    if (level == 'W' && _warnErrorPattern.hasMatch(lower)) {
+      return _DebugLogKind.error;
+    }
+    if (_tokenPattern.hasMatch(lower)) return _DebugLogKind.token;
+    if (_priorityPattern.hasMatch(lower)) return _DebugLogKind.notification;
+    if (_noisePattern.hasMatch(lower)) return null;
+    if (_notificationPattern.hasMatch(lower)) return _DebugLogKind.notification;
+    if (_lyricsPattern.hasMatch(lower)) return _DebugLogKind.lyrics;
+    if (_servicePattern.hasMatch(lower)) return _DebugLogKind.service;
+    return null;
+  }
+}
+
+class _DebugScreenState extends State<DebugScreen> {
+  static const int _maxDebugLogLines = 500;
+  static const double _minLogViewHeight = 240;
+
+  final List<_DebugLogEntry> _entries = [];
   StreamSubscription<dynamic>? _logSubscription;
   String? _errorMessage;
   bool? _isMusixmatchTokenAvailable;
+  String? _musixmatchTokenPreview;
   bool _isCheckingMusixmatchToken = false;
+  bool _isRegeneratingMusixmatchToken = false;
   String? _musixmatchTokenStatusError;
+  String? _musixmatchTokenFetchError;
   bool _isStarting = true;
   bool _isStreaming = false;
-  bool _logLimitReached = false;
+  bool _showAllLogs = false;
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _logFocusNode = FocusNode();
+
+  // SelectableText drops its selection whenever the span it is given changes.
+  // While the user has a selection, keep showing the span they selected in
+  // and resume live updates once the selection collapses or focus is lost.
+  bool _hasLogSelection = false;
+  TextSpan? _frozenLogSpan;
+  TextSpan? _lastLogSpan;
 
   @override
   void initState() {
     super.initState();
+    _logFocusNode.addListener(_handleLogFocusChanged);
     _refreshMusixmatchTokenStatus();
     _startDebugSession();
   }
@@ -620,7 +715,29 @@ class _DebugScreenState extends State<DebugScreen> {
   void dispose() {
     _logSubscription?.cancel();
     _scrollController.dispose();
+    _logFocusNode
+      ..removeListener(_handleLogFocusChanged)
+      ..dispose();
     super.dispose();
+  }
+
+  void _handleLogFocusChanged() {
+    if (!_logFocusNode.hasFocus) _setLogSelection(false);
+  }
+
+  void _handleLogSelectionChanged(
+    TextSelection selection,
+    SelectionChangedCause? cause,
+  ) {
+    _setLogSelection(!selection.isCollapsed);
+  }
+
+  void _setLogSelection(bool hasSelection) {
+    if (hasSelection == _hasLogSelection) return;
+    setState(() {
+      _hasLogSelection = hasSelection;
+      _frozenLogSpan = hasSelection ? _lastLogSpan : null;
+    });
   }
 
   Future<void> _stopDebugSession() async {
@@ -645,9 +762,13 @@ class _DebugScreenState extends State<DebugScreen> {
       final bool? isAvailable = await _platformChannel.invokeMethod<bool>(
         'getMusixmatchTokenAvailable',
       );
+      final String? preview = await _platformChannel.invokeMethod<String>(
+        'getMusixmatchTokenPreview',
+      );
       if (!mounted) return;
       setState(() {
         _isMusixmatchTokenAvailable = isAvailable ?? false;
+        _musixmatchTokenPreview = preview;
         _isCheckingMusixmatchToken = false;
         _musixmatchTokenStatusError = null;
       });
@@ -666,49 +787,96 @@ class _DebugScreenState extends State<DebugScreen> {
     }
   }
 
+  Future<Map<Object?, Object?>?> _fetchTokenFetchResult() {
+    return _platformChannel.invokeMethod<Map<Object?, Object?>>(
+      'getMusixmatchTokenFetchResult',
+    );
+  }
+
+  Future<void> _regenerateMusixmatchToken() async {
+    if (_isRegeneratingMusixmatchToken) return;
+    setState(() {
+      _isRegeneratingMusixmatchToken = true;
+      _musixmatchTokenStatusError = null;
+      _musixmatchTokenFetchError = null;
+    });
+
+    try {
+      final int seqBefore = (await _fetchTokenFetchResult())?['seq'] as int? ?? 0;
+      await _platformChannel.invokeMethod('regenerateMusixmatchToken');
+
+      // The service fetches the token asynchronously. Poll until it reports
+      // an outcome (sequence number changes) or we give up.
+      const Duration pollInterval = Duration(milliseconds: 500);
+      const Duration timeout = Duration(seconds: 12);
+      final Stopwatch elapsed = Stopwatch()..start();
+      Map<Object?, Object?>? outcome;
+      while (elapsed.elapsed < timeout) {
+        await Future<void>.delayed(pollInterval);
+        if (!mounted) return;
+        final result = await _fetchTokenFetchResult();
+        if ((result?['seq'] as int? ?? 0) != seqBefore) {
+          outcome = result;
+          break;
+        }
+      }
+      if (!mounted) return;
+      await _refreshMusixmatchTokenStatus(showLoading: false);
+      if (!mounted) return;
+
+      if (outcome == null) {
+        _showSnack(
+          'No response from the service after ${timeout.inSeconds}s. '
+          'Check the log for details.',
+        );
+      } else {
+        final String? error = outcome['error'] as String?;
+        setState(() {
+          _musixmatchTokenFetchError = error;
+        });
+        _showSnack(
+          error == null
+              ? 'New Musixmatch token acquired'
+                    '${_musixmatchTokenPreview == null ? '' : ' ($_musixmatchTokenPreview)'}.'
+              : 'Token regeneration failed: $error',
+        );
+      }
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _musixmatchTokenStatusError = e.message ?? e.code;
+      });
+      _showSnack('Could not request a new token: ${e.message ?? e.code}');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _musixmatchTokenStatusError = e.toString();
+      });
+      _showSnack('Could not request a new token: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRegeneratingMusixmatchToken = false;
+        });
+      }
+    }
+  }
+
   Future<void> _startDebugSession() async {
     setState(() {
-      _logs.clear();
+      _entries.clear();
+      _hasLogSelection = false;
+      _frozenLogSpan = null;
       _errorMessage = null;
       _isStarting = true;
       _isStreaming = true;
-      _logLimitReached = false;
     });
 
     await _logSubscription?.cancel();
     _logSubscription = _debugLogChannel.receiveBroadcastStream().listen(
       (event) {
         if (!mounted) return;
-        if (_logLimitReached) return;
-        final logLine = event.toString();
-        final lowerLogLine = logLine.toLowerCase();
-        bool shouldStopAtLimit = false;
-        setState(() {
-          if (_logs.length < _maxDebugLogLines) {
-            _logs.add(logLine);
-          }
-          if (lowerLogLine.contains(
-            'successfully acquired musixmatch user token',
-          )) {
-            _isMusixmatchTokenAvailable = true;
-            _musixmatchTokenStatusError = null;
-          } else if (lowerLogLine.contains(
-                'failed to get musixmatch user token',
-              ) ||
-              lowerLogLine.contains('musixmatch token response was blank')) {
-            _isMusixmatchTokenAvailable = false;
-          }
-          if (_logs.length >= _maxDebugLogLines) {
-            _logLimitReached = true;
-            _errorMessage =
-                'Log capture stopped at $_maxDebugLogLines lines. Tap "Rescan & start" to capture again.';
-            shouldStopAtLimit = true;
-          }
-        });
-        _scrollToBottom();
-        if (shouldStopAtLimit) {
-          unawaited(_stopDebugSession());
-        }
+        _handleLogLine(event.toString());
       },
       onError: (error) {
         if (!mounted) return;
@@ -754,17 +922,107 @@ class _DebugScreenState extends State<DebugScreen> {
     }
   }
 
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-        );
+  void _handleLogLine(String line) {
+    final entry = _DebugLogEntry.parse(line);
+    setState(() {
+      _entries.add(entry);
+      if (_entries.length > _maxDebugLogLines) {
+        _entries.removeAt(0);
       }
     });
+    if (entry.kind == _DebugLogKind.token) {
+      // Token acquired/failed: ask the native side for the real state.
+      unawaited(_refreshMusixmatchTokenStatus(showLoading: false));
+    }
+    if (entry.isImportant || _showAllLogs) {
+      _scrollToBottom();
+    }
   }
+
+  /// Follows new lines only while the view is already near the bottom, so a
+  /// user reading or selecting older lines isn't yanked away.
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      final position = _scrollController.position;
+      final bool nearBottom =
+          position.maxScrollExtent - position.pixels < 80;
+      if (!nearBottom) return;
+      _scrollController.animateTo(
+        position.maxScrollExtent,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  String _fullLogText() {
+    final buffer = StringBuffer()
+      ..writeln('Lyric Listener debug log')
+      ..writeln('Captured: ${DateTime.now().toIso8601String()}')
+      ..writeln('Musixmatch token: ${_musixmatchTokenPreview ?? 'unavailable'}')
+      ..writeln('Lines: ${_entries.length} (max $_maxDebugLogLines)')
+      ..writeln();
+    for (final entry in _entries) {
+      buffer.writeln(entry.raw);
+    }
+    return buffer.toString();
+  }
+
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(message), duration: const Duration(seconds: 6)),
+      );
+  }
+
+  Future<void> _copyFullLog() async {
+    await Clipboard.setData(ClipboardData(text: _fullLogText()));
+    _showSnack('Copied ${_entries.length} log lines to clipboard.');
+  }
+
+  Future<void> _saveFullLog() async {
+    try {
+      final String? path = await _platformChannel.invokeMethod<String>(
+        'saveDebugLog',
+        {'content': _fullLogText()},
+      );
+      _showSnack(path == null ? 'Log saved.' : 'Log saved to $path');
+    } on PlatformException catch (e) {
+      _showSnack('Could not save log: ${e.message ?? e.code}');
+    } catch (e) {
+      _showSnack('Could not save log: $e');
+    }
+  }
+
+  void _clearLogs() {
+    setState(() {
+      _entries.clear();
+      _hasLogSelection = false;
+      _frozenLogSpan = null;
+    });
+  }
+
+  static String _kindLabel(_DebugLogEntry entry) => switch (entry.kind) {
+    _DebugLogKind.error => 'ERR',
+    _DebugLogKind.token => 'TOKEN',
+    _DebugLogKind.notification => 'NOTIF',
+    _DebugLogKind.lyrics => 'LYRICS',
+    _DebugLogKind.service => 'SVC',
+    null => entry.level,
+  };
+
+  static Color _kindColor(_DebugLogKind? kind, ColorScheme colorScheme) =>
+      switch (kind) {
+        _DebugLogKind.error => colorScheme.error,
+        _DebugLogKind.token => colorScheme.tertiary,
+        _DebugLogKind.notification => colorScheme.primary,
+        _DebugLogKind.lyrics => colorScheme.secondary,
+        _DebugLogKind.service => colorScheme.onSurface,
+        null => colorScheme.onSurfaceVariant,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -773,12 +1031,17 @@ class _DebugScreenState extends State<DebugScreen> {
     final bool isTokenAvailable = _isMusixmatchTokenAvailable == true;
     final bool isTokenUnavailable =
         _isMusixmatchTokenAvailable == false && !_isCheckingMusixmatchToken;
-    final String musixmatchTokenStatusText = _isCheckingMusixmatchToken
+    final String tokenSuffix = _musixmatchTokenPreview == null
+        ? ''
+        : ' ($_musixmatchTokenPreview)';
+    final String musixmatchTokenStatusText = _isRegeneratingMusixmatchToken
+        ? 'Musixmatch token: Regenerating...'
+        : _isCheckingMusixmatchToken
         ? 'Musixmatch token: Checking...'
         : _isMusixmatchTokenAvailable == null
         ? 'Musixmatch token: Unknown'
         : isTokenAvailable
-        ? 'Musixmatch token: Available'
+        ? 'Musixmatch token: Available$tokenSuffix'
         : 'Musixmatch token: Unavailable';
     final Color musixmatchTokenStatusColor = _isCheckingMusixmatchToken
         ? colorScheme.primary
@@ -795,16 +1058,56 @@ class _DebugScreenState extends State<DebugScreen> {
         ? Icons.error_outline_rounded
         : Icons.help_outline_rounded;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Debug: Media Notification')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    final List<_DebugLogEntry> visibleEntries = _showAllLogs
+        ? _entries
+        : _entries.where((entry) => entry.isImportant).toList();
+    final TextStyle? logStyle = textTheme.bodySmall?.copyWith(
+      fontFamily: 'monospace',
+    );
+    // Beside the status text the Regenerate button leaves too little room on
+    // narrow screens or at large font scales; stack it underneath instead.
+    final bool stackTokenControls =
+        MediaQuery.sizeOf(context).width < 360 ||
+        MediaQuery.textScalerOf(context).scale(1.0) >= 1.4;
+    final Widget tokenStatusRow = Row(
+      children: [
+        Icon(
+          musixmatchTokenStatusIcon,
+          size: 18,
+          color: musixmatchTokenStatusColor,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            musixmatchTokenStatusText,
+            style: textTheme.bodyMedium?.copyWith(
+              color: musixmatchTokenStatusColor,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+    final Widget regenerateButton = TextButton.icon(
+      onPressed: _isRegeneratingMusixmatchToken || _isCheckingMusixmatchToken
+          ? null
+          : _regenerateMusixmatchToken,
+      icon: _isRegeneratingMusixmatchToken
+          ? const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.autorenew_rounded, size: 18),
+      label: const Text('Regenerate'),
+    );
+
+    final Widget header = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: colorScheme.surfaceContainer,
                 borderRadius: BorderRadius.circular(18),
@@ -813,25 +1116,31 @@ class _DebugScreenState extends State<DebugScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Icon(
-                        musixmatchTokenStatusIcon,
-                        size: 18,
-                        color: musixmatchTokenStatusColor,
+                  if (stackTokenControls) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: tokenStatusRow,
+                    ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: regenerateButton,
+                    ),
+                  ] else
+                    Row(
+                      children: [
+                        Expanded(child: tokenStatusRow),
+                        regenerateButton,
+                      ],
+                    ),
+                  if (_musixmatchTokenFetchError != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Last token fetch failed: $_musixmatchTokenFetchError',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.error,
                       ),
-                      const SizedBox(width: 0),
-                      Expanded(
-                        child: Text(
-                          musixmatchTokenStatusText,
-                          style: textTheme.bodyMedium?.copyWith(
-                            color: musixmatchTokenStatusColor,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                   if (_musixmatchTokenStatusError != null) ...[
                     const SizedBox(height: 4),
                     Text(
@@ -846,13 +1155,21 @@ class _DebugScreenState extends State<DebugScreen> {
             ),
             const SizedBox(height: 10),
             Text(
-              'Fetches the currently active media notification and streams service logs so you can follow the parsing flow.',
+              'Streams service logs. Only notification, lyrics lookup, token and '
+              'error lines are shown; the full log (last $_maxDebugLogLines '
+              'lines) can be copied or saved to a file.',
               style: textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 10),
-            Row(
+            // Wraps rather than Rows so the controls flow onto a second line
+            // on narrow screens or with a large font scale instead of
+            // overflowing.
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 FilledButton.icon(
                   onPressed: _isStarting ? null : _startDebugSession,
@@ -865,7 +1182,6 @@ class _DebugScreenState extends State<DebugScreen> {
                         : 'Start log stream',
                   ),
                 ),
-                const SizedBox(width: 12),
                 OutlinedButton.icon(
                   onPressed: _isStarting || !_isStreaming
                       ? null
@@ -873,7 +1189,6 @@ class _DebugScreenState extends State<DebugScreen> {
                   icon: const Icon(Icons.stop_circle_outlined),
                   label: const Text('Stop stream'),
                 ),
-                const SizedBox(width: 12),
                 if (_isStarting)
                   const SizedBox(
                     width: 20,
@@ -882,6 +1197,51 @@ class _DebugScreenState extends State<DebugScreen> {
                   ),
               ],
             ),
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                FilterChip(
+                  label: Text('Show all (${_entries.length})'),
+                  selected: _showAllLogs,
+                  onSelected: (value) {
+                    setState(() {
+                      _showAllLogs = value;
+                    });
+                    _scrollToBottom();
+                  },
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Copy full log',
+                      icon: const Icon(Icons.copy_rounded),
+                      onPressed: _entries.isEmpty ? null : _copyFullLog,
+                    ),
+                    IconButton(
+                      tooltip: 'Save full log to file',
+                      icon: const Icon(Icons.save_alt_rounded),
+                      onPressed: _entries.isEmpty ? null : _saveFullLog,
+                    ),
+                    IconButton(
+                      tooltip: 'Clear',
+                      icon: const Icon(Icons.delete_sweep_outlined),
+                      onPressed: _entries.isEmpty ? null : _clearLogs,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            if (_hasLogSelection) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Log view paused while text is selected. Tap the log to resume.',
+                style: textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
             if (_errorMessage != null) ...[
               const SizedBox(height: 6),
               Text(
@@ -889,46 +1249,118 @@ class _DebugScreenState extends State<DebugScreen> {
                 style: textTheme.bodyMedium?.copyWith(color: colorScheme.error),
               ),
             ],
-            const SizedBox(height: 10),
-            Expanded(
-              child: Container(
+      ],
+    );
+
+    final TextSpan liveLogSpan = TextSpan(
+      style: logStyle,
+      children: [
+        for (int i = 0; i < visibleEntries.length; i++)
+          ..._buildEntrySpans(
+            visibleEntries[i],
+            colorScheme,
+            isLast: i == visibleEntries.length - 1,
+          ),
+      ],
+    );
+    final TextSpan? frozenLogSpan = _hasLogSelection ? _frozenLogSpan : null;
+    final TextSpan displayedLogSpan = frozenLogSpan ?? liveLogSpan;
+    _lastLogSpan = displayedLogSpan;
+    final bool showLogText = visibleEntries.isNotEmpty || frozenLogSpan != null;
+
+    final Widget logView = Container(
+                width: double.infinity,
                 decoration: BoxDecoration(
                   color: colorScheme.surfaceContainer,
                   borderRadius: BorderRadius.circular(28),
                   border: Border.all(color: colorScheme.outlineVariant),
                 ),
-                child: SelectionArea(
-                  child: _logs.isEmpty
-                      ? Center(
+                child: !showLogText
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
                           child: Text(
                             _isStarting
                                 ? 'Listening for debug logs...'
-                                : 'No logs yet. Start the stream.',
+                                : _entries.isEmpty
+                                ? 'No logs yet. Start the stream.'
+                                : '${_entries.length} verbose lines captured, '
+                                      'nothing important yet. Turn on "Show all" '
+                                      'to see them.',
+                            textAlign: TextAlign.center,
                             style: textTheme.bodyMedium?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
                           ),
-                        )
-                      : ListView.builder(
-                          controller: _scrollController,
-                          padding: const EdgeInsets.all(12),
-                          itemCount: _logs.length,
-                          itemBuilder: (context, index) {
-                            return Text(
-                              _logs[index],
-                              style: textTheme.bodySmall?.copyWith(
-                                fontFamily: 'monospace',
-                              ),
-                            );
-                          },
                         ),
-                ),
-              ),
+                      )
+                    // A single SelectableText keeps selection anchored to
+                    // character offsets, so appending lines while a selection
+                    // is active doesn't re-select the whole view the way a
+                    // SelectionArea over a rebuilding ListView did.
+                    : SingleChildScrollView(
+                        controller: _scrollController,
+                        padding: EdgeInsets.fromLTRB(
+                          12,
+                          12,
+                          12,
+                          12 + MediaQuery.paddingOf(context).bottom,
+                        ),
+                        child: SelectableText.rich(
+                          displayedLogSpan,
+                          focusNode: _logFocusNode,
+                          onSelectionChanged: _handleLogSelectionChanged,
+                        ),
+                      ),
+    );
+
+    // The log normally fills whatever the header leaves. When the header is
+    // tall (large font scale, landscape) the log keeps a usable minimum
+    // height and the whole page scrolls instead.
+    return Scaffold(
+      appBar: AppBar(title: const Text('Debug: Media Notification')),
+      body: CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            sliver: SliverToBoxAdapter(child: header),
+          ),
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+              child: SizedBox(height: _minLogViewHeight, child: logView),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
+  }
+
+  List<InlineSpan> _buildEntrySpans(
+    _DebugLogEntry entry,
+    ColorScheme colorScheme, {
+    required bool isLast,
+  }) {
+    final Color kindColor = _kindColor(entry.kind, colorScheme);
+    return [
+      if (entry.time.isNotEmpty)
+        TextSpan(
+          text: '${entry.time} ',
+          style: TextStyle(color: colorScheme.onSurfaceVariant),
+        ),
+      TextSpan(
+        text: '${_kindLabel(entry)} ',
+        style: TextStyle(color: kindColor, fontWeight: FontWeight.w700),
+      ),
+      TextSpan(
+        text: entry.message,
+        style: entry.isImportant
+            ? null
+            : TextStyle(color: colorScheme.onSurfaceVariant),
+      ),
+      if (!isLast) const TextSpan(text: '\n'),
+    ];
   }
 }
 
@@ -2088,97 +2520,102 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           title: 'Appearance',
           children: [
             AnimatedSwitcher(
-              duration: const Duration(milliseconds: 400),
+              duration: const Duration(milliseconds: 250),
               switchInCurve: Curves.easeOut,
               switchOutCurve: Curves.easeIn,
               child: isMaterialYouThemingEnabled
                   ? const SizedBox.shrink(key: ValueKey('color-picker-hidden'))
-                  : Padding(
+                  : Column(
                       key: const ValueKey('color-picker-visible'),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Theme Color',
-                            style: textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
                           ),
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 16.0,
-                            runSpacing: 12.0,
-                            children: _predefinedSeedColors.map((color) {
-                              final isSelected = widget.seedColor == color;
-                              return InkWell(
-                                borderRadius: BorderRadius.circular(
-                                  _seedColorChipRadius,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Theme Color',
+                                style: textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w600,
                                 ),
-                                onTap: () => widget.onSeedColorChanged(color),
-                                child: Tooltip(
-                                  message:
-                                      'Set theme color to #${color.value.toRadixString(16).substring(2).toUpperCase()}',
-                                  child: AnimatedScale(
-                                    duration: const Duration(milliseconds: 700),
-                                    curve: const ElasticOutCurve(0.8),
-                                    scale: isSelected ? 1.15 : 1.0,
-                                    child: AnimatedContainer(
-                                      duration: const Duration(milliseconds: 700),
-                                      curve: const ElasticOutCurve(0.8),
-                                      width: _seedColorChipSize,
-                                      height: _seedColorChipSize,
-                                      decoration: BoxDecoration(
-                                        color: color,
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.outlineVariant,
-                                          width: isSelected ? 2.5 : 1.5,
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .primary
-                                                .withValues(
-                                                  alpha: isSelected ? 0.35 : 0.15,
-                                                ),
-                                            blurRadius: isSelected ? 12 : 8,
-                                            offset: const Offset(0, 4),
-                                          ),
-                                        ],
-                                      ),
-                                      child: isSelected
-                                          ? Center(
-                                              child: Icon(
-                                                Icons.check_rounded,
-                                                color:
-                                                    ThemeData.estimateBrightnessForColor(
-                                                          color,
-                                                        ) ==
-                                                        Brightness.dark
-                                                    ? Colors.white
-                                                    : Colors.black,
-                                                size: 24,
-                                              ),
-                                            )
-                                          : null,
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 16.0,
+                                runSpacing: 12.0,
+                                children: _predefinedSeedColors.map((color) {
+                                  final isSelected = widget.seedColor == color;
+                                  return InkWell(
+                                    borderRadius: BorderRadius.circular(
+                                      _seedColorChipRadius,
                                     ),
-                                  ),
-                                ),
-                              );
-                            }).toList(),
+                                    onTap: () => widget.onSeedColorChanged(color),
+                                    child: Tooltip(
+                                      message:
+                                          'Set theme color to #${color.value.toRadixString(16).substring(2).toUpperCase()}',
+                                      child: AnimatedScale(
+                                        duration: const Duration(milliseconds: 700),
+                                        curve: const ElasticOutCurve(0.8),
+                                        scale: isSelected ? 1.15 : 1.0,
+                                        child: AnimatedContainer(
+                                          duration: const Duration(milliseconds: 700),
+                                          curve: const ElasticOutCurve(0.8),
+                                          width: _seedColorChipSize,
+                                          height: _seedColorChipSize,
+                                          decoration: BoxDecoration(
+                                            color: color,
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.outlineVariant,
+                                              width: isSelected ? 2.5 : 1.5,
+                                            ),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .primary
+                                                    .withValues(
+                                                      alpha: isSelected ? 0.35 : 0.15,
+                                                    ),
+                                                blurRadius: isSelected ? 12 : 8,
+                                                offset: const Offset(0, 4),
+                                              ),
+                                            ],
+                                          ),
+                                          child: isSelected
+                                              ? Center(
+                                                  child: Icon(
+                                                    Icons.check_rounded,
+                                                    color:
+                                                        ThemeData.estimateBrightnessForColor(
+                                                              color,
+                                                            ) ==
+                                                            Brightness.dark
+                                                        ? Colors.white
+                                                        : Colors.black,
+                                                    size: 24,
+                                                  ),
+                                                )
+                                              : null,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                        const Divider(indent: 16, endIndent: 16),
+                      ],
                     ),
             ),
-            const Divider(indent: 16, endIndent: 16),
             SwitchListTile.adaptive(
               value: isMaterialYouThemingEnabled,
               onChanged: widget.onMaterialYouThemingChanged,

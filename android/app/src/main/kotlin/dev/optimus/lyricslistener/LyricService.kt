@@ -70,6 +70,7 @@ import kotlinx.serialization.SerialName
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.selects.select
 import android.widget.ImageView
 
@@ -397,6 +398,7 @@ class LyricService : NotificationListenerService() {
         const val ACTION_USER_INITIATED_START = "dev.optimus.lyricslistener.ACTION_USER_INITIATED_START"
         const val ACTION_USER_INITIATED_STOP = "dev.optimus.lyricslistener.ACTION_USER_INITIATED_STOP"
         const val ACTION_DEBUG_ACTIVE_NOTIFICATION = "dev.optimus.lyricslistener.ACTION_DEBUG_ACTIVE_NOTIFICATION"
+        const val ACTION_DEBUG_REFRESH_MUSIXMATCH_TOKEN = "dev.optimus.lyricslistener.ACTION_DEBUG_REFRESH_MUSIXMATCH_TOKEN"
         private const val DEBUG_NOTIFICATION_TEXT = "Debugging media notification..."
         private const val ENABLED_NOTIFICATION_LISTENERS_KEY = "enabled_notification_listeners"
         const val ATTRIBUTION_TIMESTAMP = -999L
@@ -446,6 +448,15 @@ class LyricService : NotificationListenerService() {
         var isServiceManuallyStarted = AtomicBoolean(false)
             private set
         val isMusixmatchTokenAvailableForDebug = AtomicBoolean(false)
+        /** Masked form of the current token (first/last 4 chars) for the debug screen. */
+        val musixmatchTokenPreviewForDebug = AtomicReference<String?>(null)
+        /** Bumped after every token fetch attempt so the debug screen can wait for an outcome. */
+        val musixmatchTokenFetchSeq = AtomicInteger(0)
+        /** Error of the most recent token fetch attempt, or null if it succeeded. */
+        val musixmatchTokenLastFetchError = AtomicReference<String?>(null)
+
+        fun maskMusixmatchToken(token: String): String =
+            if (token.length <= 8) "*".repeat(token.length) else "${token.take(4)}…${token.takeLast(4)}"
     }
 
     override fun onCreate() {
@@ -470,8 +481,8 @@ class LyricService : NotificationListenerService() {
         // Initialize lyrics cache
         cacheManager = LyricsCacheManager(this)
 
-        isMusixmatchTokenAvailableForDebug.set(false)
-        initializeMusixmatchToken()
+        setMusixmatchUserToken(null)
+        initializeMusixmatchToken("service create")
     }
 
     private fun markListenerConnected(reason: String) {
@@ -583,27 +594,39 @@ class LyricService : NotificationListenerService() {
         }
     }
     
-    private fun initializeMusixmatchToken() {
+    private fun setMusixmatchUserToken(token: String?) {
+        musixmatchUserToken = token
+        isMusixmatchTokenAvailableForDebug.set(token != null)
+        musixmatchTokenPreviewForDebug.set(token?.let { maskMusixmatchToken(it) })
+    }
+
+    /**
+     * Fetches a fresh Musixmatch user token. On success it replaces the current one;
+     * on failure the existing token (if any) is kept so a transient error can't drop it.
+     */
+    private fun initializeMusixmatchToken(reason: String) {
         serviceScope.launch(Dispatchers.IO) {
             try {
-                Log.d(TAG, "Attempting to get Musixmatch user token.")
+                Log.d(TAG, "Attempting to get Musixmatch user token. Reason: $reason")
                 val response: MusixmatchTokenResponse = httpClient.get(MUSIXMATCH_TOKEN_URL) {
                     header("User-Agent", MUSIXMATCH_USER_AGENT)
                     header("Cookie", MUSIXMATCH_COOKIE)
                 }.body()
                 val token = response.message.body.user_token
                 if (token.isNotBlank()) {
-                    musixmatchUserToken = token
-                    isMusixmatchTokenAvailableForDebug.set(true)
-                    Log.i(TAG, "Successfully acquired Musixmatch user token.")
+                    val replaced = musixmatchUserToken != null
+                    setMusixmatchUserToken(token)
+                    musixmatchTokenLastFetchError.set(null)
+                    Log.i(TAG, "Successfully acquired Musixmatch user token (${maskMusixmatchToken(token)}). Replaced existing: $replaced")
                 } else {
-                    isMusixmatchTokenAvailableForDebug.set(musixmatchUserToken != null)
-                    Log.w(TAG, "Musixmatch token response was blank.")
+                    musixmatchTokenLastFetchError.set("Token response was blank")
+                    Log.w(TAG, "Musixmatch token response was blank. Keeping existing token: ${musixmatchUserToken != null}")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to get Musixmatch user token", e)
-                musixmatchUserToken = null
-                isMusixmatchTokenAvailableForDebug.set(false)
+                musixmatchTokenLastFetchError.set(e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName)
+                Log.e(TAG, "Failed to get Musixmatch user token. Keeping existing token: ${musixmatchUserToken != null}", e)
+            } finally {
+                musixmatchTokenFetchSeq.incrementAndGet()
             }
         }
     }
@@ -641,7 +664,7 @@ class LyricService : NotificationListenerService() {
                 lastListenerComponentResetAttemptMs.set(0L)
                 clearSongContextAndHideLyrics()
                 requestNotificationListenerRebind("User initiated start", force = true)
-                if(musixmatchUserToken == null) initializeMusixmatchToken()
+                if (musixmatchUserToken == null) initializeMusixmatchToken("user initiated start")
                 tryToConnectToActiveMediaSessions(delayMs = 0L)
             }
             ACTION_SHOW_LYRICS -> {
@@ -672,6 +695,11 @@ class LyricService : NotificationListenerService() {
                 pendingDebugNotificationReset = true
                 startForegroundWithNotification(DEBUG_NOTIFICATION_TEXT)
                 tryToConnectToActiveMediaSessions(delayMs = 0L)
+            }
+            ACTION_DEBUG_REFRESH_MUSIXMATCH_TOKEN -> {
+                Log.i(TAG, "ACTION_DEBUG_REFRESH_MUSIXMATCH_TOKEN received. Requesting a new Musixmatch user token.")
+                startForegroundWithNotification(buildStatusNotificationText())
+                initializeMusixmatchToken("debug regenerate")
             }
             else -> {
                 Log.i(TAG, "Service (re)started with null or unhandled action (Intent: $intent, Action: ${intent?.action}). _listenerEverConnected: $_listenerEverConnected")
@@ -705,8 +733,7 @@ class LyricService : NotificationListenerService() {
         currentLyricsData = null
         currentMediaSessionToken = null
         currentPlaybackState = null
-        musixmatchUserToken = null
-        isMusixmatchTokenAvailableForDebug.set(false)
+        setMusixmatchUserToken(null)
 
         _listenerEverConnected = false
         _listenerCurrentlyBound = false
@@ -1819,7 +1846,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             val encodedArtist = URLEncoder.encode(artist, StandardCharsets.UTF_8.toString())
             val url = "$MUSIXMATCH_API_BASE_URL?usertoken=$token&q_track=$encodedTitle&q_artist=$encodedArtist&app_id=mac-ios-v2.0&subtitle_format=json&selected_language=en&part=subtitle_translated"
 
-            Log.d(TAG, "Fetching from Musixmatch: $url")
+            Log.d(TAG, "Fetching from Musixmatch: ${url.replace(token, maskMusixmatchToken(token))}")
             val response: MusixmatchLyricsResponse = httpClient.get(url) {
                     header("User-Agent", MUSIXMATCH_USER_AGENT)
                     header("Cookie", MUSIXMATCH_COOKIE)

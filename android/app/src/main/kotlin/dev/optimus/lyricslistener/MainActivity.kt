@@ -20,7 +20,11 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
@@ -412,6 +416,51 @@ class MainActivity : FlutterActivity() {
                 }
                 "getMusixmatchTokenAvailable" -> {
                     result.success(LyricService.isMusixmatchTokenAvailableForDebug.get())
+                }
+                "getMusixmatchTokenPreview" -> {
+                    result.success(LyricService.musixmatchTokenPreviewForDebug.get())
+                }
+                "getMusixmatchTokenFetchResult" -> {
+                    result.success(
+                        mapOf(
+                            "seq" to LyricService.musixmatchTokenFetchSeq.get(),
+                            "error" to LyricService.musixmatchTokenLastFetchError.get(),
+                        )
+                    )
+                }
+                "regenerateMusixmatchToken" -> {
+                    try {
+                        val intent = Intent(this, LyricService::class.java).apply {
+                            action = LyricService.ACTION_DEBUG_REFRESH_MUSIXMATCH_TOKEN
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            startForegroundService(intent)
+                        } else {
+                            startService(intent)
+                        }
+                        result.success(null)
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Error requesting Musixmatch token refresh: ${e.message}")
+                        result.error("ERROR_REFRESH_TOKEN", e.message, null)
+                    }
+                }
+                "saveDebugLog" -> {
+                    val content = call.argument<String>("content")
+                    if (content == null) {
+                        result.error("INVALID_ARGUMENT", "content is required", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val dir = File(getExternalFilesDir(null) ?: filesDir, "debug_logs")
+                        if (!dir.exists()) dir.mkdirs()
+                        val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+                        val file = File(dir, "lyric-listener-debug-$stamp.txt")
+                        file.writeText(content)
+                        result.success(file.absolutePath)
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Error saving debug log: ${e.message}")
+                        result.error("ERROR_SAVE_LOG", e.message, null)
+                    }
                 }
                 else -> {
                     result.notImplemented()
