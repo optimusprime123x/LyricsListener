@@ -325,8 +325,14 @@ class LyricService : NotificationListenerService() {
 
     @Serializable data class MacroCalls(
         @SerialName("track.lyrics.get") val trackLyricsGet: MMXTrackLyricsGet? = null,
-        @SerialName("track.subtitles.get") val trackSubtitlesGet: MMXTrackSubtitlesGet? = null
+        @SerialName("track.subtitles.get") val trackSubtitlesGet: MMXTrackSubtitlesGet? = null,
+        @SerialName("matcher.track.get") val matcherTrackGet: MMXMatcherTrackGet? = null
     )
+
+    @Serializable data class MMXMatcherTrackGet(val message: MMXMatcherTrackGetMessage? = null)
+    @Serializable data class MMXMatcherTrackGetMessage(val body: MMXMatcherTrackBody? = null)
+    @Serializable data class MMXMatcherTrackBody(val track: MMXMatchedTrack? = null)
+    @Serializable data class MMXMatchedTrack(val track_length: Int = 0)
 
     @Serializable data class MMXTrackLyricsGet(val message: MMXTrackLyricsGetMessage? = null)
     @Serializable data class MMXTrackLyricsGetMessage(val body: MMXLyricsBody? = null)
@@ -404,6 +410,7 @@ class LyricService : NotificationListenerService() {
         const val ATTRIBUTION_TIMESTAMP = -999L
 
         private const val LYRIC_API_BASE_URL = "https://lrclib.net/api/search"
+        private const val PROVIDER_DURATION_TOLERANCE_MS = 3000L
         private const val CUSTOM_LYRIC_API_BASE_URL = "https://lyrics-hiwayajcyq-uw.a.run.app/"
         private val LRC_LINE_PATTERN: Pattern = Pattern.compile("(?<=\\[)(\\d{2,}):(\\d{2})([.:])(\\d{2,3})\\](.*)")
 
@@ -1666,6 +1673,9 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 cacheSource = "lrclib"
             )
         })
+        // Plain (unsynced) lyrics are only used if no provider delivers a synced result.
+        var heldPlainResult: ProviderLyricsResult? = null
+
         while (pendingRequests.isNotEmpty()) {
             val completedRequestAndResult = select<Pair<Deferred<ProviderLyricsResult>, ProviderLyricsResult>> {
                 pendingRequests.forEach { request ->
@@ -1676,32 +1686,56 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             val completedRequest = completedRequestAndResult.first
             val providerResult = completedRequestAndResult.second
             pendingRequests.remove(completedRequest)
-            if (isValidInitialProviderResult(providerResult.data)) {
+
+            if (!isValidInitialProviderResult(providerResult.data)) {
                 Log.d(
                     TAG,
-                    "Initial concurrent fetch winner: ${providerResult.provider}. Discarding slower provider requests."
+                    "Initial concurrent fetch from ${providerResult.provider} was not valid. Waiting for remaining providers."
                 )
-                pendingRequests.forEach { request ->
-                    if (request.isActive) {
-                        request.cancel("Discarding slower provider after ${providerResult.provider} returned a valid result.")
-                    }
+                continue
+            }
+
+            if (providerResult.data is LyricsData.Plain) {
+                if (heldPlainResult == null) {
+                    Log.d(
+                        TAG,
+                        "Initial concurrent fetch: ${providerResult.provider} returned plain lyrics. Holding them while waiting for a synced result."
+                    )
+                    heldPlainResult = providerResult
                 }
-                cacheConcurrentWinnerIfEligible(
-                    providerResult = providerResult,
-                    requestedTitle = title,
-                    requestedArtist = artist,
-                    requestedDurationMs = durationFromMediaMs
-                )
-                return@coroutineScope providerResult.data
+                continue
             }
 
             Log.d(
                 TAG,
-                "Initial concurrent fetch from ${providerResult.provider} was not valid. Waiting for remaining provider."
+                "Initial concurrent fetch winner: ${providerResult.provider}. Discarding slower provider requests."
             )
+            pendingRequests.forEach { request ->
+                if (request.isActive) {
+                    request.cancel("Discarding slower provider after ${providerResult.provider} returned a valid result.")
+                }
+            }
+            cacheConcurrentWinnerIfEligible(
+                providerResult = providerResult,
+                requestedTitle = title,
+                requestedArtist = artist,
+                requestedDurationMs = durationFromMediaMs
+            )
+            return@coroutineScope providerResult.data
         }
 
-        Log.d(TAG, "Initial concurrent fetch did not produce a valid result from either provider.")
+        heldPlainResult?.let { plainResult ->
+            Log.d(TAG, "Initial concurrent fetch: no synced result. Using plain lyrics from ${plainResult.provider}.")
+            cacheConcurrentWinnerIfEligible(
+                providerResult = plainResult,
+                requestedTitle = title,
+                requestedArtist = artist,
+                requestedDurationMs = durationFromMediaMs
+            )
+            return@coroutineScope plainResult.data
+        }
+
+        Log.d(TAG, "Initial concurrent fetch did not produce a valid result from any provider.")
         null
     }
     private fun fetchAndDisplayLyrics(title: String, artist: String, durationFromMediaMs: Long) {
@@ -1855,12 +1889,25 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             val macroCalls = response.message.body.macro_calls
             val subtitlesGet = macroCalls.trackSubtitlesGet?.message?.body
             val lyricsGet = macroCalls.trackLyricsGet?.message?.body
+            val subtitleHolder = subtitlesGet?.subtitle_list?.firstOrNull()?.subtitle
+
+            // track_length is the guard: a matched track must report a length that agrees with the player.
+            val trackLengthSec = macroCalls.matcherTrackGet?.message?.body?.track?.track_length ?: 0
+            if (durationFromMediaMs > 0) {
+                if (trackLengthSec <= 0) {
+                    Log.d(TAG, "Musixmatch: no track length in response for '$title'. Discarding result.")
+                    return null
+                }
+                if (kotlin.math.abs(trackLengthSec * 1000L - durationFromMediaMs) > PROVIDER_DURATION_TOLERANCE_MS) {
+                    Log.d(TAG, "Musixmatch: track length ${trackLengthSec}s does not match media duration ${durationFromMediaMs / 1000}s for '$title'. Discarding result.")
+                    return null
+                }
+            }
 
             if (lyricsGet?.lyrics?.instrumental == 1) {
                 return LyricsData.Info(title, artist, "This is an instrumental song... 🎵", durationFromMediaMs)
             }
 
-            val subtitleHolder = subtitlesGet?.subtitle_list?.firstOrNull()?.subtitle
             val syncedLrc = subtitleHolder?.subtitle_body
             val translatedLrc = subtitleHolder?.subtitle_translated?.subtitle_body
 
@@ -2055,6 +2102,16 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
 
             val response: CustomLyricsResponse = httpClient.get(url).body()
             val source = response.source?.trim().takeUnless { it.isNullOrEmpty() } ?: "custom"
+
+            // Compare durations only when both sides report one; custom lyrics may carry none.
+            val responseDurationMs = response.durationMs ?: 0L
+            if (durationFromMediaMs > 0 && responseDurationMs > 0 &&
+                kotlin.math.abs(responseDurationMs - durationFromMediaMs) > PROVIDER_DURATION_TOLERANCE_MS
+            ) {
+                Log.d(TAG, "Custom lyrics API: duration ${responseDurationMs / 1000}s does not match media duration ${durationFromMediaMs / 1000}s for '$title'. Discarding result.")
+                return ProviderLyricsResult(LyricsProvider.CUSTOM, null, source)
+            }
+
             val sortedLines = response.lrc
                 .orEmpty()
                 .mapNotNull { line ->
