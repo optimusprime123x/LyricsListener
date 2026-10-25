@@ -16,15 +16,18 @@ import android.view.WindowManager
 import android.graphics.PixelFormat
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.res.Configuration
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.view.LayoutInflater
+import android.view.Gravity
 import android.view.View
 import android.widget.TextView
 import android.view.MotionEvent
 import android.view.ViewGroup
+import android.view.WindowInsets
 import android.app.PendingIntent
 import android.provider.Settings
 import android.widget.ImageButton
@@ -98,6 +101,22 @@ class LyricService : NotificationListenerService() {
     @Volatile private var windowManager: WindowManager? = null
     @Volatile private var lyricsView: View? = null
     @Volatile private var params: WindowManager.LayoutParams? = null
+    private enum class OverlayDisplay { LYRICS, BUBBLE, HIDDEN }
+    private var overlayDisplay = OverlayDisplay.LYRICS
+    private var minimisedWindowPosition: Pair<Int, Int>? = null
+    private var pendingBubbleExpansion = false
+    private val bubbleOverlay by lazy {
+        LyricsBubbleOverlay(
+            this,
+            boundsFor = { getLyricsWindowBounds(it) },
+            onOpen = { reopenLyricsWindow(animateFromBubble = true) },
+            onDismiss = { dismissLyricsOverlay() }
+        )
+    }
+    private val fitLyricsWindowRunnable = Runnable { fitLyricsWindowToScreen() }
+    private val lyricsWindowLayoutListener = View.OnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
+        scheduleLyricsWindowFit(view)
+    }
     // Keep track of every overlay instance so we can clean up a residual window even if the main reference drifts.
     private val knownLyricsOverlayViews = mutableSetOf<View>()
     private var lyricsRecyclerView: RecyclerView? = null
@@ -427,6 +446,7 @@ class LyricService : NotificationListenerService() {
     private const val PREF_LYRICS_WINDOW_BACKGROUND_COLOR = "flutter.lyrics_window_background_color"
     private const val PREF_LYRICS_WINDOW_HIGHLIGHT_COLOR = "flutter.lyrics_window_highlight_color"
     private const val PREF_HIDE_WINDOW_ON_PAUSE = "flutter.hide_lyrics_window_on_pause"
+    private const val PREF_MINIMISE_TO_BUBBLE = "flutter.minimise_to_bubble"
     private const val PREF_LYRICS_WINDOW_SIZE = "flutter.lyrics_window_size"
 
     private val DEFAULT_STATIC_TITLE_COLOR = Color.parseColor("#F0E8E8E8")
@@ -665,6 +685,9 @@ class LyricService : NotificationListenerService() {
         when (intent?.action) {
             ACTION_USER_INITIATED_START -> {
                 Log.i(TAG, "ACTION_USER_INITIATED_START received. Forcing full re-initialization.")
+                overlayDisplay = OverlayDisplay.LYRICS
+                minimisedWindowPosition = null
+                bubbleOverlay.hide()
                 startForegroundWithNotification("Service starting...")
                 _listenerEverConnected = false
                 _listenerCurrentlyBound = false
@@ -687,24 +710,11 @@ class LyricService : NotificationListenerService() {
             ACTION_SHOW_LYRICS -> {
                 Log.d(TAG, "ACTION_SHOW_LYRICS received.")
                 startForegroundWithNotification(buildStatusNotificationText())
-                val dataToShow = currentLyricsData ?: LyricsData.Info(
-                    lastDetectedSongTitle, lastDetectedSongArtist,
-                    if (lastDetectedSongTitle != null) "Loading lyrics..." else if (refreshListenerBindingState("ACTION_SHOW_LYRICS status")) "Waiting for song..." else "Connecting listener...",
-                    currentSongDurationMs
-                )
-                showLyricsWindow(dataToShow)
-                if (lastDetectedSongTitle != null && dataToShow is LyricsData.Info && dataToShow.message.contains("Loading", ignoreCase = true)) {
-                    fetchAndDisplayLyrics(lastDetectedSongTitle!!, lastDetectedSongArtist ?: "", currentSongDurationMs)
-                } else if (lastDetectedSongTitle == null) {
-                    _isAttemptingConnection = false
-                    requestNotificationListenerRebind("Show lyrics action with no active song")
-                    tryToConnectToActiveMediaSessions(delayMs = 0L)
-                }
+                reopenLyricsWindow()
             }
             ACTION_HIDE_LYRICS -> {
                 Log.d(TAG, "ACTION_HIDE_LYRICS received.")
-                wasHiddenByPausePreference = false
-                hideLyricsWindow()
+                dismissLyricsOverlay()
                 updatePersistentNotification(buildStatusNotificationText())
             }
             ACTION_DEBUG_ACTIVE_NOTIFICATION -> {
@@ -741,7 +751,7 @@ class LyricService : NotificationListenerService() {
         mainHandler.removeCallbacks(executeFindActiveMediaSessionsRunnable)
         cancelListenerHealthChecks("performStopActions")
         consecutiveListenerRecoveryAttempts.set(0)
-        hideLyricsWindow()
+        dismissLyricsOverlay()
         cleanupMediaController()
 
         lastDetectedSongTitle = null
@@ -1148,11 +1158,14 @@ class LyricService : NotificationListenerService() {
                                 .getBoolean(PREF_HIDE_WINDOW_ON_PAUSE, false)
                         } catch (_: Exception) { false }
 
-                        if (!nowPlaying && hideOnPause && lyricsView != null) {
+                        if (!nowPlaying && hideOnPause && overlayDisplay == OverlayDisplay.LYRICS) {
                             Log.d(TAG, "Hide-on-pause: hiding lyrics window (state=${stateToString(state)})")
                             wasHiddenByPausePreference = true
+                            pendingBubbleExpansion = false
+                            bubbleOverlay.hide()
                             hideLyricsWindow()
-                        } else if (nowPlaying && lyricsView == null && (hideOnPause || wasHiddenByPausePreference)) {
+                        } else if (nowPlaying && lyricsView == null && wasHiddenByPausePreference &&
+                            overlayDisplay == OverlayDisplay.LYRICS) {
                             Log.d(TAG, "Hide-on-pause: re-showing lyrics window (state=${stateToString(state)}, hiddenByPausePref=$wasHiddenByPausePreference)")
                             currentLyricsData?.let {
                                 showLyricsWindow(it)
@@ -1229,6 +1242,9 @@ class LyricService : NotificationListenerService() {
         val newArtist = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)
             ?: metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
         val newDuration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
+        if (overlayDisplay == OverlayDisplay.BUBBLE) {
+            bubbleOverlay.updateArtwork(getCurrentAlbumArtBitmap())
+        }
 
         Log.d(TAG, "Processing Meta ($source): Title='$newTitle', Artist='$newArtist', Duration='${newDuration}ms', PlaybackState: ${stateToString(playbackState)}")
         if (!newTitle.isNullOrBlank()) {
@@ -1437,6 +1453,11 @@ class LyricService : NotificationListenerService() {
         }
     }
     private fun clearSongContextAndHideLyrics() {
+        if (pendingBubbleExpansion) {
+            pendingBubbleExpansion = false
+            bubbleOverlay.hide()
+        }
+        bubbleOverlay.finishAnimation()
         cancelPendingSongContextClear("clearSongContextAndHideLyrics immediate")
         val tokenThatWasActive = currentMediaSessionToken
         Log.i(TAG, "clearSongContextAndHideLyrics: Starting. Was for token: $tokenThatWasActive, Title: $lastDetectedSongTitle")
@@ -1457,6 +1478,7 @@ class LyricService : NotificationListenerService() {
 
         this.currentMediaSessionToken = null
         this.currentPlaybackState = null
+        bubbleOverlay.updateArtwork(null)
         if(isServiceManuallyStarted.get()){
             updatePersistentNotification(buildStatusNotificationText())
         }
@@ -2239,8 +2261,14 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     private fun Int.dpToPx(): Int = (this * resources.displayMetrics.density).toInt()
 
     private fun bindLyricsWindowView(view: View) {
+        lyricsView?.removeOnLayoutChangeListener(lyricsWindowLayoutListener)
         lyricsView = view
         knownLyricsOverlayViews.add(view)
+        view.addOnLayoutChangeListener(lyricsWindowLayoutListener)
+        view.setOnApplyWindowInsetsListener { insetView, insets ->
+            scheduleLyricsWindowFit(insetView)
+            insets
+        }
 
         songInfoTextView = view.findViewById(R.id.songInfoTextView)
         lyricsRecyclerView = view.findViewById(R.id.lyricsRecyclerView)
@@ -2267,8 +2295,23 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             if (handleLyricsOverlayInteraction(view, "close button")) {
                 return@setOnClickListener
             }
-            wasHiddenByPausePreference = false
-            hideLyricsWindow()
+            val minimiseToBubble = applicationContext
+                .getSharedPreferences(FLUTTER_SHARED_PREFERENCES, Context.MODE_PRIVATE)
+                .getBoolean(PREF_MINIMISE_TO_BUBBLE, true)
+            if (minimiseToBubble) {
+                val layoutParams = params ?: return@setOnClickListener
+                minimisedWindowPosition = Pair(layoutParams.x, layoutParams.y)
+                overlayDisplay = OverlayDisplay.BUBBLE
+                wasHiddenByPausePreference = false
+                lyricsHighlightingJob?.cancel()
+                if (!bubbleOverlay.collapseFrom(getCurrentAlbumArtBitmap(), view, layoutParams) {
+                        if (overlayDisplay == OverlayDisplay.BUBBLE && lyricsView === view) hideLyricsWindow()
+                    }) {
+                    dismissLyricsOverlay()
+                }
+            } else {
+                dismissLyricsOverlay()
+            }
         }
         expandCollapseButton?.setOnClickListener {
             if (handleLyricsOverlayInteraction(view, "expand button")) {
@@ -2287,6 +2330,9 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     }
 
     private fun clearLyricsWindowReferences(clearTrackedView: Boolean = true) {
+        lyricsView?.removeCallbacks(fitLyricsWindowRunnable)
+        lyricsView?.removeOnLayoutChangeListener(lyricsWindowLayoutListener)
+        lyricsView?.setOnApplyWindowInsetsListener(null)
         if (clearTrackedView) {
             lyricsView = null
             params = null
@@ -2323,7 +2369,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     }
 
     private fun detachLyricsOverlayView(view: View, reason: String): Boolean {
-        if (!view.isAttachedToWindow) {
+        if (!view.isAttachedToWindow && view.parent == null) {
             knownLyricsOverlayViews.remove(view)
             return true
         }
@@ -2333,6 +2379,9 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         }
 
         try {
+            view.removeCallbacks(fitLyricsWindowRunnable)
+            view.removeOnLayoutChangeListener(lyricsWindowLayoutListener)
+            view.setOnApplyWindowInsetsListener(null)
             currentWindowManager.removeViewImmediate(view)
             Log.d(TAG, "Detached lyrics overlay for $reason.")
         } catch (e: IllegalArgumentException) {
@@ -2495,19 +2544,127 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             @Suppress("DEPRECATION")
             WindowManager.LayoutParams.TYPE_PHONE
         }
-        val savedWindowPosition = loadSavedWindowPosition()
+        val savedWindowPosition = minimisedWindowPosition ?: loadSavedWindowPosition()
+        minimisedWindowPosition = null
         return WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             overlayFlag,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                 WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
             PixelFormat.TRANSLUCENT
         ).apply {
+            gravity = Gravity.CENTER
+            if (pendingBubbleExpansion) {
+                alpha = 0f
+                flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            }
             x = savedWindowPosition?.first ?: 0
             y = savedWindowPosition?.second ?: 100
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                setFitInsetsTypes(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                setFitInsetsIgnoringVisibility(true)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
+            }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun getLyricsWindowBounds(view: View? = lyricsView): LyricsWindowBounds {
+        val manager = windowManager ?: getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val metrics = manager.currentWindowMetrics
+            val insets = metrics.windowInsets.getInsetsIgnoringVisibility(
+                WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()
+            )
+            return LyricsWindowBounds(
+                (metrics.bounds.width() - insets.left - insets.right).coerceAtLeast(1),
+                (metrics.bounds.height() - insets.top - insets.bottom).coerceAtLeast(1)
+            )
+        }
+
+        val displayMetrics = DisplayMetrics()
+        val insets = view?.rootWindowInsets
+        if (insets == null) {
+            // Before the first layout, use the app-sized display; fit again once insets arrive.
+            manager.defaultDisplay.getMetrics(displayMetrics)
+            return LyricsWindowBounds(displayMetrics.widthPixels, displayMetrics.heightPixels)
+        }
+        manager.defaultDisplay.getRealMetrics(displayMetrics)
+        val cutout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) insets.displayCutout else null
+        return LyricsWindowBounds(
+            (displayMetrics.widthPixels - maxOf(insets.stableInsetLeft, cutout?.safeInsetLeft ?: 0) -
+                maxOf(insets.stableInsetRight, cutout?.safeInsetRight ?: 0)).coerceAtLeast(1),
+            (displayMetrics.heightPixels - maxOf(insets.stableInsetTop, cutout?.safeInsetTop ?: 0) -
+                maxOf(insets.stableInsetBottom, cutout?.safeInsetBottom ?: 0)).coerceAtLeast(1)
+        )
+    }
+
+    private fun scheduleLyricsWindowFit(view: View) {
+        if (view !== lyricsView || !view.isAttachedToWindow) return
+        view.removeCallbacks(fitLyricsWindowRunnable)
+        view.post(fitLyricsWindowRunnable)
+    }
+
+    private fun fitLyricsWindowToScreen() {
+        if (bubbleOverlay.isAnimating) return
+        val view = lyricsView ?: return
+        val layoutParams = params ?: return
+        val manager = windowManager ?: return
+        if (!view.isAttachedToWindow || !view.isLaidOut) return
+        val bounds = getLyricsWindowBounds()
+
+        val recyclerView = lyricsRecyclerView
+        val content = overlayContentLayout
+        if (recyclerView != null && content != null) {
+            val headerHeight = content.top + recyclerView.top + content.paddingBottom + view.paddingBottom
+            val requestedHeight = when {
+                lyricsWindowMode == LyricsWindowMode.EXPANDED -> EXPANDED_LYRICS_MAX_HEIGHT_DP.dpToPx()
+                lyricsWindowMode == LyricsWindowMode.MINI && lyricsAdapter?.isSynced() == true -> recyclerView.height
+                else -> COLLAPSED_LYRICS_MAX_HEIGHT_DP.dpToPx()
+            }
+            val targetHeight = bounds.constrainLyricsHeight(requestedHeight, headerHeight)
+            // Leave Mini's natural wrap-content height alone unless it exceeds the screen.
+            if (targetHeight != requestedHeight || recyclerView.layoutParams.height > 0) {
+                if (recyclerView.layoutParams.height != targetHeight) {
+                    recyclerView.layoutParams = recyclerView.layoutParams.apply { height = targetHeight }
+                }
+            }
+        }
+
+        val (x, y) = bounds.constrainPosition(layoutParams.x, layoutParams.y, view.width, view.height)
+        if (layoutParams.x != x || layoutParams.y != y) {
+            layoutParams.x = x
+            layoutParams.y = y
+            try {
+                manager.updateViewLayout(view, layoutParams)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error keeping lyrics window on screen", e)
+            }
+        }
+        if (pendingBubbleExpansion) {
+            pendingBubbleExpansion = false
+            if (!bubbleOverlay.expandInto(view, layoutParams) { scheduleLyricsWindowFit(view) }) {
+                bubbleOverlay.hide()
+                layoutParams.alpha = 1f
+                layoutParams.flags = layoutParams.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+                try {
+                    manager.updateViewLayout(view, layoutParams)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error restoring lyrics window after bubble expansion", e)
+                }
+            }
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        bubbleOverlay.onConfigurationChanged()
+        if (lyricsView?.isAttachedToWindow == true) {
+            // Restore the requested height before fitting it to the new orientation/font scale.
+            applyLyricsWindowMode()
         }
     }
 
@@ -2664,6 +2821,17 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post { if (!serviceJob.isCancelled && isServiceManuallyStarted.get()) showLyricsWindow(data) }
             return
+        }
+        when (overlayDisplay) {
+            OverlayDisplay.HIDDEN -> return
+            OverlayDisplay.BUBBLE -> {
+                bubbleOverlay.show(getCurrentAlbumArtBitmap())
+                return
+            }
+            OverlayDisplay.LYRICS -> {
+                if (wasHiddenByPausePreference &&
+                    activeMediaController?.playbackState?.state != PlaybackState.STATE_PLAYING) return
+            }
         }
 
         val dataTitle = when(data) {
@@ -3244,6 +3412,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
 
         // RecyclerView height
         lyricsRecyclerView?.let { rv ->
+            // Mini can have no highlighted row while paused; keep its controls inside the window.
+            rv.minimumHeight = if (isMiniEffective) 28.dpToPx() else 0
             val targetHeight = when (effectiveMode) {
                 LyricsWindowMode.MINI -> ViewGroup.LayoutParams.WRAP_CONTENT
                 LyricsWindowMode.COMPACT -> COLLAPSED_LYRICS_MAX_HEIGHT_DP.dpToPx()
@@ -3268,10 +3438,12 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         lyricsAdapter?.setWindowMode(isMiniEffective, effectiveMode == LyricsWindowMode.EXPANDED)
 
         applyOverlayArtwork(getCurrentAlbumArtBitmap())
+        lyricsView?.let { scheduleLyricsWindowFit(it) }
     }
     private fun startOrUpdateLyricsHighlighting() {
         if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) { Log.w(TAG, "startOrUpdateLyricsHighlighting: Aborting. ServiceJob cancelled or service not manually started."); return }
         lyricsHighlightingJob?.cancel()
+        if (overlayDisplay != OverlayDisplay.LYRICS || lyricsView == null) return
         val dataForHighlighting = this.currentLyricsData
         val controllerForHighlighting = this.activeMediaController
         val tokenForHighlighting = this.currentMediaSessionToken
@@ -3419,10 +3591,45 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             }
         }
     }
+    private fun reopenLyricsWindow(animateFromBubble: Boolean = false) {
+        pendingBubbleExpansion = animateFromBubble && bubbleOverlay.isShowing
+        overlayDisplay = OverlayDisplay.LYRICS
+        wasHiddenByPausePreference = false
+        if (!pendingBubbleExpansion) bubbleOverlay.hide()
+        val dataToShow = currentLyricsData ?: LyricsData.Info(
+            lastDetectedSongTitle, lastDetectedSongArtist,
+            if (lastDetectedSongTitle != null) "Loading lyrics..."
+            else if (refreshListenerBindingState("reopen lyrics")) "Waiting for song..." else "Connecting listener...",
+            currentSongDurationMs
+        )
+        showLyricsWindow(dataToShow)
+        if (lastDetectedSongTitle != null && dataToShow is LyricsData.Info &&
+            dataToShow.message.contains("Loading", ignoreCase = true)) {
+            fetchAndDisplayLyrics(lastDetectedSongTitle!!, lastDetectedSongArtist ?: "", currentSongDurationMs)
+        } else if (lastDetectedSongTitle == null) {
+            _isAttemptingConnection = false
+            requestNotificationListenerRebind("Show lyrics action with no active song")
+            tryToConnectToActiveMediaSessions(delayMs = 0L)
+        }
+    }
+
+    private fun dismissLyricsOverlay() {
+        pendingBubbleExpansion = false
+        overlayDisplay = OverlayDisplay.HIDDEN
+        minimisedWindowPosition = null
+        wasHiddenByPausePreference = false
+        bubbleOverlay.hide()
+        hideLyricsWindow()
+    }
+
     private fun hideLyricsWindow() {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post { hideLyricsWindow() }
             return
+        }
+        if (pendingBubbleExpansion) {
+            pendingBubbleExpansion = false
+            bubbleOverlay.hide()
         }
         Log.d(TAG, "hideLyricsWindow() called. LyricsView Null: ${lyricsView == null}, Attached: ${lyricsView?.isAttachedToWindow}")
         lyricsHighlightingJob?.cancel(); lyricsHighlightingJob = null
@@ -3919,6 +4126,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             Log.d(TAG, "onDestroy: lyricsView was not null, attempting to hide.")
             hideLyricsWindow()
         }
+        bubbleOverlay.hide()
         if (activeMediaController != null) { // Check if controller exists
              Log.d(TAG, "onDestroy: activeMediaController was not null, attempting to cleanup.")
             cleanupMediaController()
@@ -3964,7 +4172,12 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                         v.parent?.requestDisallowInterceptTouchEvent(true)
                     }
                     if (isDragging) {
-                        currentParams.x = initialX + dx.toInt(); currentParams.y = initialY + dy.toInt()
+                        val bounds = getLyricsWindowBounds()
+                        val (x, y) = bounds.constrainPosition(
+                            initialX + dx.toInt(), initialY + dy.toInt(), targetView.width, targetView.height
+                        )
+                        currentParams.x = x
+                        currentParams.y = y
                         try { currentWindowManager.updateViewLayout(targetView, currentParams) }
                         catch (e: Exception) { Log.e(TAG, "Error updating view layout move: ${e.message}")}
                     }

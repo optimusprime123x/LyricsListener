@@ -33,6 +33,7 @@ const String _seedColorKey = 'seed_color';
 const String _materialYouThemingKey = 'material_you_theming';
 const String _rememberWindowPositionKey = 'remember_window_position';
 const String _hideWindowOnPauseKey = 'hide_lyrics_window_on_pause';
+const String _minimiseToBubbleKey = 'minimise_to_bubble';
 const String _dynamicLyricsWindowColorsKey = 'lyrics_window_dynamic_colors';
 const String _simulateLegacyOverlayKey = 'simulate_legacy_overlay';
 const String _lyricsWindowTitleColorKey = 'lyrics_window_title_color';
@@ -1405,6 +1406,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   bool _rememberLyricsWindowPosition = false;
   bool _hideLyricsWindowOnPause = false;
+  bool _minimiseToBubble = true;
   bool _dynamicLyricsWindowColors = true;
   bool _isLyricsWindowBlurEnabled = true;
   String _lyricsWindowSize = 'compact';
@@ -1565,6 +1567,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     final prefs = await SharedPreferences.getInstance();
     final rememberPosition = prefs.getBool(_rememberWindowPositionKey) ?? false;
     final hideOnPause = prefs.getBool(_hideWindowOnPauseKey) ?? false;
+    final minimiseToBubble = prefs.getBool(_minimiseToBubbleKey) ?? true;
     final dynamicLyricsColours =
         prefs.getBool(_dynamicLyricsWindowColorsKey) ?? true;
     final simulateLegacyOverlay =
@@ -1577,6 +1580,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     setState(() {
       _rememberLyricsWindowPosition = rememberPosition;
       _hideLyricsWindowOnPause = hideOnPause;
+      _minimiseToBubble = minimiseToBubble;
       _dynamicLyricsWindowColors = dynamicLyricsColours;
       _isLyricsWindowBlurEnabled = !simulateLegacyOverlay;
       _lyricsWindowSize = lyricsWindowSize;
@@ -1606,6 +1610,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_hideWindowOnPauseKey, value);
+  }
+
+  Future<void> _onMinimiseToBubbleChanged(bool value) async {
+    setState(() => _minimiseToBubble = value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_minimiseToBubbleKey, value);
   }
 
   Future<void> _onDynamicLyricsWindowColorsChanged(bool value) async {
@@ -2255,7 +2265,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
           child: Text(
-            'A purr-fectly synced lyric experience for your favorite tunes!',
+            'A purr-fectly synced lyric experience for all your songs!',
             style: textTheme.titleMedium?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
@@ -2754,6 +2764,20 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   color: colorScheme.onSurfaceVariant,
                 ),
               ),
+            ),
+            SwitchListTile.adaptive(
+              value: _minimiseToBubble,
+              onChanged: _onMinimiseToBubbleChanged,
+              title: Text(
+                'Minimise to Bubble',
+                style: textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              subtitle: const Text(
+                'Collapse the floating lyrics window to a bubble instead of entirely hiding it, for easy re-opening',
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
             ),
             SwitchListTile.adaptive(
               value: _hideLyricsWindowOnPause,
