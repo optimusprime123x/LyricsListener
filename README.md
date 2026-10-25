@@ -9,6 +9,7 @@
 - Synchronized (and plain) Lyrics Overlay: See synced lyrics for currently playing media, displayed over your music app. (Spotify, apple music, poweramp, and others supported. Youtube might cause issues due to search issues)
 - Modern UI: Material 3 design, light & dark themes, and smooth animations for a delightful experience.
 - Background Service: Lyrics overlay persists as you navigate between apps.
+- Minimise to Bubble: Enabled by default. Close the lyrics window to a movable album-art bubble, tap it to reopen, or drag it to the bottom dismiss target to remove it. Turn it off in Settings to close the window directly. Notification Show and Hide always control the full overlay.
 - Permissions Helper: Guided UI for requesting all required Android permissions. (see below)
 
 ### Screenshots

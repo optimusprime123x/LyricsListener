@@ -95,7 +95,7 @@ void main() {
     expect(find.text('Welcome to Lyric Listener!'), findsOneWidget);
     expect(
       find.text(
-        'A purr-fectly synced lyric experience for your favorite tunes!',
+        'A purr-fectly synced lyric experience for all your songs!',
       ),
       findsOneWidget,
     );

@@ -85,6 +85,7 @@ flutter {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.media:media:1.7.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
