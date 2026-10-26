@@ -1315,7 +1315,6 @@ class LyricService : NotificationListenerService() {
                  }
             }
         } else {
-            if (refreshLyricsAfterSourceChange()) return
              if (newDuration > 0 && newDuration != currentSongDurationMs) {
                 Log.d(TAG,"Duration updated for '$newTitle' ($currentMediaSessionToken) to $newDuration ms")
                 currentSongDurationMs = newDuration
@@ -1346,6 +1345,9 @@ class LyricService : NotificationListenerService() {
             if (this.currentPlaybackState != playbackState) {
                 this.currentPlaybackState = playbackState
             }
+
+            // Refetch with this callback's duration; LRCLib rejects unknown or stale durations.
+            if (refreshLyricsAfterSourceChange()) return
 
             // Re-apply colors when metadata changes (e.g., album art loads after cached lyrics shown)
             if (lyricsView != null && currentLyricsData != null && metadata != null) {
