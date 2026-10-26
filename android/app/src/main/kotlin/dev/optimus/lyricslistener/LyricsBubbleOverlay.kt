@@ -7,6 +7,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
@@ -41,7 +42,7 @@ internal class LyricsBubbleOverlay(
     private var artwork: ImageView? = null
     private var note: ImageView? = null
     private var params: WindowManager.LayoutParams? = null
-    private var lastPosition: Pair<Int, Int>? = null
+    private val placement = LyricsBubblePlacement()
     private var dismissTarget: LinearLayout? = null
     private var dismissCircle: FrameLayout? = null
     private var dragging = false
@@ -50,6 +51,8 @@ internal class LyricsBubbleOverlay(
     private var initialY = 0
     private var initialTouchX = 0f
     private var initialTouchY = 0f
+    private var initialCenterX = 0f
+    private var initialCenterY = 0f
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
     private val fitRunnable = Runnable { fitToScreen() }
     private var transition: ValueAnimator? = null
@@ -97,13 +100,12 @@ internal class LyricsBubbleOverlay(
         note = ImageView(context).apply {
             setImageResource(R.drawable.ic_launcher_note)
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }.also { view.addView(it, FrameLayout.LayoutParams(dp(32), dp(36), Gravity.CENTER)) }
+        }.also { view.addView(it, FrameLayout.LayoutParams(dp(30), dp(34), Gravity.CENTER)) }
 
         val bounds = boundsFor(view)
-        val size = dp(64).coerceAtMost(minOf(bounds.width, bounds.height))
-        val start = lastPosition ?: Pair((bounds.width - size) / 2, centerY)
-        val position = bounds.constrainPosition(start.first, start.second, size, size)
-        lastPosition = position
+        val size = bubbleSize(bounds)
+        val position = placement.positionFor(bounds, size, centerY)
+        placement.remember(position.first, position.second)
         val frame = initialFrame ?: WindowFrame(position.first, position.second, size, size)
         val layoutParams = overlayParams(frame.width, frame.height).apply {
             x = frame.x
@@ -131,7 +133,7 @@ internal class LyricsBubbleOverlay(
     }
 
     fun hide(rememberPosition: Boolean = true) {
-        if (rememberPosition && !isAnimating) params?.let { lastPosition = Pair(it.x, it.y) }
+        if (rememberPosition && !isAnimating) params?.let { placement.remember(it.x, it.y) }
         cancelTransition()
         dragging = false
         hideDismissTarget()
@@ -143,13 +145,18 @@ internal class LyricsBubbleOverlay(
         params = null
     }
 
+    fun dismiss() {
+        hide(rememberPosition = false)
+        placement.forget()
+    }
+
     fun onConfigurationChanged() {
         finishAnimation()
         hideDismissTarget()
         val view = bubble ?: return
         val layoutParams = params ?: return
         val bounds = boundsFor(view)
-        val size = dp(64).coerceAtMost(minOf(bounds.width, bounds.height))
+        val size = bubbleSize(bounds)
         layoutParams.width = size
         layoutParams.height = size
         updateWindow(view, layoutParams)
@@ -189,6 +196,10 @@ internal class LyricsBubbleOverlay(
                 initialY = layoutParams.y
                 initialTouchX = event.rawX
                 initialTouchY = event.rawY
+                val location = IntArray(2)
+                view.getLocationOnScreen(location)
+                initialCenterX = location[0] + view.width / 2f
+                initialCenterY = location[1] + view.height / 2f
                 dragging = false
                 return true
             }
@@ -200,18 +211,12 @@ internal class LyricsBubbleOverlay(
                     showDismissTarget()
                 }
                 if (dragging) {
-                    val position = boundsFor(view).constrainPosition(
-                        initialX + dx.toInt(), initialY + dy.toInt(), layoutParams.width, layoutParams.height
-                    )
-                    layoutParams.x = position.first
-                    layoutParams.y = position.second
-                    updateWindow(view, layoutParams)
-                    updateDismissHover(isOverDismissTarget(event.rawX, event.rawY))
+                    moveDraggedBubble(view, layoutParams, event)
                 }
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                val dismiss = dragging && isOverDismissTarget(event.rawX, event.rawY)
+                val dismiss = dragging && moveDraggedBubble(view, layoutParams, event)
                 hideDismissTarget()
                 if (dismiss) {
                     onDismiss()
@@ -233,13 +238,35 @@ internal class LyricsBubbleOverlay(
         return false
     }
 
+    private fun moveDraggedBubble(view: View, layoutParams: WindowManager.LayoutParams, event: MotionEvent): Boolean {
+        val bounds = boundsFor(view)
+        val position = bounds.constrainPosition(
+            initialX + (event.rawX - initialTouchX).roundToInt(),
+            initialY + (event.rawY - initialTouchY).roundToInt(),
+            layoutParams.width, layoutParams.height
+        )
+        val pull = dismissPull(
+            initialCenterX + position.first - initialX,
+            initialCenterY + position.second - initialY
+        )
+        val attractedPosition = bounds.constrainPosition(
+            position.first + pull.x.roundToInt(), position.second + pull.y.roundToInt(),
+            layoutParams.width, layoutParams.height
+        )
+        layoutParams.x = attractedPosition.first
+        layoutParams.y = attractedPosition.second
+        updateWindow(view, layoutParams)
+        updateDismissHover(pull.captured)
+        return pull.captured
+    }
+
     private fun snapToEdge(view: View, layoutParams: WindowManager.LayoutParams) {
         val bounds = boundsFor(view)
         val edge = if (layoutParams.x < 0) Int.MIN_VALUE else Int.MAX_VALUE
         val position = bounds.constrainPosition(edge, layoutParams.y, layoutParams.width, layoutParams.height)
         layoutParams.x = position.first
         layoutParams.y = position.second
-        lastPosition = position
+        placement.remember(position.first, position.second)
         updateWindow(view, layoutParams)
     }
 
@@ -251,7 +278,8 @@ internal class LyricsBubbleOverlay(
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         }
         dismissCircle = FrameLayout(context).apply {
-            background = circle(Color.rgb(65, 35, 40))
+            background = dismissBackground(false)
+            elevation = dp(8).toFloat()
             addView(ImageView(context).apply {
                 setImageResource(R.drawable.ic_round_close_24)
                 setColorFilter(Color.WHITE)
@@ -260,13 +288,19 @@ internal class LyricsBubbleOverlay(
         target.addView(TextView(context).apply {
             text = "Dismiss"
             setTextColor(Color.WHITE)
-            textSize = 12f
+            textSize = 14f
+            setTypeface(typeface, Typeface.BOLD)
             gravity = Gravity.CENTER
             setShadowLayer(3f, 0f, 1f, Color.BLACK)
-        }, LinearLayout.LayoutParams(-1, dp(24)))
-        val targetParams = overlayParams(dp(128), dp(96)).apply {
+            setPadding(dp(12), 0, dp(12), 0)
+            background = GradientDrawable().apply {
+                setColor(0xDD202024.toInt())
+                cornerRadius = dp(12).toFloat()
+            }
+        }, LinearLayout.LayoutParams(-2, dp(24)).apply { topMargin = dp(8) })
+        val targetParams = overlayParams(dp(128), dp(104)).apply {
             gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            y = dp(16)
+            y = dp(12)
             flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         }
         try {
@@ -278,24 +312,31 @@ internal class LyricsBubbleOverlay(
         }
     }
 
-    private fun isOverDismissTarget(x: Float, y: Float): Boolean {
-        val target = dismissCircle ?: return false
-        if (!target.isAttachedToWindow || target.width == 0) return false
+    private fun dismissPull(x: Float, y: Float): LyricsBubbleMagnet.Pull {
+        val target = dismissCircle ?: return LyricsBubbleMagnet.Pull()
+        val container = dismissTarget ?: return LyricsBubbleMagnet.Pull()
+        if (!target.isAttachedToWindow || target.width == 0) return LyricsBubbleMagnet.Pull()
         val location = IntArray(2)
-        target.getLocationOnScreen(location)
-        val centerX = location[0] + target.width / 2f
-        val centerY = location[1] + target.height / 2f
-        // Keep the target magnetic all the way to the bottom edge, including a finger-sized margin.
-        return hypot(x - centerX, y - centerY) <= target.width / 2f + dp(48)
+        // Use the unscaled container so hover animations cannot shift the magnetic centre.
+        container.getLocationOnScreen(location)
+        val centerX = location[0] + target.left + target.width / 2f
+        val centerY = location[1] + target.top + target.height / 2f
+        // Include the bottom edge of the usable screen in the capture area.
+        val captureRadius = target.width / 2f + dp(48)
+        return LyricsBubbleMagnet.pull(x, y, centerX, centerY, captureRadius, captureRadius + dp(32))
     }
+
+    private fun dismissBackground(hovering: Boolean) = circle(
+        if (hovering) Color.rgb(235, 45, 65) else Color.rgb(180, 38, 55)
+    ).apply { setStroke(dp(2), 0xDDFFFFFF.toInt()) }
 
     private fun updateDismissHover(hovering: Boolean) {
         if (hoveringDismiss == hovering) return
         hoveringDismiss = hovering
         dismissCircle?.apply {
-            background = circle(if (hovering) Color.rgb(200, 40, 55) else Color.rgb(65, 35, 40))
-            scaleX = if (hovering) 1.15f else 1f
-            scaleY = scaleX
+            background = dismissBackground(hovering)
+            animate().scaleX(if (hovering) 1.12f else 1f)
+                .scaleY(if (hovering) 1.12f else 1f).setDuration(120L).start()
         }
     }
 
@@ -351,7 +392,7 @@ internal class LyricsBubbleOverlay(
         if (!isShowing) return false
         val source = WindowFrame(bubbleParams.x, bubbleParams.y, bubbleParams.width, bubbleParams.height)
         val target = WindowFrame(layoutParams.x, layoutParams.y, view.width, view.height)
-        lastPosition = Pair(source.x, source.y)
+        placement.remember(source.x, source.y)
         animateMorph(view, layoutParams, source, target, expanding = true) {
             hide(rememberPosition = false)
             onFinished()
@@ -363,9 +404,9 @@ internal class LyricsBubbleOverlay(
     fun collapseFrom(bitmap: Bitmap?, view: View, layoutParams: WindowManager.LayoutParams, onFinished: () -> Unit): Boolean {
         val source = WindowFrame(layoutParams.x, layoutParams.y, view.width, view.height)
         if (!show(bitmap, source.y, initialFrame = source)) return false
-        val position = lastPosition ?: return false
         val bounds = boundsFor(bubble ?: return false)
-        val size = dp(64).coerceAtMost(minOf(bounds.width, bounds.height))
+        val size = bubbleSize(bounds)
+        val position = placement.positionFor(bounds, size, source.y)
         val target = WindowFrame(position.first, position.second, size, size)
         animateMorph(view, layoutParams, source, target, expanding = false, onFinished)
         return true
@@ -392,7 +433,7 @@ internal class LyricsBubbleOverlay(
         lyricsParams.flags = lyricsFlagsBeforeTransition or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         updateWindow(lyrics, lyricsParams)
         val windowRadius = (lyrics.background as? GradientDrawable)?.cornerRadius ?: dp(28).toFloat()
-        val bubbleRadius = minOf(if (expanding) source.width else target.width, dp(64)) / 2f
+        val bubbleRadius = minOf(if (expanding) source.width else target.width, dp(60)) / 2f
         val background = GradientDrawable().apply {
             setColor(Color.rgb(40, 40, 44))
             cornerRadius = if (expanding) bubbleRadius else windowRadius
@@ -470,6 +511,8 @@ internal class LyricsBubbleOverlay(
         transition = null
         restoreLyricsPresentation()
     }
+
+    private fun bubbleSize(bounds: LyricsWindowBounds) = dp(60).coerceAtMost(minOf(bounds.width, bounds.height))
 
     private fun dp(value: Int): Int = (value * context.resources.displayMetrics.density).toInt()
 }

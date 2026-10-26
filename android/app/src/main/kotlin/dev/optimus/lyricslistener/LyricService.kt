@@ -3618,7 +3618,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         overlayDisplay = OverlayDisplay.HIDDEN
         minimisedWindowPosition = null
         wasHiddenByPausePreference = false
-        bubbleOverlay.hide()
+        bubbleOverlay.dismiss()
         hideLyricsWindow()
     }
 
