@@ -2774,10 +2774,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              subtitle: const Text(
-                'Collapse the floating lyrics window to a bubble instead of entirely hiding it, for easy re-opening',
-              ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Text(
+                'Collapse the floating lyrics window to a bubble instead of entirely hiding it, for easy re-opening',
+                style: textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
             ),
             SwitchListTile.adaptive(
               value: _hideLyricsWindowOnPause,
