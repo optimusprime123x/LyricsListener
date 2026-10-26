@@ -300,9 +300,9 @@ class LyricService : NotificationListenerService() {
         val saturationMatrix = ColorMatrix().apply { setSaturation(1.2f) }
         val brightnessMatrix = ColorMatrix(
             floatArrayOf(
-                0.5f, 0f, 0f, 0f, 0f,
-                0f, 0.5f, 0f, 0f, 0f,
-                0f, 0f, 0.5f, 0f, 0f,
+                0.55f, 0f, 0f, 0f, 0f,
+                0f, 0.55f, 0f, 0f, 0f,
+                0f, 0f, 0.55f, 0f, 0f,
                 0f, 0f, 0f, 1f, 0f
             )
         )
@@ -2777,7 +2777,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                     RenderEffect.createBlurEffect(40f, 40f, Shader.TileMode.CLAMP)
                 )
                 // Skip the dark scrim if the album art is already dark — the blur +
-                // brightness-halving color filter already produce a sufficiently dim background.
+                // darkening color filter already produce a sufficiently dim background.
                 val avgLuminance = estimateBitmapLuminance(bitmap)
                 overlayScrimView?.isVisible = avgLuminance > 0.3
             } else {
