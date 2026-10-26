@@ -47,6 +47,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
@@ -140,6 +142,8 @@ class LyricService : NotificationListenerService() {
     private var serviceJob = SupervisorJob()
     private var serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
     private var lyricsHighlightingJob: Job? = null
+    private var lyricsFetchJob: Job? = null
+    private var lastFetchSourceSelection: List<Boolean>? = null
 
     private fun normalizeSongStringForComparison(value: String?): String {
         return value?.trim()?.lowercase()?.replace(Regex("\\s+"), " ") ?: ""
@@ -306,10 +310,10 @@ class LyricService : NotificationListenerService() {
         ColorMatrixColorFilter(saturationMatrix)
     }
 
-    private enum class LyricsProvider {
-        MUSIXMATCH,
-        CUSTOM,
-        LRCLIB
+    private enum class LyricsProvider(val source: LyricsSource) {
+        MUSIXMATCH(LyricsSource.MUSIXMATCH),
+        CUSTOM(LyricsSource.OTHERS),
+        LRCLIB(LyricsSource.LRCLIB)
     }
 
     private data class ProviderLyricsResult(
@@ -634,29 +638,51 @@ class LyricService : NotificationListenerService() {
      * Fetches a fresh Musixmatch user token. On success it replaces the current one;
      * on failure the existing token (if any) is kept so a transient error can't drop it.
      */
-    private fun initializeMusixmatchToken(reason: String) {
-        serviceScope.launch(Dispatchers.IO) {
-            try {
-                Log.d(TAG, "Attempting to get Musixmatch user token. Reason: $reason")
-                val response: MusixmatchTokenResponse = httpClient.get(MUSIXMATCH_TOKEN_URL) {
-                    header("User-Agent", MUSIXMATCH_USER_AGENT)
-                    header("Cookie", MUSIXMATCH_COOKIE)
-                }.body()
-                val token = response.message.body.user_token
-                if (token.isNotBlank()) {
-                    val replaced = musixmatchUserToken != null
-                    setMusixmatchUserToken(token)
-                    musixmatchTokenLastFetchError.set(null)
-                    Log.i(TAG, "Successfully acquired Musixmatch user token (${maskMusixmatchToken(token)}). Replaced existing: $replaced")
-                } else {
-                    musixmatchTokenLastFetchError.set("Token response was blank")
-                    Log.w(TAG, "Musixmatch token response was blank. Keeping existing token: ${musixmatchUserToken != null}")
+    private val musixmatchTokenMutex = Mutex()
+    private val sourceAccess by lazy {
+        LyricsSourceAccess(
+            readPreference = { key ->
+                applicationContext.getSharedPreferences(FLUTTER_SHARED_PREFERENCES, Context.MODE_PRIVATE)
+                    .getBoolean("flutter.$key", true)
+            },
+            logSkipped = { source -> Log.i(TAG, "${source.label} is disabled in Lyrics Sources. Skipping request.") }
+        )
+    }
+
+    private fun initializeMusixmatchToken(reason: String, onlyIfMissing: Boolean = false): Job {
+        return serviceScope.launch(Dispatchers.IO) {
+            musixmatchTokenMutex.withLock {
+                if (onlyIfMissing && musixmatchUserToken != null) return@withLock
+                try {
+                    if (!sourceAccess.canFetch(LyricsSource.MUSIXMATCH)) {
+                        musixmatchTokenLastFetchError.set("Musixmatch is disabled in Lyrics Sources")
+                        return@withLock
+                    }
+                    Log.d(TAG, "Attempting to get Musixmatch user token. Reason: $reason")
+                    val response = sourceAccess.request(LyricsSource.MUSIXMATCH) {
+                        httpClient.get(MUSIXMATCH_TOKEN_URL) {
+                            header("User-Agent", MUSIXMATCH_USER_AGENT)
+                            header("Cookie", MUSIXMATCH_COOKIE)
+                        }.body<MusixmatchTokenResponse>()
+                    } ?: return@withLock
+                    val token = response.message.body.user_token
+                    if (token.isNotBlank()) {
+                        val replaced = musixmatchUserToken != null
+                        setMusixmatchUserToken(token)
+                        musixmatchTokenLastFetchError.set(null)
+                        Log.i(TAG, "Successfully acquired Musixmatch user token (${maskMusixmatchToken(token)}). Replaced existing: $replaced")
+                    } else {
+                        musixmatchTokenLastFetchError.set("Token response was blank")
+                        Log.w(TAG, "Musixmatch token response was blank. Keeping existing token: ${musixmatchUserToken != null}")
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    musixmatchTokenLastFetchError.set(e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName)
+                    Log.e(TAG, "Failed to get Musixmatch user token. Keeping existing token: ${musixmatchUserToken != null}", e)
+                } finally {
+                    musixmatchTokenFetchSeq.incrementAndGet()
                 }
-            } catch (e: Exception) {
-                musixmatchTokenLastFetchError.set(e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName)
-                Log.e(TAG, "Failed to get Musixmatch user token. Keeping existing token: ${musixmatchUserToken != null}", e)
-            } finally {
-                musixmatchTokenFetchSeq.incrementAndGet()
             }
         }
     }
@@ -1174,6 +1200,8 @@ class LyricService : NotificationListenerService() {
                         }
                     }
 
+                    if (nowPlaying && refreshLyricsAfterSourceChange()) return
+
                     if (currentLyricsData is LyricsData.Synced) {
                         if (nowPlaying) {
                             if (oldStateValue != PlaybackState.STATE_PLAYING || lyricsHighlightingJob == null || lyricsHighlightingJob?.isCompleted == true) {
@@ -1287,6 +1315,7 @@ class LyricService : NotificationListenerService() {
                  }
             }
         } else {
+            if (refreshLyricsAfterSourceChange()) return
              if (newDuration > 0 && newDuration != currentSongDurationMs) {
                 Log.d(TAG,"Duration updated for '$newTitle' ($currentMediaSessionToken) to $newDuration ms")
                 currentSongDurationMs = newDuration
@@ -1676,9 +1705,12 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     ): LyricsData? = coroutineScope {
         val pendingRequests = mutableSetOf<Deferred<ProviderLyricsResult>>()
 
-        if (musixmatchUserToken != null) {
+        if (sourceAccess.canFetch(LyricsSource.MUSIXMATCH)) {
             pendingRequests.add(
                 async(Dispatchers.IO) {
+                    if (musixmatchUserToken == null) {
+                        initializeMusixmatchToken("enabled source fetch", onlyIfMissing = true).join()
+                    }
                     ProviderLyricsResult(
                         provider = LyricsProvider.MUSIXMATCH,
                         data = searchWithMusixmatch(
@@ -1693,7 +1725,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             )
         }
 
-        pendingRequests.add(
+        if (sourceAccess.canFetch(LyricsSource.OTHERS)) pendingRequests.add(
             async(Dispatchers.IO) {
                 searchWithCustomLyricsApi(
                     title = title,
@@ -1704,7 +1736,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             }
         )
 
-        pendingRequests.add(async(Dispatchers.IO) {
+        if (sourceAccess.canFetch(LyricsSource.LRCLIB)) pendingRequests.add(async(Dispatchers.IO) {
             ProviderLyricsResult(
                 provider = LyricsProvider.LRCLIB,
                 data = searchWithLrcLib(
@@ -1730,6 +1762,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             val completedRequest = completedRequestAndResult.first
             val providerResult = completedRequestAndResult.second
             pendingRequests.remove(completedRequest)
+
+            if (!sourceAccess.canFetch(providerResult.provider.source)) continue
 
             if (!isValidInitialProviderResult(providerResult.data)) {
                 Log.d(
@@ -1768,7 +1802,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             return@coroutineScope providerResult.data
         }
 
-        heldPlainResult?.let { plainResult ->
+        heldPlainResult?.takeIf { sourceAccess.canFetch(it.provider.source) }?.let { plainResult ->
             Log.d(TAG, "Initial concurrent fetch: no synced result. Using plain lyrics from ${plainResult.provider}.")
             cacheConcurrentWinnerIfEligible(
                 providerResult = plainResult,
@@ -1782,8 +1816,21 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         Log.d(TAG, "Initial concurrent fetch did not produce a valid result from any provider.")
         null
     }
+    private fun refreshLyricsAfterSourceChange(): Boolean {
+        val title = lastDetectedSongTitle ?: return false
+        if (lastFetchSourceSelection == null || lastFetchSourceSelection == sourceAccess.selection()) return false
+        Log.i(TAG, "Lyrics Sources changed. Fetching lyrics again for '$title'.")
+        val loading = LyricsData.Info(title, lastDetectedSongArtist, "Loading lyrics...", currentSongDurationMs)
+        currentLyricsData = loading
+        if (lyricsView != null) showLyricsWindow(loading)
+        fetchAndDisplayLyrics(title, lastDetectedSongArtist ?: "", currentSongDurationMs)
+        return true
+    }
+
     private fun fetchAndDisplayLyrics(title: String, artist: String, durationFromMediaMs: Long) {
         if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) { Log.w(TAG, "fetchAndDisplayLyrics: Aborting. ServiceJob cancelled or service not manually started."); return }
+        lyricsFetchJob?.cancel("Starting a new lyrics fetch")
+        lastFetchSourceSelection = sourceAccess.selection()
         lyricsHighlightingJob?.cancel()
         currentLyricsHasTranslation = false
         isShowingTranslatedLyrics = false
@@ -1792,7 +1839,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         val titleForThisFetch = title
         val artistForThisFetch = artist
 
-        serviceScope.launch(Dispatchers.IO) {
+        lyricsFetchJob = serviceScope.launch(Dispatchers.IO) {
             if (!isActive) { Log.d(TAG, "fetchAndDisplayLyrics: CoroutineScope not active. Aborting."); return@launch}
 
             if (tokenForThisFetch != currentMediaSessionToken || titleForThisFetch != lastDetectedSongTitle || artistForThisFetch != (lastDetectedSongArtist ?: "")) {
@@ -1803,70 +1850,62 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
 
             var fetchedLyricsDataLocal: LyricsData? = null
 
-            val useYouTubeLogic = isYouTubeBasedPlayer(activeMediaController?.packageName)
-
             try {
-                // Check cache first (only for non-YouTube players)
-                    if (!useYouTubeLogic) {
-                    val cachedLyrics = cacheManager.get(artistForThisFetch, titleForThisFetch, durationFromMediaMs)
-                    if (cachedLyrics != null) {
-                        Log.d(TAG, "Cache hit for '$titleForThisFetch' by '$artistForThisFetch'")
-                        // Update attribution to include "(cached)" and keep artist aligned with current request
-                        val preparedCachedLyrics = updateCachedLyricsForDisplay(cachedLyrics, artistForThisFetch)
-                        val cachedTitle = when (preparedCachedLyrics) {
-                            is LyricsData.Synced -> preparedCachedLyrics.title
-                            is LyricsData.Plain -> preparedCachedLyrics.title
-                            is LyricsData.Info -> preparedCachedLyrics.title
-                            is LyricsData.MismatchInfo -> preparedCachedLyrics.title
-                        }
-                        val cachedArtist = when (preparedCachedLyrics) {
-                            is LyricsData.Synced -> preparedCachedLyrics.artist
-                            is LyricsData.Plain -> preparedCachedLyrics.artist
-                            is LyricsData.Info -> preparedCachedLyrics.artist
-                            is LyricsData.MismatchInfo -> preparedCachedLyrics.artist
-                        }
+                // Cache and locally added custom lyrics are always available, for every player.
+                val cachedLyrics = cacheManager.get(artistForThisFetch, titleForThisFetch, durationFromMediaMs)
+                if (cachedLyrics != null) {
+                    Log.d(TAG, "Cache hit for '$titleForThisFetch' by '$artistForThisFetch'")
+                    // Update attribution to include "(cached)" and keep artist aligned with current request
+                    val preparedCachedLyrics = updateCachedLyricsForDisplay(cachedLyrics, artistForThisFetch)
+                    val cachedTitle = when (preparedCachedLyrics) {
+                        is LyricsData.Synced -> preparedCachedLyrics.title
+                        is LyricsData.Plain -> preparedCachedLyrics.title
+                        is LyricsData.Info -> preparedCachedLyrics.title
+                        is LyricsData.MismatchInfo -> preparedCachedLyrics.title
+                    }
+                    val cachedArtist = when (preparedCachedLyrics) {
+                        is LyricsData.Synced -> preparedCachedLyrics.artist
+                        is LyricsData.Plain -> preparedCachedLyrics.artist
+                        is LyricsData.Info -> preparedCachedLyrics.artist
+                        is LyricsData.MismatchInfo -> preparedCachedLyrics.artist
+                    }
 
-                        if (matchesCurrentSongContextForLyrics(preparedCachedLyrics)) {
-                            fetchedLyricsDataLocal = preparedCachedLyrics
-                        } else {
-                            Log.w(
-                                TAG,
-                                "Cache hit for '$titleForThisFetch'/'$artistForThisFetch' produced cached payload '$cachedTitle'/'$cachedArtist' that failed current song guard '$lastDetectedSongTitle'/'$lastDetectedSongArtist'. Skipping cache and falling back to network."
-                            )
-                        }
+                    if (matchesCurrentSongContextForLyrics(preparedCachedLyrics)) {
+                        fetchedLyricsDataLocal = preparedCachedLyrics
+                    } else {
+                        Log.w(
+                            TAG,
+                            "Cache hit for '$titleForThisFetch'/'$artistForThisFetch' produced cached payload '$cachedTitle'/'$cachedArtist' that failed current song guard '$lastDetectedSongTitle'/'$lastDetectedSongArtist'. Skipping cache and falling back to network."
+                        )
                     }
-                    }
+                }
 
                 if (fetchedLyricsDataLocal == null) {
-                    if (useYouTubeLogic) {
-                        Log.d(TAG, "Using LRCLib for YouTube-based player.")
+                    Log.d(TAG, "Starting concurrent fetch from enabled lyrics sources.")
+                    fetchedLyricsDataLocal = fetchFirstValidLyricsFromConcurrentProviders(
+                        title = titleForThisFetch,
+                        artist = artistForThisFetch,
+                        durationFromMediaMs = durationFromMediaMs
+                    )
+
+                    if (fetchedLyricsDataLocal == null && sourceAccess.canFetch(LyricsSource.LRCLIB)) {
+                        Log.d(TAG, "Initial concurrent fetch had no valid winner. Running retry mechanisms (LRCLIB fallback retries).")
                         fetchedLyricsDataLocal = searchWithLrcLib(
                             title = titleForThisFetch,
                             artist = artistForThisFetch,
-                            durationFromMediaMs = durationFromMediaMs
+                            durationFromMediaMs = durationFromMediaMs,
+                            enableFallbackRetries = true
                         )
-                    } else {
-                        if (musixmatchUserToken != null) {
-                            Log.d(TAG, "Starting concurrent first-pass fetch (Musixmatch + Custom + LRCLIB without retries).")
-                        } else {
-                            Log.d(TAG, "Musixmatch token unavailable. Starting concurrent first-pass fetch (Custom + LRCLIB without retries).")
-                        }
-                        fetchedLyricsDataLocal = fetchFirstValidLyricsFromConcurrentProviders(
-                            title = titleForThisFetch,
-                            artist = artistForThisFetch,
-                            durationFromMediaMs = durationFromMediaMs
-                        )
-
-                        if (fetchedLyricsDataLocal == null) {
-                            Log.d(TAG, "Initial concurrent fetch had no valid winner. Running retry mechanisms (LRCLIB fallback retries).")
-                            fetchedLyricsDataLocal = searchWithLrcLib(
-                                title = titleForThisFetch,
-                                artist = artistForThisFetch,
-                                durationFromMediaMs = durationFromMediaMs,
-                                enableFallbackRetries = true
-                            )
-                        }
                     }
+                }
+
+                if (fetchedLyricsDataLocal == null) {
+                    val message = if (LyricsSource.entries.none { sourceAccess.isEnabled(it) }) {
+                        "No cached lyrics found. Online sources are off in Settings > Lyrics > Lyrics Sources."
+                    } else {
+                        "Lyrics not found."
+                    }
+                    fetchedLyricsDataLocal = LyricsData.Info(titleForThisFetch, artistForThisFetch, message, durationFromMediaMs)
                 }
 
 
@@ -1883,6 +1922,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                     currentSongDurationMs = currentLyricsData!!.durationMs
                 }
 
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Exception fetching/processing lyrics for '$titleForThisFetch'", e)
                 if (isActive && tokenForThisFetch == currentMediaSessionToken && titleForThisFetch == lastDetectedSongTitle && artistForThisFetch == (lastDetectedSongArtist ?: "")) {
@@ -1924,11 +1965,13 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             val encodedArtist = URLEncoder.encode(artist, StandardCharsets.UTF_8.toString())
             val url = "$MUSIXMATCH_API_BASE_URL?usertoken=$token&q_track=$encodedTitle&q_artist=$encodedArtist&app_id=mac-ios-v2.0&subtitle_format=json&selected_language=en&part=subtitle_translated"
 
-            Log.d(TAG, "Fetching from Musixmatch: ${url.replace(token, maskMusixmatchToken(token))}")
-            val response: MusixmatchLyricsResponse = httpClient.get(url) {
+            val response = sourceAccess.request(LyricsSource.MUSIXMATCH) {
+                Log.d(TAG, "Fetching from Musixmatch: ${url.replace(token, maskMusixmatchToken(token))}")
+                httpClient.get(url) {
                     header("User-Agent", MUSIXMATCH_USER_AGENT)
                     header("Cookie", MUSIXMATCH_COOKIE)
-                }.body()
+                }.body<MusixmatchLyricsResponse>()
+            } ?: return null
 
             val macroCalls = response.message.body.macro_calls
             val subtitlesGet = macroCalls.trackSubtitlesGet?.message?.body
@@ -2143,9 +2186,11 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             val encodedArtist = URLEncoder.encode(artist, StandardCharsets.UTF_8.toString())
             val durationParam = if (durationFromMediaMs > 0) "&durationMs=$durationFromMediaMs" else ""
             val url = "$CUSTOM_LYRIC_API_BASE_URL?title=$encodedTitle&artist=$encodedArtist$durationParam"
-            Log.d(TAG, "Fetching from custom lyrics API: $url")
 
-            val response: CustomLyricsResponse = httpClient.get(url).body()
+            val response = sourceAccess.request(LyricsSource.OTHERS) {
+                Log.d(TAG, "Fetching from custom lyrics API: $url")
+                httpClient.get(url).body<CustomLyricsResponse>()
+            } ?: return ProviderLyricsResult(LyricsProvider.CUSTOM, null, "custom")
             val source = response.source?.trim().takeUnless { it.isNullOrEmpty() } ?: "custom"
 
             // Compare durations only when both sides report one; custom lyrics may carry none.
@@ -2221,13 +2266,15 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         val encodedTrack = URLEncoder.encode(trackName, StandardCharsets.UTF_8.toString())
         val encodedArtist = URLEncoder.encode(artistName, StandardCharsets.UTF_8.toString())
         val url = "$LYRIC_API_BASE_URL?track_name=$encodedTrack&artist_name=$encodedArtist"
-        Log.d(TAG, "Fetching lyrics from LRCLib (structured): $url")
         return try {
             if (!currentCoroutineContext().isActive) {
                 Log.w(TAG, "LRCLib: Coroutine no longer active before network call for '$trackName'.")
                 return null
             }
-            httpClient.get(url).body<List<LyricResult>>().also { Log.d(TAG, "LRCLib structured search for '$trackName' by '$artistName' returned ${it.size} results.") }
+            sourceAccess.request(LyricsSource.LRCLIB) {
+                Log.d(TAG, "Fetching lyrics from LRCLib (structured): $url")
+                httpClient.get(url).body<List<LyricResult>>()
+            }?.also { Log.d(TAG, "LRCLib structured search for '$trackName' by '$artistName' returned ${it.size} results.") }
         } catch (e: CancellationException) {
             Log.d(TAG, "LRCLib structured search cancelled for '$trackName'.")
             throw e
@@ -2242,13 +2289,15 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         if (query.isBlank()) return null
         val encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8.toString())
         val url = "$LYRIC_API_BASE_URL?q=$encodedQuery"
-        Log.d(TAG, "Fetching lyrics from LRCLib: $url (Query: '$query')")
         return try {
             if (!currentCoroutineContext().isActive) {
                 Log.w(TAG, "LRCLib: Coroutine no longer active before network call for '$query'.")
                 return null
             }
-            httpClient.get(url).body<List<LyricResult>>().also { Log.d(TAG, "LRCLib search for '$query' returned ${it.size} results.") }
+            sourceAccess.request(LyricsSource.LRCLIB) {
+                Log.d(TAG, "Fetching lyrics from LRCLib: $url (Query: '$query')")
+                httpClient.get(url).body<List<LyricResult>>()
+            }?.also { Log.d(TAG, "LRCLib search for '$query' returned ${it.size} results.") }
         } catch (e: CancellationException) {
             Log.d(TAG, "LRCLib search cancelled for '$query'.")
             throw e

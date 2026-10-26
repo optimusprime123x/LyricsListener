@@ -4,6 +4,7 @@ import 'dart:ui';
 
 import 'package:lyricslistener/pages/manage_lyrics_page.dart';
 import 'package:lyricslistener/pages/add_custom_lyrics_page.dart';
+import 'package:lyricslistener/pages/lyrics_sources_page.dart';
 import 'package:lyricslistener/widgets/expressive_page_transitions.dart';
 import 'package:lyricslistener/widgets/expressive_refresh_indicator.dart'
     as expressive_refresh;
@@ -1407,6 +1408,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   bool _rememberLyricsWindowPosition = false;
   bool _hideLyricsWindowOnPause = false;
   bool _minimiseToBubble = true;
+  final _lyricsSourcesHelpLink = TapGestureRecognizer();
+  final _customLyricsHelpLink = TapGestureRecognizer();
   bool _dynamicLyricsWindowColors = true;
   bool _isLyricsWindowBlurEnabled = true;
   String _lyricsWindowSize = 'compact';
@@ -1552,6 +1555,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     print("MainScreen initState: Called");
+    _lyricsSourcesHelpLink.onTap = () => Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const LyricsSourcesPage()),
+    );
+    _customLyricsHelpLink.onTap = () => Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const AddCustomLyricsPage()),
+    );
     WidgetsBinding.instance.addObserver(this);
     _loadCustomizationPreferences();
     _loadInitialData();
@@ -1707,6 +1716,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     print("MainScreen dispose: Called");
+    _lyricsSourcesHelpLink.dispose();
+    _customLyricsHelpLink.dispose();
     _debugTriggerResetTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -2847,6 +2858,15 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           context,
           title: 'Lyrics',
           children: [
+            ListTile(
+              leading: const Icon(Icons.hub_rounded),
+              title: const Text('Lyrics Sources'),
+              subtitle: const Text('Choose where we fetch lyrics from'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const LyricsSourcesPage()),
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -3032,9 +3052,28 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                       const TextSpan(
-                        text:
-                            "You can try a different song, or a few days later, or if you have the LRC files for that song, add it yourself from Settings > Lyrics > Add custom lyrics.",
+                        text: 'You can try a different song, a different ',
                       ),
+                      TextSpan(
+                        text: 'source',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          decoration: TextDecoration.underline,
+                        ),
+                        recognizer: _lyricsSourcesHelpLink,
+                      ),
+                      const TextSpan(
+                        text: ', or try again a few days later. If you have the LRC file for that song, add it yourself from the ',
+                      ),
+                      TextSpan(
+                        text: 'Custom Lyrics page',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          decoration: TextDecoration.underline,
+                        ),
+                        recognizer: _customLyricsHelpLink,
+                      ),
+                      const TextSpan(text: '.'),
                     ],
                   ),
                   const Divider(height: 24),
