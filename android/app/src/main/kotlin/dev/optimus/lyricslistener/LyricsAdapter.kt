@@ -1,15 +1,16 @@
 package dev.optimus.lyricslistener
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.util.TypedValue
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
-import android.view.animation.OvershootInterpolator
 import android.widget.TextView
 import androidx.core.graphics.ColorUtils
 import androidx.recyclerview.widget.RecyclerView
@@ -37,8 +38,7 @@ class LyricsAdapter(
     private val highlightedTextSizeSp = 18f
     private val attributionTextSizeSp = 11f
 
-    // Spring-like interpolator for bouncy highlight animations
-    private val springInterpolator = OvershootInterpolator(2.5f)
+    private val fadeInterpolator = DecelerateInterpolator(2f)
 
     fun updateThemeColors(
         normalLineTextColor: Int,
@@ -68,12 +68,25 @@ class LyricsAdapter(
         return ViewHolder(view)
     }
 
-    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        val line = lyricLines[position]
+    override fun onBindViewHolder(holder: ViewHolder, position: Int) = bind(holder, position, false)
 
-        // Cancel any ongoing animations on rebind
-        holder.lyricText.animate().cancel()
-        holder.visualizer.stopAnimation()
+    override fun onBindViewHolder(holder: ViewHolder, position: Int, payloads: MutableList<Any>) {
+        bind(holder, position, payloads.contains(HIGHLIGHT_PAYLOAD))
+    }
+
+    private fun bind(holder: ViewHolder, position: Int, highlightChanged: Boolean) {
+        val line = lyricLines[position]
+        holder.transition?.cancel()
+        holder.transition = null
+        val sameLine = holder.boundPosition == position
+        val wasVisible = holder.itemView.visibility == View.VISIBLE
+        holder.boundPosition = position
+        val content = if (line.text == instrumentalPattern) holder.visualizer else holder.lyricText
+        val previousAlpha = content.alpha
+        val previousScaleX = content.scaleX
+        val previousScaleY = content.scaleY
+        val previousBackground = holder.highlightAmount
+        val previousTextColor = holder.lyricText.currentTextColor
 
         // Mini mode: only show the highlighted line
         if (isMiniMode && isSyncedMode && position != highlightedPosition) {
@@ -81,6 +94,7 @@ class LyricsAdapter(
             holder.itemView.layoutParams = holder.itemView.layoutParams.apply {
                 height = 0
             }
+            holder.visualizer.stopAnimation()
             return
         } else {
             holder.itemView.visibility = View.VISIBLE
@@ -130,6 +144,8 @@ class LyricsAdapter(
             } else {
                 holder.itemView.background = null
             }
+            finishBinding(holder, content, highlightChanged && sameLine, wasVisible,
+                previousAlpha, previousScaleX, previousScaleY, previousBackground, previousTextColor)
             return
         }
 
@@ -138,10 +154,13 @@ class LyricsAdapter(
         holder.visualizer.visibility = View.GONE
         holder.visualizer.stopAnimation()
         holder.lyricText.text = line.text
+        holder.lyricText.gravity = if (isMiniMode) Gravity.START else Gravity.CENTER_HORIZONTAL
+        holder.lyricText.textAlignment = if (isMiniMode) View.TEXT_ALIGNMENT_VIEW_START else View.TEXT_ALIGNMENT_CENTER
 
         if (line.timestamp == LyricService.ATTRIBUTION_TIMESTAMP) {
             // This is the attribution line, style it specially and stop.
             holder.itemView.background = null
+            holder.highlightAmount = 0f
             holder.lyricText.setTextColor(attributionTextColor)
             holder.lyricText.setTextSize(TypedValue.COMPLEX_UNIT_SP, attributionTextSizeSp)
             holder.lyricText.setTypeface(null, Typeface.ITALIC)
@@ -162,7 +181,7 @@ class LyricsAdapter(
 
         if (isSyncedMode) {
             if (position == highlightedPosition) {
-                // Current highlighted line — M3E rounded pill background with spring-physics scale emphasis
+                // Keep the existing highlighted text emphasis and optional rounded background.
                 if (showHighlightedLineBackground) {
                     val bg = GradientDrawable().apply {
                         setColor(highlightedLineBackgroundColor)
@@ -176,26 +195,11 @@ class LyricsAdapter(
                 holder.lyricText.alpha = 1.0f
                 holder.lyricText.letterSpacing = 0.015f
 
-                // Wavy stretch effect: scaleX overshoots more than scaleY for a fluid "wave" feel
-                // OvershootInterpolator gives a spring-like bounce past the target, then settles
-                if (kotlin.math.abs(holder.lyricText.scaleX - 1.05f) > 0.005f) {
-                    holder.lyricText.animate()
-                        .scaleX(1.05f)
-                        .scaleY(1.02f)
-                        .setDuration(400)
-                        .setInterpolator(springInterpolator)
-                        .start()
-                }
+                holder.lyricText.scaleX = 1.05f
+                holder.lyricText.scaleY = 1.02f
             } else {
-                // Animate scale back to normal with gentle deceleration
-                if (kotlin.math.abs(holder.lyricText.scaleX - 1.0f) > 0.005f) {
-                    holder.lyricText.animate()
-                        .scaleX(1.0f)
-                        .scaleY(1.0f)
-                        .setDuration(250)
-                        .setInterpolator(DecelerateInterpolator(2.0f))
-                        .start()
-                }
+                holder.lyricText.scaleX = 1f
+                holder.lyricText.scaleY = 1f
 
                 // Other lines in synced mode (past or upcoming)
                 holder.lyricText.setTextColor(normalLineTextColor)
@@ -236,14 +240,9 @@ class LyricsAdapter(
                             }
                         }
                     }
-                    // Smoothly animate alpha transitions for fluid fading
-                    holder.lyricText.animate()
-                        .alpha(targetAlpha)
-                        .setDuration(300)
-                        .setInterpolator(DecelerateInterpolator(2.0f))
-                        .start()
+                    holder.lyricText.alpha = targetAlpha
                 } else {
-                    // Synced mode, but no line is currently highlighted: stick to the 55%-white baseline.
+                    // No active line: restore the full-opacity resting state.
                     holder.lyricText.alpha = 1.0f
                 }
             }
@@ -253,6 +252,90 @@ class LyricsAdapter(
             holder.lyricText.scaleX = 1.0f
             holder.lyricText.scaleY = 1.0f
         }
+        finishBinding(holder, content, highlightChanged && sameLine, wasVisible,
+            previousAlpha, previousScaleX, previousScaleY, previousBackground, previousTextColor)
+    }
+
+    /** Continue from the displayed opacity instead of resetting to full brightness on every bind. */
+    private fun finishBinding(
+        holder: ViewHolder,
+        content: View,
+        highlightChanged: Boolean,
+        wasVisible: Boolean,
+        previousAlpha: Float,
+        previousScaleX: Float,
+        previousScaleY: Float,
+        previousBackground: Float,
+        previousTextColor: Int
+    ) {
+        val targetAlpha = content.alpha
+        val targetScaleX = content.scaleX
+        val targetScaleY = content.scaleY
+        val targetTextColor = holder.lyricText.currentTextColor
+        val targetBackground = if (holder.itemView.background != null) 1f else 0f
+        val background = (holder.itemView.background as? GradientDrawable) ?: GradientDrawable().apply {
+            setColor(highlightedLineBackgroundColor)
+            cornerRadius = highlightRadius
+        }
+        holder.itemView.background = background
+        fun apply(alpha: Float, scaleX: Float, scaleY: Float, highlight: Float, colorProgress: Float = 1f) {
+            content.alpha = alpha
+            content.scaleX = scaleX
+            content.scaleY = scaleY
+            holder.highlightAmount = highlight
+            background.alpha = (highlight.coerceIn(0f, 1f) * 255).toInt()
+            if (content is TextView) {
+                content.setTextColor(ColorUtils.blendARGB(previousTextColor, targetTextColor, colorProgress))
+            }
+        }
+        val animate = highlightChanged && holder.itemView.isAttachedToWindow && ValueAnimator.areAnimatorsEnabled()
+        if (!animate) {
+            apply(targetAlpha, targetScaleX, targetScaleY, targetBackground)
+            return
+        }
+        // Mini changes the visible row immediately; give its new line a short, gentle entrance.
+        val miniEntrance = isMiniMode && !wasVisible
+        val startAlpha = if (miniEntrance) targetAlpha * 0.65f else previousAlpha
+        val startScaleX = if (miniEntrance) targetScaleX else previousScaleX
+        val startScaleY = if (miniEntrance) targetScaleY else previousScaleY
+        val startBackground = if (miniEntrance) 0f else previousBackground
+        apply(startAlpha, startScaleX, startScaleY, startBackground, 0f)
+        holder.transition = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = if (miniEntrance) 180L else 300L
+            interpolator = fadeInterpolator
+            addUpdateListener {
+                val progress = it.animatedValue as Float
+                apply(
+                    startAlpha + (targetAlpha - startAlpha) * progress,
+                    startScaleX + (targetScaleX - startScaleX) * progress,
+                    startScaleY + (targetScaleY - startScaleY) * progress,
+                    startBackground + (targetBackground - startBackground) * progress,
+                    progress
+                )
+            }
+            start()
+        }
+    }
+
+    override fun onViewAttachedToWindow(holder: ViewHolder) {
+        super.onViewAttachedToWindow(holder)
+        val position = holder.bindingAdapterPosition
+        if (position in lyricLines.indices) bind(holder, position, false)
+    }
+
+    override fun onViewDetachedFromWindow(holder: ViewHolder) {
+        holder.transition?.cancel()
+        holder.transition = null
+        holder.visualizer.stopAnimation()
+        super.onViewDetachedFromWindow(holder)
+    }
+
+    override fun onViewRecycled(holder: ViewHolder) {
+        holder.transition?.cancel()
+        holder.transition = null
+        holder.visualizer.stopAnimation()
+        holder.boundPosition = RecyclerView.NO_POSITION
+        super.onViewRecycled(holder)
     }
 
     override fun getItemCount(): Int = lyricLines.size
@@ -266,42 +349,25 @@ class LyricsAdapter(
 
     fun setHighlight(position: Int) {
         if (!isSyncedMode) return
-
-        if (position < -1 || position >= lyricLines.size || (position != -1 && lyricLines[position].timestamp == LyricService.ATTRIBUTION_TIMESTAMP)) {
-            if (highlightedPosition != -1) {
-                val oldPos = highlightedPosition
-                highlightedPosition = -1
-                if (oldPos < lyricLines.size) notifyItemChanged(oldPos)
-            }
-            return
-        }
-
-
-        if (position == highlightedPosition) return
-
-        val oldPosition = highlightedPosition
-        highlightedPosition = position
-
-        if (oldPosition != -1 && oldPosition < lyricLines.size) {
-            notifyItemChanged(oldPosition)
-        }
-        if (highlightedPosition != -1) {
-            notifyItemChanged(highlightedPosition)
-        }
-
-        val updateRange = 4
-        if (oldPosition != -1) {
-            for (i in 1..updateRange) {
-                if (oldPosition - i >= 0) notifyItemChanged(oldPosition - i)
-                if (oldPosition + i < lyricLines.size) notifyItemChanged(oldPosition + i)
+        val next = position.takeIf {
+            it in lyricLines.indices && lyricLines[it].timestamp != LyricService.ATTRIBUTION_TIMESTAMP
+        } ?: -1
+        if (next == highlightedPosition) return
+        val previous = highlightedPosition
+        highlightedPosition = next
+        val changed = linkedSetOf<Int>()
+        if (previous == -1 || next == -1 || kotlin.math.abs(next - previous) > 1) {
+            // Seeking or clearing focus can change the past/future state of every visible line.
+            changed.addAll(lyricLines.indices)
+        } else {
+            for (center in listOf(previous, next)) {
+                for (index in center - 4..center + 4) {
+                    if (index in lyricLines.indices) changed.add(index)
+                }
             }
         }
-        if (highlightedPosition != -1) {
-            for (i in 1..updateRange) {
-                if (highlightedPosition - i >= 0) notifyItemChanged(highlightedPosition - i)
-                if (highlightedPosition + i < lyricLines.size) notifyItemChanged(highlightedPosition + i)
-            }
-        }
+        // One payload per row prevents overlapping fades from being restarted by duplicate binds.
+        changed.forEach { notifyItemChanged(it, HIGHLIGHT_PAYLOAD) }
     }
 
     fun getCurrentHighlightedPosition(): Int = highlightedPosition
@@ -331,5 +397,12 @@ class LyricsAdapter(
     class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val lyricText: TextView = itemView.findViewById(R.id.lyricLineText)
         val visualizer: InstrumentalVisualizerView = itemView.findViewById(R.id.instrumentalVisualizer)
+        var boundPosition = RecyclerView.NO_POSITION
+        var highlightAmount = 0f
+        var transition: ValueAnimator? = null
+    }
+
+    private companion object {
+        const val HIGHLIGHT_PAYLOAD = "highlight"
     }
 }
