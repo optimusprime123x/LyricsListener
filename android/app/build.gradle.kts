@@ -60,8 +60,14 @@ android {
         release {
             // CI has no key.properties; debug-sign so builds still succeed
             signingConfig = if (hasReleaseKey) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // Enable R8 code shrinking to reduce DEX size
+            // -dontobfuscate in proguard-rules.pro keeps code readable
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
         debug {
             applicationIdSuffix = ".debug"
