@@ -1,18 +1,11 @@
 # ProGuard/R8 rules for Lyrics Listener
-# Goal: Enable code shrinking (remove unused code) WITHOUT obfuscating source code
-# so stack traces and debugging remain easy.
-#
-# IMPORTANT: AndroidX, Google Play Services, Kotlin, and most libraries ship with
-# their own consumer ProGuard rules. We don't need to keep them - R8 will
-# automatically apply their rules and only keep what's actually needed.
-
 # ============================================
 # DISABLE OBFUSCATION (keep all names readable)
 # ============================================
 -dontobfuscate
 
 # ============================================
-# KEEP FLUTTER ENGINE (required - Flutter uses reflection)
+# KEEP FLUTTER ENGINE 
 # ============================================
 -keep class io.flutter.** { *; }
 -keep class io.flutter.plugins.** { *; }
@@ -25,7 +18,7 @@
 -keep class * implements io.flutter.plugin.common.PluginRegistry { *; }
 
 # ============================================
-# KEEP YOUR APP'S SOURCE CODE (un-obfuscated)
+# KEEP MY APP'S SOURCE CODE (un-obfuscated)
 # ============================================
 -keep class dev.optimus.lyricslistener.** { *; }
 
@@ -37,7 +30,7 @@
 }
 
 # ============================================
-# KEEP ANDROID COMPONENTS (required - referenced from AndroidManifest.xml)
+# KEEP ANDROID COMPONENTS 
 # ============================================
 -keep public class * extends android.app.Activity
 -keep public class * extends android.app.Application
@@ -81,14 +74,9 @@
 }
 
 # ============================================
-# GOOGLE PLAY CORE (deferred components - not used)
-# Flutter engine references these but app doesn't use them
-# ============================================
--dontwarn com.google.android.play.core.**
-
-# ============================================
 # WARNINGS TO IGNORE (safe to ignore)
 # ============================================
+-dontwarn com.google.android.play.core.**
 -dontwarn javax.annotation.**
 -dontwarn javax.inject.**
 -dontwarn org.slf4j.**
