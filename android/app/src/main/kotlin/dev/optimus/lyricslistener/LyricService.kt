@@ -58,6 +58,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.DisplayMetrics
 import androidx.core.graphics.ColorUtils
+import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import androidx.palette.graphics.Palette
 import android.graphics.Bitmap
@@ -112,17 +113,12 @@ class LyricService : NotificationListenerService() {
             this,
             boundsFor = { getLyricsWindowBounds(it) },
             onOpen = { reopenLyricsWindow(animateFromBubble = true) },
-            onDismiss = { dismissLyricsOverlay() },
-            prepareExpansionArtwork = { artworkView, scrimView ->
-                applyOverlayArtwork(getCurrentAlbumArtBitmap(), artworkView, scrimView)
-                artworkView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-                    applyOverlayArtworkTransform(artworkView)
-                }
-            }
+            onDismiss = { dismissLyricsOverlay() }
         )
     }
     private val fitLyricsWindowRunnable = Runnable { fitLyricsWindowToScreen() }
     private val lyricsWindowLayoutListener = View.OnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
+        overlayAlbumArtImageView?.let { applyOverlayArtworkTransform(it) }
         scheduleLyricsWindowFit(view)
     }
     // Keep track of every overlay instance so we can clean up a residual window even if the main reference drifts.
@@ -2711,6 +2707,12 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             }
         }
 
+        if (pendingBubbleExpansion && view.isLayoutRequested) {
+            // Use the final measured size so restoring wrap-content cannot jump at the end.
+            view.doOnLayout { scheduleLyricsWindowFit(it) }
+            return
+        }
+
         val (x, y) = bounds.constrainPosition(layoutParams.x, layoutParams.y, view.width, view.height)
         if (layoutParams.x != x || layoutParams.y != y) {
             layoutParams.x = x
@@ -2777,18 +2779,14 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         return !simulateLegacyOverlay
     }
 
-    private fun applyOverlayArtwork(
-        bitmap: Bitmap?,
-        artworkView: ImageView? = overlayAlbumArtImageView,
-        scrimView: View? = overlayScrimView
-    ) {
-        artworkView?.let { imageView ->
+    private fun applyOverlayArtwork(bitmap: Bitmap?) {
+        overlayAlbumArtImageView?.let { imageView ->
             if (bitmap == null || !areDynamicLyricsWindowColorsEnabled()) {
                 imageView.setImageDrawable(null)
                 imageView.imageMatrix = Matrix()
                 imageView.scaleType = ImageView.ScaleType.CENTER_CROP
                 imageView.isVisible = false
-                scrimView?.isVisible = false
+                overlayScrimView?.isVisible = false
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     imageView.setRenderEffect(null)
                 }
@@ -2800,7 +2798,6 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             applyOverlayArtworkTransform(imageView)
             imageView.colorFilter = overlayArtworkColorFilter
             imageView.isVisible = true
-            scrimView?.setBackgroundColor(0x66000000)
 
             val blurActive = isBlurOverlayEffectActive()
             if (blurActive) {
@@ -2810,9 +2807,9 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 // Skip the dark scrim if the album art is already dark — the blur +
                 // darkening color filter already produce a sufficiently dim background.
                 val avgLuminance = estimateBitmapLuminance(bitmap)
-                scrimView?.isVisible = avgLuminance > 0.3
+                overlayScrimView?.isVisible = avgLuminance > 0.3
             } else {
-                scrimView?.isVisible = true
+                overlayScrimView?.isVisible = true
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     imageView.setRenderEffect(null)
                 }
@@ -2846,7 +2843,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         val viewHeight = imageView.height.toFloat()
         if (viewWidth <= 0f || viewHeight <= 0f) {
             imageView.post {
-                if (imageView.isAttachedToWindow && imageView.drawable != null) {
+                if (overlayAlbumArtImageView === imageView && imageView.drawable != null) {
                     applyOverlayArtworkTransform(imageView)
                 }
             }
