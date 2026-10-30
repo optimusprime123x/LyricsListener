@@ -88,34 +88,30 @@ class _LyricsSourcesPageState extends State<LyricsSourcesPage> {
     }
   }
 
-  InlineSpan _link(String text, Widget destination) => WidgetSpan(
-    alignment: PlaceholderAlignment.middle,
-    child: TextButton(
-      onPressed: () => Navigator.of(
-        context,
-      ).push(MaterialPageRoute<void>(builder: (_) => destination)),
-      style: TextButton.styleFrom(
-        minimumSize: const Size(48, 48),
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
-          decoration: TextDecoration.underline,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      child: Text(text),
+  Widget _link(String text, Widget destination) => TextButton.icon(
+    onPressed: () => Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => destination)),
+    style: TextButton.styleFrom(
+      minimumSize: const Size(48, 48),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
     ),
+    icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+    label: Text(text),
   );
 
-  Widget _step(int number, InlineSpan text) {
-    final colors = Theme.of(context).colorScheme;
+  Widget _step(int number, String text, {Widget? action}) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Padding(
       padding: const EdgeInsets.only(top: 16),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
         children: [
           Container(
             width: 32,
-            height: 32,
+            constraints: const BoxConstraints(minHeight: 32),
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: colors.secondaryContainer,
@@ -123,11 +119,22 @@ class _LyricsSourcesPageState extends State<LyricsSourcesPage> {
             ),
             child: Text(
               '$number',
-              style: TextStyle(color: colors.onSecondaryContainer),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colors.onSecondaryContainer,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
           const SizedBox(width: 12),
-          Expanded(child: Text.rich(text)),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(text, style: theme.textTheme.bodyMedium),
+                if (action != null) ...[const SizedBox(height: 4), action],
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -255,41 +262,24 @@ class _LyricsSourcesPageState extends State<LyricsSourcesPage> {
           ),
           _step(
             1,
-            const TextSpan(
-              text:
-                  'Scroll down the lyrics window to see where the lyrics were fetched from.',
-            ),
+            'Scroll down the lyrics window to see where the lyrics were fetched from.',
           ),
           _step(
             2,
-            TextSpan(
-              children: [
-                const TextSpan(text: 'Go to '),
-                _link('Manage Lyrics', const ManageLyricsPage()),
-                const TextSpan(
-                  text: ', search for the song and delete the cached lyrics.',
-                ),
-              ],
-            ),
+            'Go to Manage Lyrics, search for the song and delete the cached lyrics.',
+            action: _link('Manage Lyrics', const ManageLyricsPage()),
           ),
-          _step(
-            3,
-            const TextSpan(text: 'Disable the corresponding source above.'),
-          ),
-          _step(4, const TextSpan(text: '??? (play the song again)')),
-          _step(5, const TextSpan(text: 'Profit')),
+          _step(3, 'Disable the corresponding source above.'),
+          _step(4, '??? (play the song again)'),
+          _step(5, 'Profit'),
           const SizedBox(height: 20),
-          Text.rich(
-            TextSpan(
-              children: [
-                const TextSpan(
-                  text:
-                      'As long as at least one of the three sources above has correct lyrics for your song, you can get them. If not, you can add them yourself from ',
-                ),
-                _link('Custom Lyrics', const AddCustomLyricsPage()),
-                const TextSpan(text: '.'),
-              ],
-            ),
+          const Text(
+            'As long as at least one of the three sources above has correct lyrics '
+            'for your song, you can get them. If not, you can add them yourself:',
+          ),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: _link('Custom Lyrics', const AddCustomLyricsPage()),
           ),
         ],
       ),
