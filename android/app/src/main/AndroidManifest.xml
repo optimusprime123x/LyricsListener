@@ -5,7 +5,7 @@
     <application
         android:label="Lyric Listener"
         android:name="${applicationName}"
-        android:icon="@mipmap/launcher_icon">
+        android:icon="@mipmap/launcher_icon_themed">
 
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"

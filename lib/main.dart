@@ -1322,20 +1322,24 @@ class _DebugScreenState extends State<DebugScreen> {
     // height and the whole page scrolls instead.
     return Scaffold(
       appBar: AppBar(title: const Text('Debug: Media Notification')),
-      body: CustomScrollView(
-        slivers: [
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            sliver: SliverToBoxAdapter(child: header),
-          ),
-          SliverFillRemaining(
-            hasScrollBody: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-              child: SizedBox(height: _minLogViewHeight, child: logView),
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              sliver: SliverToBoxAdapter(child: header),
             ),
-          ),
-        ],
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                child: SizedBox(height: _minLogViewHeight, child: logView),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

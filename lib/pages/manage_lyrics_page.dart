@@ -285,11 +285,15 @@ class _ManageLyricsPageState extends State<ManageLyricsPage> {
       appBar: AppBar(
         title: const Text('Manage lyrics'),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-              ? _buildErrorState(colorScheme, textTheme)
-              : _buildContent(colorScheme, textTheme),
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _errorMessage != null
+                ? _buildErrorState(colorScheme, textTheme)
+                : _buildContent(colorScheme, textTheme),
+      ),
     );
   }
 

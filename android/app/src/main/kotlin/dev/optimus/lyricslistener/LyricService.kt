@@ -827,12 +827,7 @@ class LyricService : NotificationListenerService() {
 
 
         Log.i(TAG, "performStopActions: Stopping foreground and self.")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } else {
-            @Suppress("DEPRECATION")
-            stopForeground(true)
-        }
+        stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
         Log.i(TAG, "performStopActions: stopSelf() called. ServiceJob Cancelled: ${serviceJob.isCancelled}")
     }
@@ -2596,12 +2591,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     }
 
     private fun createLyricsWindowLayoutParams(): WindowManager.LayoutParams {
-        val overlayFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
+        val overlayFlag = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         val savedWindowPosition = minimisedWindowPosition ?: loadSavedWindowPosition()
         minimisedWindowPosition = null
         return WindowManager.LayoutParams(
@@ -2933,7 +2923,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             }
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+        if (!Settings.canDrawOverlays(this)) {
             Log.w(TAG, "Cannot show lyrics window: Overlay permission not granted.")
             updatePersistentNotification("Tap to grant Overlay Permission")
             val permIntent = Intent(this, MainActivity::class.java).apply {
@@ -3893,16 +3883,14 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         return lines.sortedBy { it.timestamp }
     }
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val name = getString(R.string.lyric_service_channel_name)
-            val descriptionText = getString(R.string.lyric_service_channel_description)
-            val importance = NotificationManager.IMPORTANCE_LOW
-            val channel = NotificationChannel(NOTIFICATION_CHANNEL_ID, name, importance).apply {
-                description = descriptionText
-                setSound(null, null); enableLights(false); enableVibration(false)
-            }
-            notificationManager.createNotificationChannel(channel)
+        val name = getString(R.string.lyric_service_channel_name)
+        val descriptionText = getString(R.string.lyric_service_channel_description)
+        val importance = NotificationManager.IMPORTANCE_LOW
+        val channel = NotificationChannel(NOTIFICATION_CHANNEL_ID, name, importance).apply {
+            description = descriptionText
+            setSound(null, null); enableLights(false); enableVibration(false)
         }
+        notificationManager.createNotificationChannel(channel)
     }
     private fun createPersistentNotification(text: String): Notification {
         val showLyricsIntent = Intent(this, LyricService::class.java).apply { action = ACTION_SHOW_LYRICS }
@@ -4128,12 +4116,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 val restartIntent = Intent(applicationContext, LyricService::class.java).apply {
                     action = ACTION_USER_INITIATED_START
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    applicationContext.startForegroundService(restartIntent)
-                } else {
-                    @Suppress("DEPRECATION")
-                    applicationContext.startService(restartIntent)
-                }
+                applicationContext.startForegroundService(restartIntent)
                 Log.i(TAG, "scheduleServiceRestart: Requested restart. Reason: $reason")
             } catch (e: Exception) {
                 Log.e(TAG, "scheduleServiceRestart: Failed to restart service: ${e.message}", e)
