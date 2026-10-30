@@ -3178,7 +3178,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   const Divider(height: 24),
                   _buildFaqItem(
                     context,
-                    question: 'Need some more help? or do you have some feedback?',
+                    question:
+                        'Need some more help? Or do you have some feedback to give?',
                     answerParts: [
                       TextSpan(
                         text: 'Get in touch!',
