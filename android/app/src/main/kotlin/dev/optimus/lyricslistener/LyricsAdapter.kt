@@ -154,8 +154,8 @@ class LyricsAdapter(
         holder.visualizer.visibility = View.GONE
         holder.visualizer.stopAnimation()
         holder.lyricText.text = line.text
-        holder.lyricText.gravity = if (isMiniMode) Gravity.START else Gravity.CENTER_HORIZONTAL
-        holder.lyricText.textAlignment = if (isMiniMode) View.TEXT_ALIGNMENT_VIEW_START else View.TEXT_ALIGNMENT_CENTER
+        holder.lyricText.gravity = Gravity.START
+        holder.lyricText.textAlignment = View.TEXT_ALIGNMENT_VIEW_START
 
         if (line.timestamp == LyricService.ATTRIBUTION_TIMESTAMP) {
             // This is the attribution line, style it specially and stop.

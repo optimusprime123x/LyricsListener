@@ -805,7 +805,8 @@ class _DebugScreenState extends State<DebugScreen> {
     });
 
     try {
-      final int seqBefore = (await _fetchTokenFetchResult())?['seq'] as int? ?? 0;
+      final int seqBefore =
+          (await _fetchTokenFetchResult())?['seq'] as int? ?? 0;
       await _platformChannel.invokeMethod('regenerateMusixmatchToken');
 
       // The service fetches the token asynchronously. Poll until it reports
@@ -948,8 +949,7 @@ class _DebugScreenState extends State<DebugScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) return;
       final position = _scrollController.position;
-      final bool nearBottom =
-          position.maxScrollExtent - position.pixels < 80;
+      final bool nearBottom = position.maxScrollExtent - position.pixels < 80;
       if (!nearBottom) return;
       _scrollController.animateTo(
         position.maxScrollExtent,
@@ -1108,150 +1108,150 @@ class _DebugScreenState extends State<DebugScreen> {
     final Widget header = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainer,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: colorScheme.outlineVariant),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (stackTokenControls) ...[
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: tokenStatusRow,
-                    ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: regenerateButton,
-                    ),
-                  ] else
-                    Row(
-                      children: [
-                        Expanded(child: tokenStatusRow),
-                        regenerateButton,
-                      ],
-                    ),
-                  if (_musixmatchTokenFetchError != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      'Last token fetch failed: $_musixmatchTokenFetchError',
-                      style: textTheme.bodySmall?.copyWith(
-                        color: colorScheme.error,
-                      ),
-                    ),
-                  ],
-                  if (_musixmatchTokenStatusError != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      'Status check error: $_musixmatchTokenStatusError',
-                      style: textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Streams service logs. Only notification, lyrics lookup, token and '
-              'error lines are shown; the full log (last $_maxDebugLogLines '
-              'lines) can be copied or saved to a file.',
-              style: textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 10),
-            // Wraps rather than Rows so the controls flow onto a second line
-            // on narrow screens or with a large font scale instead of
-            // overflowing.
-            Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                FilledButton.icon(
-                  onPressed: _isStarting ? null : _startDebugSession,
-                  icon: const Icon(Icons.bug_report_outlined),
-                  label: Text(
-                    _isStarting
-                        ? 'Starting...'
-                        : _isStreaming
-                        ? 'Rescan & start'
-                        : 'Start log stream',
-                  ),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainer,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: colorScheme.outlineVariant),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (stackTokenControls) ...[
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: tokenStatusRow,
                 ),
-                OutlinedButton.icon(
-                  onPressed: _isStarting || !_isStreaming
-                      ? null
-                      : _stopDebugSession,
-                  icon: const Icon(Icons.stop_circle_outlined),
-                  label: const Text('Stop stream'),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: regenerateButton,
                 ),
-                if (_isStarting)
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 3),
-                  ),
-              ],
-            ),
-            Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                FilterChip(
-                  label: Text('Show all (${_entries.length})'),
-                  selected: _showAllLogs,
-                  onSelected: (value) {
-                    setState(() {
-                      _showAllLogs = value;
-                    });
-                    _scrollToBottom();
-                  },
-                ),
+              ] else
                 Row(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    IconButton(
-                      tooltip: 'Copy full log',
-                      icon: const Icon(Icons.copy_rounded),
-                      onPressed: _entries.isEmpty ? null : _copyFullLog,
-                    ),
-                    IconButton(
-                      tooltip: 'Save full log to file',
-                      icon: const Icon(Icons.save_alt_rounded),
-                      onPressed: _entries.isEmpty ? null : _saveFullLog,
-                    ),
-                    IconButton(
-                      tooltip: 'Clear',
-                      icon: const Icon(Icons.delete_sweep_outlined),
-                      onPressed: _entries.isEmpty ? null : _clearLogs,
-                    ),
+                    Expanded(child: tokenStatusRow),
+                    regenerateButton,
                   ],
+                ),
+              if (_musixmatchTokenFetchError != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Last token fetch failed: $_musixmatchTokenFetchError',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.error,
+                  ),
+                ),
+              ],
+              if (_musixmatchTokenStatusError != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Status check error: $_musixmatchTokenStatusError',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'Streams service logs. Only notification, lyrics lookup, token and '
+          'error lines are shown; the full log (last $_maxDebugLogLines '
+          'lines) can be copied or saved to a file.',
+          style: textTheme.bodyMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 10),
+        // Wraps rather than Rows so the controls flow onto a second line
+        // on narrow screens or with a large font scale instead of
+        // overflowing.
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            FilledButton.icon(
+              onPressed: _isStarting ? null : _startDebugSession,
+              icon: const Icon(Icons.bug_report_outlined),
+              label: Text(
+                _isStarting
+                    ? 'Starting...'
+                    : _isStreaming
+                    ? 'Rescan & start'
+                    : 'Start log stream',
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: _isStarting || !_isStreaming
+                  ? null
+                  : _stopDebugSession,
+              icon: const Icon(Icons.stop_circle_outlined),
+              label: const Text('Stop stream'),
+            ),
+            if (_isStarting)
+              const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+          ],
+        ),
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            FilterChip(
+              label: Text('Show all (${_entries.length})'),
+              selected: _showAllLogs,
+              onSelected: (value) {
+                setState(() {
+                  _showAllLogs = value;
+                });
+                _scrollToBottom();
+              },
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Copy full log',
+                  icon: const Icon(Icons.copy_rounded),
+                  onPressed: _entries.isEmpty ? null : _copyFullLog,
+                ),
+                IconButton(
+                  tooltip: 'Save full log to file',
+                  icon: const Icon(Icons.save_alt_rounded),
+                  onPressed: _entries.isEmpty ? null : _saveFullLog,
+                ),
+                IconButton(
+                  tooltip: 'Clear',
+                  icon: const Icon(Icons.delete_sweep_outlined),
+                  onPressed: _entries.isEmpty ? null : _clearLogs,
                 ),
               ],
             ),
-            if (_hasLogSelection) ...[
-              const SizedBox(height: 4),
-              Text(
-                'Log view paused while text is selected. Tap the log to resume.',
-                style: textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-            if (_errorMessage != null) ...[
-              const SizedBox(height: 6),
-              Text(
-                'Error: $_errorMessage',
-                style: textTheme.bodyMedium?.copyWith(color: colorScheme.error),
-              ),
-            ],
+          ],
+        ),
+        if (_hasLogSelection) ...[
+          const SizedBox(height: 4),
+          Text(
+            'Log view paused while text is selected. Tap the log to resume.',
+            style: textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+        if (_errorMessage != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Error: $_errorMessage',
+            style: textTheme.bodyMedium?.copyWith(color: colorScheme.error),
+          ),
+        ],
       ],
     );
 
@@ -1272,49 +1272,49 @@ class _DebugScreenState extends State<DebugScreen> {
     final bool showLogText = visibleEntries.isNotEmpty || frozenLogSpan != null;
 
     final Widget logView = Container(
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainer,
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(color: colorScheme.outlineVariant),
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: colorScheme.outlineVariant),
+      ),
+      child: !showLogText
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  _isStarting
+                      ? 'Listening for debug logs...'
+                      : _entries.isEmpty
+                      ? 'No logs yet. Start the stream.'
+                      : '${_entries.length} verbose lines captured, '
+                            'nothing important yet. Turn on "Show all" '
+                            'to see them.',
+                  textAlign: TextAlign.center,
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
                 ),
-                child: !showLogText
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Text(
-                            _isStarting
-                                ? 'Listening for debug logs...'
-                                : _entries.isEmpty
-                                ? 'No logs yet. Start the stream.'
-                                : '${_entries.length} verbose lines captured, '
-                                      'nothing important yet. Turn on "Show all" '
-                                      'to see them.',
-                            textAlign: TextAlign.center,
-                            style: textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      )
-                    // A single SelectableText keeps selection anchored to
-                    // character offsets, so appending lines while a selection
-                    // is active doesn't re-select the whole view the way a
-                    // SelectionArea over a rebuilding ListView did.
-                    : SingleChildScrollView(
-                        controller: _scrollController,
-                        padding: EdgeInsets.fromLTRB(
-                          12,
-                          12,
-                          12,
-                          12 + MediaQuery.paddingOf(context).bottom,
-                        ),
-                        child: SelectableText.rich(
-                          displayedLogSpan,
-                          focusNode: _logFocusNode,
-                          onSelectionChanged: _handleLogSelectionChanged,
-                        ),
-                      ),
+              ),
+            )
+          // A single SelectableText keeps selection anchored to
+          // character offsets, so appending lines while a selection
+          // is active doesn't re-select the whole view the way a
+          // SelectionArea over a rebuilding ListView did.
+          : SingleChildScrollView(
+              controller: _scrollController,
+              padding: EdgeInsets.fromLTRB(
+                12,
+                12,
+                12,
+                12 + MediaQuery.paddingOf(context).bottom,
+              ),
+              child: SelectableText.rich(
+                displayedLogSpan,
+                focusNode: _logFocusNode,
+                onSelectionChanged: _handleLogSelectionChanged,
+              ),
+            ),
     );
 
     // The log normally fills whatever the header leaves. When the header is
@@ -1587,8 +1587,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     final storedBackgroundColor = prefs.getInt(_lyricsWindowBackgroundColorKey);
     final storedHighlightColor = prefs.getInt(_lyricsWindowHighlightColorKey);
     final lyricsWindowSize = prefs.getString(_lyricsWindowSizeKey) ?? 'compact';
+    // Snap stored value to the nearest step of 10 (0, 10, ... 90)
     final lyricsWindowTransparency =
-        (prefs.getInt(_lyricsWindowTransparencyKey) ?? 0).clamp(0, 90);
+        (((prefs.getInt(_lyricsWindowTransparencyKey) ?? 0) / 10).round() * 10)
+            .clamp(0, 90);
     if (!mounted) return;
     setState(() {
       _rememberLyricsWindowPosition = rememberPosition;
@@ -1673,7 +1675,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _onLyricsWindowTransparencyChanged(double value) async {
-    final transparency = value.round().clamp(0, 90);
+    // Snap to steps of 10 (0, 10, 20, ... 90)
+    final transparency = ((value / 10).round() * 10).clamp(0, 90);
+    if (transparency != _lyricsWindowTransparency) {
+      HapticFeedback.selectionClick();
+    }
     setState(() => _lyricsWindowTransparency = transparency);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_lyricsWindowTransparencyKey, transparency);
@@ -2523,7 +2529,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     child: Icon(
                       Icons.edit_outlined,
                       size: 18,
-                      color: ThemeData.estimateBrightnessForColor(color) ==
+                      color:
+                          ThemeData.estimateBrightnessForColor(color) ==
                               Brightness.dark
                           ? Colors.white
                           : Colors.black,
@@ -2617,7 +2624,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                                                     .colorScheme
                                                     .primary
                                                     .withValues(
-                                                      alpha: isSelected ? 0.35 : 0.15,
+                                                      alpha: isSelected
+                                                          ? 0.35
+                                                          : 0.15,
                                                     ),
                                                 blurRadius: isSelected ? 12 : 8,
                                                 offset: const Offset(0, 4),
@@ -2814,8 +2823,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Fade the entire window, including lyrics and controls. '
-                    '0% adds no transparency. Applies immediately.',
+                    'Make the lyrics window 0-90% transparent,'
+                    'controlled by the slider below Applies immediately.',
                     style: textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
@@ -2825,7 +2834,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     child: Slider(
                       value: _lyricsWindowTransparency.toDouble(),
                       max: 90,
-                      divisions: 18,
+                      divisions: 9,
                       label: '$_lyricsWindowTransparency%',
                       semanticFormatterCallback: (value) =>
                           '${value.round()}% transparent',
@@ -3152,7 +3161,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                         recognizer: _lyricsSourcesHelpLink,
                       ),
                       const TextSpan(
-                        text: ', or try again a few days later. If you have the LRC file for that song, add it yourself from the ',
+                        text:
+                            ', or try again a few days later. If you have the LRC file for that song, add it yourself from the ',
                       ),
                       TextSpan(
                         text: 'Custom Lyrics page',
@@ -3168,10 +3178,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   const Divider(height: 24),
                   _buildFaqItem(
                     context,
-                    question: 'Need help with a different issue?',
+                    question: 'Need some more help? or do you have some feedback?',
                     answerParts: [
                       TextSpan(
-                        text: 'Contact Support',
+                        text: 'Get in touch!',
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.primary,
                           decoration: TextDecoration.underline,
