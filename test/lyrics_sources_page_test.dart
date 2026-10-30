@@ -236,6 +236,46 @@ void main() {
     expect(find.byType(AddCustomLyricsPage), findsOneWidget);
   });
 
+  for (final textScale in [1.0, 2.0]) {
+    testWidgets('guide numbers align with the first text baseline at $textScale', (
+      tester,
+    ) async {
+      await openPage(tester, textScale: textScale);
+      await tester.ensureVisible(find.text('What is this page for?'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('What is this page for?'));
+      await tester.pumpAndSettle();
+      final steps = [
+        'Scroll down the lyrics window to see where the lyrics were fetched from.',
+        'Go to Manage Lyrics, search for the song and delete the cached lyrics.',
+        'Disable the corresponding source above.',
+        '??? (play the song again)',
+        'Profit',
+      ];
+      double baseline(Finder finder) {
+        final paragraph = tester.renderObject<RenderParagraph>(
+          find.descendant(of: finder, matching: find.byType(RichText)),
+        );
+        return paragraph.localToGlobal(Offset.zero).dy +
+            paragraph.getDryBaseline(
+              paragraph.constraints,
+              TextBaseline.alphabetic,
+            )!;
+      }
+
+      for (var i = 0; i < steps.length; i++) {
+        expect(
+          baseline(find.text('${i + 1}')),
+          closeTo(baseline(find.text(steps[i])), 0.01),
+        );
+      }
+      expect(
+        tester.getRect(find.text('Manage Lyrics')).top,
+        greaterThan(tester.getRect(find.text(steps[1])).bottom),
+      );
+    });
+  }
+
   for (final size in [
     const Size(320, 740),
     const Size(840, 700),
@@ -252,6 +292,7 @@ void main() {
           brightness: brightness,
         );
         await tester.ensureVisible(find.text('What is this page for?'));
+        await tester.pumpAndSettle();
         await tester.tap(find.text('What is this page for?'));
         await tester.pumpAndSettle();
         for (var i = 0; i < 12; i++) {

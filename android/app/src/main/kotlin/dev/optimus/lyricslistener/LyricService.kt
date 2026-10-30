@@ -452,6 +452,7 @@ class LyricService : NotificationListenerService() {
     private const val PREF_HIDE_WINDOW_ON_PAUSE = "flutter.hide_lyrics_window_on_pause"
     private const val PREF_MINIMISE_TO_BUBBLE = "flutter.minimise_to_bubble"
     private const val PREF_LYRICS_WINDOW_SIZE = "flutter.lyrics_window_size"
+    private const val PREF_LYRICS_WINDOW_TRANSPARENCY = "flutter.lyrics_window_transparency"
 
     private val DEFAULT_STATIC_TITLE_COLOR = Color.parseColor("#F0E8E8E8")
     private val DEFAULT_STATIC_BACKGROUND_COLOR = Color.parseColor("#E6181818")
@@ -493,6 +494,23 @@ class LyricService : NotificationListenerService() {
             if (token.length <= 8) "*".repeat(token.length) else "${token.take(4)}…${token.takeLast(4)}"
     }
 
+    private val appearancePreferences by lazy {
+        applicationContext.getSharedPreferences(FLUTTER_SHARED_PREFERENCES, Context.MODE_PRIVATE)
+    }
+    private val appearancePreferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == PREF_LYRICS_WINDOW_TRANSPARENCY || key == null) {
+            serviceScope.launch { applyLyricsWindowTransparency() }
+        }
+    }
+
+    private fun applyLyricsWindowTransparency() {
+        // Fade the whole view independently of the window alpha used by bubble transitions.
+        // Flutter stores integer preferences as Long on Android.
+        val percent = (appearancePreferences.all[PREF_LYRICS_WINDOW_TRANSPARENCY] as? Number)
+            ?.toInt()?.coerceIn(0, 90) ?: 0
+        lyricsView?.alpha = 1f - percent / 100f
+    }
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Service onCreate() called. Instance: ${this.hashCode()}. isServiceManuallyStarted: ${isServiceManuallyStarted.get()}")
@@ -502,6 +520,7 @@ class LyricService : NotificationListenerService() {
         }
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()
+        appearancePreferences.registerOnSharedPreferenceChangeListener(appearancePreferenceListener)
         startForegroundWithNotification("Initializing...")
         defaultLyricsWindowMode = loadDefaultLyricsWindowMode()
         lyricsWindowMode = defaultLyricsWindowMode
@@ -1181,7 +1200,7 @@ class LyricService : NotificationListenerService() {
                     if (oldStateValue != state?.state) {
                         val hideOnPause = try {
                             applicationContext.getSharedPreferences(FLUTTER_SHARED_PREFERENCES, Context.MODE_PRIVATE)
-                                .getBoolean(PREF_HIDE_WINDOW_ON_PAUSE, false)
+                                .getBoolean(PREF_HIDE_WINDOW_ON_PAUSE, true)
                         } catch (_: Exception) { false }
 
                         if (!nowPlaying && hideOnPause && overlayDisplay == OverlayDisplay.LYRICS) {
@@ -2314,6 +2333,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     private fun bindLyricsWindowView(view: View) {
         lyricsView?.removeOnLayoutChangeListener(lyricsWindowLayoutListener)
         lyricsView = view
+        applyLyricsWindowTransparency()
         knownLyricsOverlayViews.add(view)
         view.addOnLayoutChangeListener(lyricsWindowLayoutListener)
         view.setOnApplyWindowInsetsListener { insetView, insets ->
@@ -3702,7 +3722,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     private fun loadSavedWindowPosition(): Pair<Int, Int>? {
         return try {
             val prefs = applicationContext.getSharedPreferences(FLUTTER_SHARED_PREFERENCES, Context.MODE_PRIVATE)
-            if (!prefs.getBoolean(PREF_REMEMBER_WINDOW_POSITION, false)) {
+            if (!prefs.getBoolean(PREF_REMEMBER_WINDOW_POSITION, true)) {
                 null
             } else if (!prefs.contains(PREF_REMEMBER_WINDOW_POSITION_X) || !prefs.contains(PREF_REMEMBER_WINDOW_POSITION_Y)) {
                 null
@@ -3724,7 +3744,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         val currentParams = this.params ?: return
         try {
             val prefs = applicationContext.getSharedPreferences(FLUTTER_SHARED_PREFERENCES, Context.MODE_PRIVATE)
-            if (!prefs.getBoolean(PREF_REMEMBER_WINDOW_POSITION, false)) {
+            if (!prefs.getBoolean(PREF_REMEMBER_WINDOW_POSITION, true)) {
                 return
             }
             prefs.edit()
@@ -4166,6 +4186,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         }
         
         // Now proceed with cleanup
+        appearancePreferences.unregisterOnSharedPreferenceChangeListener(appearancePreferenceListener)
         isServiceManuallyStarted.set(false)
         cancelPendingSongContextClear("onDestroy")
 

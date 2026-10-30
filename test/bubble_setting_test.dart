@@ -75,4 +75,44 @@ void main() {
     await openSettings(tester);
     expect(tester.widget<SwitchListTile>(bubbleSwitch()).value, isFalse);
   });
+
+  for (final setting in [
+    (title: 'Remember lyrics window position', key: 'remember_window_position'),
+    (title: 'Hide lyrics window on pause', key: 'hide_lyrics_window_on_pause'),
+  ]) {
+    Finder settingSwitch() => find.ancestor(
+      of: find.text(setting.title),
+      matching: find.byType(SwitchListTile),
+    );
+
+    testWidgets('${setting.title} defaults on and saves the user choice', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      await openSettings(tester);
+      expect(tester.widget<SwitchListTile>(settingSwitch()).value, isTrue);
+      await tester.tap(find.text(setting.title));
+      await tester.pumpAndSettle();
+      expect(tester.widget<SwitchListTile>(settingSwitch()).value, isFalse);
+      expect(
+        (await SharedPreferences.getInstance()).getBool(setting.key),
+        isFalse,
+      );
+      await tester.tap(find.text(setting.title));
+      await tester.pumpAndSettle();
+      expect(tester.widget<SwitchListTile>(settingSwitch()).value, isTrue);
+      expect(
+        (await SharedPreferences.getInstance()).getBool(setting.key),
+        isTrue,
+      );
+    });
+
+    testWidgets('${setting.title} respects a saved disabled preference', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({setting.key: false});
+      await openSettings(tester);
+      expect(tester.widget<SwitchListTile>(settingSwitch()).value, isFalse);
+    });
+  }
 }

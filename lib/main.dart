@@ -41,6 +41,7 @@ const String _lyricsWindowTitleColorKey = 'lyrics_window_title_color';
 const String _lyricsWindowBackgroundColorKey = 'lyrics_window_background_color';
 const String _lyricsWindowHighlightColorKey = 'lyrics_window_highlight_color';
 const String _lyricsWindowSizeKey = 'lyrics_window_size';
+const String _lyricsWindowTransparencyKey = 'lyrics_window_transparency';
 
 const Color _defaultLyricsWindowTitleColor = Color(0xF0E8E8E8);
 const Color _defaultLyricsWindowBackgroundColor = Color(0xE6181818);
@@ -1405,14 +1406,15 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   Timer? _debugTriggerResetTimer;
   expressive_refresh.RefreshIndicatorStatus? _refreshStatus;
 
-  bool _rememberLyricsWindowPosition = false;
-  bool _hideLyricsWindowOnPause = false;
+  bool _rememberLyricsWindowPosition = true;
+  bool _hideLyricsWindowOnPause = true;
   bool _minimiseToBubble = true;
   final _lyricsSourcesHelpLink = TapGestureRecognizer();
   final _customLyricsHelpLink = TapGestureRecognizer();
   bool _dynamicLyricsWindowColors = true;
   bool _isLyricsWindowBlurEnabled = true;
   String _lyricsWindowSize = 'compact';
+  int _lyricsWindowTransparency = 0;
 
   Color _lyricsWindowTitleColor = _defaultLyricsWindowTitleColor;
   Color _lyricsWindowBackgroundColor = _defaultLyricsWindowBackgroundColor;
@@ -1555,9 +1557,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     print("MainScreen initState: Called");
-    _lyricsSourcesHelpLink.onTap = () => Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const LyricsSourcesPage()),
-    );
+    _lyricsSourcesHelpLink.onTap = () => Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const LyricsSourcesPage()));
     _customLyricsHelpLink.onTap = () => Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const AddCustomLyricsPage()),
     );
@@ -1574,8 +1576,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   Future<void> _loadCustomizationPreferences() async {
     final prefs = await SharedPreferences.getInstance();
-    final rememberPosition = prefs.getBool(_rememberWindowPositionKey) ?? false;
-    final hideOnPause = prefs.getBool(_hideWindowOnPauseKey) ?? false;
+    final rememberPosition = prefs.getBool(_rememberWindowPositionKey) ?? true;
+    final hideOnPause = prefs.getBool(_hideWindowOnPauseKey) ?? true;
     final minimiseToBubble = prefs.getBool(_minimiseToBubbleKey) ?? true;
     final dynamicLyricsColours =
         prefs.getBool(_dynamicLyricsWindowColorsKey) ?? true;
@@ -1585,6 +1587,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     final storedBackgroundColor = prefs.getInt(_lyricsWindowBackgroundColorKey);
     final storedHighlightColor = prefs.getInt(_lyricsWindowHighlightColorKey);
     final lyricsWindowSize = prefs.getString(_lyricsWindowSizeKey) ?? 'compact';
+    final lyricsWindowTransparency =
+        (prefs.getInt(_lyricsWindowTransparencyKey) ?? 0).clamp(0, 90);
     if (!mounted) return;
     setState(() {
       _rememberLyricsWindowPosition = rememberPosition;
@@ -1593,6 +1597,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _dynamicLyricsWindowColors = dynamicLyricsColours;
       _isLyricsWindowBlurEnabled = !simulateLegacyOverlay;
       _lyricsWindowSize = lyricsWindowSize;
+      _lyricsWindowTransparency = lyricsWindowTransparency;
       _lyricsWindowTitleColor = Color(
         storedTitleColor ?? _defaultLyricsWindowTitleColor.value,
       );
@@ -1665,6 +1670,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_lyricsWindowHighlightColorKey, color.value);
+  }
+
+  Future<void> _onLyricsWindowTransparencyChanged(double value) async {
+    final transparency = value.round().clamp(0, 90);
+    setState(() => _lyricsWindowTransparency = transparency);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_lyricsWindowTransparencyKey, transparency);
   }
 
   Future<void> _onLyricsWindowSizeChanged(String size) async {
@@ -2486,39 +2498,37 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   ),
                 ),
                 const SizedBox(width: 16),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 600),
-                      curve: expressiveSpringCurve,
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: color,
-                        borderRadius: BorderRadius.circular(28),
-                        border: Border.all(
-                          color: colorScheme.outlineVariant,
-                          width: 1.5,
+                Tooltip(
+                  message: 'Change $title colour',
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 600),
+                    curve: expressiveSpringCurve,
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: color,
+                      borderRadius: BorderRadius.circular(28),
+                      border: Border.all(
+                        color: colorScheme.outlineVariant,
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: colorScheme.primary.withValues(alpha: 0.18),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: colorScheme.primary.withValues(alpha: 0.18),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
+                      ],
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Tap to change',
-                      style: textTheme.labelSmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
+                    child: Icon(
+                      Icons.edit_outlined,
+                      size: 18,
+                      color: ThemeData.estimateBrightnessForColor(color) ==
+                              Brightness.dark
+                          ? Colors.white
+                          : Colors.black,
                     ),
-                  ],
+                  ),
                 ),
               ],
             ),
@@ -2538,7 +2548,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       children: [
         _buildExpressiveSection(
           context,
-          title: 'Appearance',
+          title: 'Appearance - App',
           children: [
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 250),
@@ -2574,16 +2584,21 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                                     borderRadius: BorderRadius.circular(
                                       _seedColorChipRadius,
                                     ),
-                                    onTap: () => widget.onSeedColorChanged(color),
+                                    onTap: () =>
+                                        widget.onSeedColorChanged(color),
                                     child: Tooltip(
                                       message:
                                           'Set theme color to #${color.value.toRadixString(16).substring(2).toUpperCase()}',
                                       child: AnimatedScale(
-                                        duration: const Duration(milliseconds: 700),
+                                        duration: const Duration(
+                                          milliseconds: 700,
+                                        ),
                                         curve: const ElasticOutCurve(0.8),
                                         scale: isSelected ? 1.15 : 1.0,
                                         child: AnimatedContainer(
-                                          duration: const Duration(milliseconds: 700),
+                                          duration: const Duration(
+                                            milliseconds: 700,
+                                          ),
                                           curve: const ElasticOutCurve(0.8),
                                           width: _seedColorChipSize,
                                           height: _seedColorChipSize,
@@ -2657,7 +2672,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 ),
               ),
             ),
-            const Divider(indent: 16, endIndent: 16),
+          ],
+        ),
+        const SizedBox(height: 24),
+        _buildExpressiveSection(
+          context,
+          title: 'Appearance - Lyrics Window',
+          children: [
             SwitchListTile.adaptive(
               value: _dynamicLyricsWindowColors,
               onChanged: _onDynamicLyricsWindowColorsChanged,
@@ -2678,30 +2699,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 ),
               ),
             ),
-            if (_androidSdkInt != null && _androidSdkInt! >= _android12ApiLevel)
-              const Divider(indent: 16, endIndent: 16),
-            if (_androidSdkInt != null && _androidSdkInt! >= _android12ApiLevel)
-              SwitchListTile.adaptive(
-                value: _isLyricsWindowBlurEnabled,
-                onChanged: _onLyricsWindowBlurEnabledChanged,
-                title: Text(
-                  'Blur effect on lyrics window',
-                  style: textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-              ),
-            if (_androidSdkInt != null && _androidSdkInt! >= _android12ApiLevel)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: Text(
-                  'On newer (Android 12+) devices, the lyrics window gets a more polished look with a blur over the album art. Changes will apply from next song onwards.',
-                  style: textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 600),
               switchInCurve: expressiveStandardCurve,
@@ -2756,6 +2753,96 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       ),
                     ),
             ),
+            if (_androidSdkInt != null && _androidSdkInt! >= _android12ApiLevel)
+              const Divider(indent: 16, endIndent: 16),
+            if (_androidSdkInt != null && _androidSdkInt! >= _android12ApiLevel)
+              SwitchListTile.adaptive(
+                value: _isLyricsWindowBlurEnabled,
+                onChanged: _onLyricsWindowBlurEnabledChanged,
+                title: Text(
+                  'Blur effect on lyrics window',
+                  style: textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              ),
+            if (_androidSdkInt != null && _androidSdkInt! >= _android12ApiLevel)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Text(
+                  'On newer (Android 12+) devices, the lyrics window gets a more polished look with a blur over the album art. Changes will apply from next song onwards.',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            const Divider(indent: 16, endIndent: 16),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        'Lyrics window transparency',
+                        style: textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colorScheme.secondaryContainer,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '$_lyricsWindowTransparency%',
+                          style: textTheme.labelLarge?.copyWith(
+                            color: colorScheme.onSecondaryContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Fade the entire window, including lyrics and controls. '
+                    '0% adds no transparency. Applies immediately.',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  Semantics(
+                    label: 'Lyrics window transparency',
+                    child: Slider(
+                      value: _lyricsWindowTransparency.toDouble(),
+                      max: 90,
+                      divisions: 18,
+                      label: '$_lyricsWindowTransparency%',
+                      semanticFormatterCallback: (value) =>
+                          '${value.round()}% transparent',
+                      onChanged: _onLyricsWindowTransparencyChanged,
+                    ),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('0%', style: textTheme.labelMedium),
+                      Text('90%', style: textTheme.labelMedium),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const Divider(indent: 16, endIndent: 16),
             SwitchListTile.adaptive(
               value: _rememberLyricsWindowPosition,
               onChanged: _onRememberWindowPositionChanged,
@@ -2864,7 +2951,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               subtitle: const Text('Choose where we fetch lyrics from'),
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const LyricsSourcesPage()),
+                MaterialPageRoute<void>(
+                  builder: (_) => const LyricsSourcesPage(),
+                ),
               ),
             ),
             Padding(
@@ -3133,12 +3222,15 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Text(
-            title,
-            style: textTheme.titleMedium?.copyWith(
-              color: colorScheme.primary,
-              fontWeight: FontWeight.bold,
-              fontVariations: const [FontVariation('wght', 720)],
+          child: Semantics(
+            header: true,
+            child: Text(
+              title,
+              style: textTheme.titleMedium?.copyWith(
+                color: colorScheme.primary,
+                fontWeight: FontWeight.bold,
+                fontVariations: const [FontVariation('wght', 720)],
+              ),
             ),
           ),
         ),
@@ -3527,9 +3619,22 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 Icon(Icons.lyrics_rounded, color: colorScheme.primary),
                 const SizedBox(width: 12),
               ],
-              GestureDetector(
-                onTap: _selectedIndex == 1 ? _onDebugTriggerTapped : null,
-                child: Text(appBarTitle),
+              Flexible(
+                child: GestureDetector(
+                  onTap: _selectedIndex == 1 ? _onDebugTriggerTapped : null,
+                  behavior: HitTestBehavior.opaque,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 48),
+                    child: Center(
+                      widthFactor: 1,
+                      child: Text(
+                        appBarTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
