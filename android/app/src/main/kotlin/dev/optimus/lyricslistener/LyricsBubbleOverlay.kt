@@ -33,13 +33,15 @@ internal class LyricsBubbleOverlay(
     private val context: Context,
     private val boundsFor: (View) -> LyricsWindowBounds,
     private val onOpen: () -> Unit,
-    private val onDismiss: () -> Unit
+    private val onDismiss: () -> Unit,
+    private val prepareExpansionArtwork: (ImageView, View) -> Unit
 ) {
     data class WindowFrame(val x: Int, val y: Int, val width: Int, val height: Int)
 
     private val manager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var bubble: FrameLayout? = null
     private var artwork: ImageView? = null
+    private var scrim: View? = null
     private var note: ImageView? = null
     private var params: WindowManager.LayoutParams? = null
     private val placement = LyricsBubblePlacement()
@@ -96,7 +98,9 @@ internal class LyricsBubbleOverlay(
             scaleType = ImageView.ScaleType.CENTER_CROP
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }.also { view.addView(it, FrameLayout.LayoutParams(-1, -1)) }
-        view.addView(View(context).apply { setBackgroundColor(0x88000000.toInt()) }, FrameLayout.LayoutParams(-1, -1))
+        scrim = View(context).apply {
+            setBackgroundColor(0x88000000.toInt())
+        }.also { view.addView(it, FrameLayout.LayoutParams(-1, -1)) }
         note = ImageView(context).apply {
             setImageResource(R.drawable.ic_launcher_note)
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -141,6 +145,7 @@ internal class LyricsBubbleOverlay(
         removeWindow(bubble)
         bubble = null
         artwork = null
+        scrim = null
         note = null
         params = null
     }
@@ -393,6 +398,10 @@ internal class LyricsBubbleOverlay(
         val source = WindowFrame(bubbleParams.x, bubbleParams.y, bubbleParams.width, bubbleParams.height)
         val target = WindowFrame(layoutParams.x, layoutParams.y, view.width, view.height)
         placement.remember(source.x, source.y)
+        val artworkView = artwork ?: return false
+        val scrimView = scrim ?: return false
+        // The growing surface must already have the lyrics treatment, before its first frame.
+        prepareExpansionArtwork(artworkView, scrimView)
         animateMorph(view, layoutParams, source, target, expanding = true) {
             hide(rememberPosition = false)
             onFinished()
@@ -434,11 +443,16 @@ internal class LyricsBubbleOverlay(
         updateWindow(lyrics, lyricsParams)
         val windowRadius = (lyrics.background as? GradientDrawable)?.cornerRadius ?: dp(28).toFloat()
         val bubbleRadius = minOf(if (expanding) source.width else target.width, dp(60)) / 2f
-        val background = GradientDrawable().apply {
+        val lyricsBackground = if (expanding) {
+            lyrics.background?.constantState?.newDrawable()?.mutate() as? GradientDrawable
+        } else null
+        val background = (lyricsBackground ?: GradientDrawable().apply {
             setColor(Color.rgb(40, 40, 44))
+        }).apply {
             cornerRadius = if (expanding) bubbleRadius else windowRadius
         }
         view.background = background
+        if (expanding) view.alpha = lyrics.alpha
         val easing = PathInterpolator(0.2f, 0f, 0f, 1f)
         var covered = false
         val animator = ValueAnimator.ofFloat(0f, 1f).apply {
@@ -467,6 +481,9 @@ internal class LyricsBubbleOverlay(
                     else ((progress - 0.65f) / 0.35f).coerceIn(0f, 1f)
                 if (expanding) {
                     lyricsParams.alpha = ((progress - 0.7f) / 0.3f).coerceIn(0f, 1f)
+                    // Let the underlying app show through gradually instead of removing an
+                    // opaque artwork window beneath the translucent lyrics at animation end.
+                    view.alpha = lyrics.alpha * (1f - lyricsParams.alpha)
                     updateWindow(lyrics, lyricsParams)
                 } else {
                     view.alpha = (progress / 0.3f).coerceIn(0f, 1f)
