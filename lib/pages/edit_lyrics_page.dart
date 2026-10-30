@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../lyrics_timestamp.dart';
+
 const MethodChannel _platformChannel = MethodChannel(
   'dev.optimus.lyricslistener/permissions',
 );
@@ -28,7 +30,6 @@ class _EditLyricsPageState extends State<EditLyricsPage> {
   bool _isLoading = true;
   bool _isSaving = false;
   String? _errorMessage;
-  Map<String, dynamic>? _lyricsData;
 
   // For plain lyrics
   late TextEditingController _plainLyricsController;
@@ -60,17 +61,14 @@ class _EditLyricsPageState extends State<EditLyricsPage> {
     });
 
     try {
-      final Map<dynamic, dynamic>? result =
-          await _platformChannel.invokeMethod<Map<dynamic, dynamic>>(
-        'getCachedLyricsContent',
-        {'cacheKey': widget.cacheKey},
-      );
+      final Map<dynamic, dynamic>? result = await _platformChannel
+          .invokeMethod<Map<dynamic, dynamic>>('getCachedLyricsContent', {
+            'cacheKey': widget.cacheKey,
+          });
 
       if (result != null && mounted) {
         final data = Map<String, dynamic>.from(result);
         setState(() {
-          _lyricsData = data;
-
           if (widget.type == 'plain') {
             _plainLyricsController.text = data['lyrics'] as String? ?? '';
           } else if (widget.type == 'synced') {
@@ -80,10 +78,8 @@ class _EditLyricsPageState extends State<EditLyricsPage> {
               final timestamp = (lineMap['timestamp'] as num?)?.toInt() ?? 0;
               final text = lineMap['text'] as String? ?? '';
               return _SyncedLineData(
-                timestamp: timestamp,
-                text: text,
                 timestampController: TextEditingController(
-                  text: _formatTimestamp(timestamp),
+                  text: formatLyricsTimestamp(timestamp),
                 ),
                 textController: TextEditingController(text: text),
               );
@@ -104,31 +100,30 @@ class _EditLyricsPageState extends State<EditLyricsPage> {
     }
   }
 
-  String _formatTimestamp(int ms) {
-    final duration = Duration(milliseconds: ms);
-    final minutes = duration.inMinutes.toString().padLeft(2, '0');
-    final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
-    final millis = ((ms % 1000) ~/ 10).toString().padLeft(2, '0');
-    return '$minutes:$seconds.$millis';
-  }
-
-  int _parseTimestamp(String text) {
-    try {
-      final parts = text.split(':');
-      if (parts.length == 2) {
-        final minutes = int.parse(parts[0]);
-        final secParts = parts[1].split('.');
-        final seconds = int.parse(secParts[0]);
-        final millis = secParts.length > 1
-            ? int.parse(secParts[1].padRight(3, '0').substring(0, 3))
-            : 0;
-        return (minutes * 60 + seconds) * 1000 + millis;
-      }
-    } catch (_) {}
-    return 0;
-  }
-
   Future<void> _save() async {
+    final timestamps = <int>[];
+    if (widget.type == 'synced') {
+      var hasErrors = false;
+      setState(() {
+        for (final line in _syncedLines) {
+          final timestamp = parseLyricsTimestamp(line.timestampController.text);
+          line.timestampError = timestamp == null ? 'Invalid time' : null;
+          if (timestamp == null) {
+            hasErrors = true;
+          } else {
+            timestamps.add(timestamp);
+          }
+        }
+      });
+      if (hasErrors) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(
+            content: Text('Use m:ss or m:ss.xxx, with seconds from 00 to 59.'),
+          ));
+        return;
+      }
+    }
     setState(() => _isSaving = true);
 
     try {
@@ -137,11 +132,13 @@ class _EditLyricsPageState extends State<EditLyricsPage> {
       if (widget.type == 'plain') {
         updatedData = {'lyrics': _plainLyricsController.text};
       } else {
-        final lines = _syncedLines.map((line) {
-          return {
-            'timestamp': _parseTimestamp(line.timestampController.text),
-            'text': line.textController.text,
-          };
+        final entries = _syncedLines.asMap().entries.toList()..sort((a, b) {
+          final order = timestamps[a.key].compareTo(timestamps[b.key]);
+          return order == 0 ? a.key.compareTo(b.key) : order;
+        });
+        final lines = entries.map((entry) => {
+          'timestamp': timestamps[entry.key],
+          'text': entry.value.textController.text,
         }).toList();
         updatedData = {'lines': lines};
       }
@@ -153,9 +150,9 @@ class _EditLyricsPageState extends State<EditLyricsPage> {
 
       if (mounted) {
         if (success == true) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Lyrics saved')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Lyrics saved')));
           Navigator.of(context).pop();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -352,11 +349,18 @@ class _EditLyricsPageState extends State<EditLyricsPage> {
                         width: 90,
                         child: TextField(
                           controller: line.timestampController,
+                          onChanged: (_) {
+                            if (line.timestampError != null) {
+                              setState(() => line.timestampError = null);
+                            }
+                          },
                           style: textTheme.bodySmall?.copyWith(
                             fontFamily: 'monospace',
                             fontWeight: FontWeight.w600,
                           ),
                           decoration: InputDecoration(
+                            errorText: line.timestampError,
+                            errorMaxLines: 3,
                             isDense: true,
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 10,
@@ -430,14 +434,11 @@ class _EditLyricsPageState extends State<EditLyricsPage> {
 
 class _SyncedLineData {
   _SyncedLineData({
-    required this.timestamp,
-    required this.text,
     required this.timestampController,
     required this.textController,
   });
 
-  final int timestamp;
-  final String text;
+  String? timestampError;
   final TextEditingController timestampController;
   final TextEditingController textController;
 }

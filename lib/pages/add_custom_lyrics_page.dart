@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../lyrics_timestamp.dart';
+
 const MethodChannel _platformChannel = MethodChannel(
   'dev.optimus.lyricslistener/permissions',
 );
@@ -62,16 +64,11 @@ class _AddCustomLyricsPageState extends State<AddCustomLyricsPage> {
     if (!_submitted) return null;
     final lrc = _lrcController.text.trim();
     if (lrc.isEmpty) return 'LRC is required';
-    final hasTimestamp = RegExp(r'\[\d{2,}:\d{2}[.:]\d{2,3}\]').hasMatch(lrc);
-    if (!hasTimestamp) {
-      return 'Add at least one timestamped line like [00:12.34] Hello';
-    }
+    // Android validates the complete LRC, including metadata and repeated tags.
     return null;
   }
 
-  int get _detectedTimestampCount => RegExp(
-    r'\[\d{2,}:\d{2}[.:]\d{2,3}\]',
-  ).allMatches(_lrcController.text).length;
+  int get _detectedTimestampCount => countLrcTimestamps(_lrcController.text);
 
   bool _validateBasicFields() {
     setState(() {

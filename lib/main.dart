@@ -2824,8 +2824,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Make the lyrics window 0-90% transparent,'
-                    'controlled by the slider below Applies immediately.',
+                    'Make the lyrics window 0-90% transparent, '
+                    'controlled by the slider below. Changes will apply immediately.',
                     style: textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
