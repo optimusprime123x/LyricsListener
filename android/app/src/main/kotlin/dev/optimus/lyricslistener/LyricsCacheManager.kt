@@ -5,7 +5,11 @@ import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.text.Normalizer
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
@@ -17,8 +21,12 @@ import kotlin.concurrent.write
  * - LRU eviction when limit reached
  * - Duration tolerance: ±3 seconds for matching
  */
-class LyricsCacheManager(context: Context) {
-    private val cacheDir: File = File(context.cacheDir, "lyrics")
+class LyricsCacheManager internal constructor(
+    private val cacheDir: File,
+    private val writeFile: (File, String) -> Unit = ::writeLyricsFileAtomically
+) {
+    constructor(context: Context) : this(File(context.cacheDir, "lyrics"))
+
     private val metadataFile: File = File(cacheDir, "metadata.json")
     private val lock = ReentrantReadWriteLock()
 
@@ -26,6 +34,7 @@ class LyricsCacheManager(context: Context) {
         private const val TAG = "LyricsCacheManager"
         private const val MAX_CACHE_SIZE_BYTES = 100 * 1024 * 1024L // 100MB
         private const val DURATION_TOLERANCE_MS = 3000L // ±3 seconds
+        private const val METADATA_VERSION = 2 // Rebuild legacy ASCII-only normalized metadata.
     }
 
     private data class MetadataEntry(
@@ -191,12 +200,15 @@ class LyricsCacheManager(context: Context) {
      * Saves lyrics to cache.
      * @param source Source/provider identifier stored for attribution and diagnostics
      */
-    fun put(artist: String?, title: String?, durationMs: Long, lyrics: LyricsData, source: String) = lock.write {
+    fun put(
+        artist: String?, title: String?, durationMs: Long, lyrics: LyricsData, source: String,
+        replaceExactMatches: Boolean = false
+    ): Boolean = lock.write {
         try {
             val trimmedSource = source.trim()
             if (trimmedSource.isEmpty()) {
                 Log.d(TAG, "Skipping cache for unsupported source: $source")
-                return@write
+                return@write false
             }
 
             val normalizedArtist = normalizeString(artist ?: "")
@@ -204,7 +216,7 @@ class LyricsCacheManager(context: Context) {
 
             if (normalizedTitle.isEmpty()) {
                 Log.d(TAG, "Cannot cache: title is empty")
-                return@write
+                return@write false
             }
 
             val cacheKey = generateCacheKey(normalizedArtist, normalizedTitle, durationMs)
@@ -214,7 +226,7 @@ class LyricsCacheManager(context: Context) {
                 put("type", when (lyrics) {
                     is LyricsData.Synced -> "synced"
                     is LyricsData.Plain -> "plain"
-                    else -> return@write // Don't cache Info or MismatchInfo
+                    else -> return@write false // Don't cache Info or MismatchInfo
                 })
                 put("title", title ?: "")
                 put("artist", artist ?: "")
@@ -247,20 +259,42 @@ class LyricsCacheManager(context: Context) {
                 }
             }
 
-            cacheFile.writeText(json.toString())
+            loadMetadataIndexLocked()
+            val previousContent = cacheFile.takeIf { it.isFile }?.readText()
+            writeFile(cacheFile, json.toString())
             Log.d(TAG, "Cached lyrics for: $normalizedArtist - $normalizedTitle")
 
-            upsertMetadataEntryLocked(
-                cacheKey = cacheKey,
-                artist = normalizedArtist,
-                title = normalizedTitle,
-                durationMs = durationMs
-            )
+            try {
+                upsertMetadataEntryLocked(
+                    cacheKey = cacheKey,
+                    artist = normalizedArtist,
+                    title = normalizedTitle,
+                    durationMs = durationMs
+                )
+            } catch (metadataError: Exception) {
+                try {
+                    if (previousContent == null) {
+                        Files.deleteIfExists(cacheFile.toPath())
+                    } else {
+                        writeLyricsFileAtomically(cacheFile, previousContent)
+                    }
+                } catch (rollbackError: Exception) {
+                    metadataError.addSuppressed(rollbackError)
+                }
+                throw metadataError
+            }
+
+            // Keep existing entries until the replacement file and metadata are committed.
+            if (replaceExactMatches) {
+                deleteExactEntries(artist, title, keepCacheKey = cacheKey)
+            }
 
             // Check cache size and evict if needed
             ensureCacheSizeLimit()
+            true
         } catch (e: Exception) {
             Log.e(TAG, "Error writing to cache", e)
+            false
         }
     }
 
@@ -300,18 +334,6 @@ class LyricsCacheManager(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Error calculating cache size", e)
             return 0L
-        }
-    }
-
-    /**
-     * Gets number of cached items.
-     */
-    fun getCacheCount(): Int = lock.read {
-        try {
-            val files = cacheDir.listFiles() ?: return 0
-            return files.count { it.isFile && it.name.endsWith(".json") && it.name != metadataFile.name }
-        } catch (e: Exception) {
-            return 0
         }
     }
 
@@ -427,7 +449,7 @@ class LyricsCacheManager(context: Context) {
      * Duration is ignored intentionally to support replacing existing entries with custom lyrics.
      * @return Number of entries deleted
      */
-    fun deleteExactEntries(artist: String?, title: String?): Int {
+    private fun deleteExactEntries(artist: String?, title: String?, keepCacheKey: String): Int {
         try {
             ensureMetadataLoaded()
             val normalizedArtist = normalizeString(artist ?: "")
@@ -437,7 +459,7 @@ class LyricsCacheManager(context: Context) {
             return lock.write {
                 val index = loadMetadataIndexLocked()
                 val matchingEntries = index.entries.filter {
-                    it.title == normalizedTitle && it.artist == normalizedArtist
+                    it.title == normalizedTitle && it.artist == normalizedArtist && it.cacheKey != keepCacheKey
                 }
 
                 if (matchingEntries.isEmpty()) {
@@ -452,7 +474,7 @@ class LyricsCacheManager(context: Context) {
                         deletedCount++
                         deletedKeys.add(entry.cacheKey)
                     } else {
-                        Log.w(TAG, "Failed to delete cache file for exact match: ${entry.cacheKey}")
+                        throw IOException("Failed to delete cache file for exact match: ${entry.cacheKey}")
                     }
                 }
 
@@ -465,7 +487,7 @@ class LyricsCacheManager(context: Context) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error deleting exact cache entries", e)
-            return 0
+            throw e
         }
     }
 
@@ -485,19 +507,24 @@ class LyricsCacheManager(context: Context) {
             val type = existingJson.optString("type")
             when (type) {
                 "synced" -> {
-                    @Suppress("UNCHECKED_CAST")
-                    val lines = updatedData["lines"] as? List<Map<String, Any>>
-                    if (lines != null) {
-                        val linesArray = JSONArray()
-                        for (line in lines) {
-                            val lineObj = JSONObject().apply {
-                                put("timestamp", (line["timestamp"] as? Number)?.toLong() ?: 0L)
-                                put("text", line["text"] as? String ?: "")
-                            }
-                            linesArray.put(lineObj)
+                    val lines = updatedData["lines"] as? List<*> ?: return false
+                    if (lines.isEmpty()) return false
+                    val validatedLines = lines.map { value ->
+                        val line = value as? Map<*, *> ?: return false
+                        val timestamp = (line["timestamp"] as? Number)?.toLong() ?: return false
+                        val text = line["text"] as? String ?: return false
+                        if (timestamp < 0) return false
+                        TimedLyricLine(timestamp, text)
+                    }.sortedBy { it.timestamp }
+                    val linesArray = JSONArray()
+                    for (line in validatedLines) {
+                        val lineObj = JSONObject().apply {
+                            put("timestamp", line.timestamp)
+                            put("text", line.text)
                         }
-                        existingJson.put("lines", linesArray)
+                        linesArray.put(lineObj)
                     }
+                    existingJson.put("lines", linesArray)
                 }
                 "plain" -> {
                     val lyrics = updatedData["lyrics"] as? String
@@ -508,7 +535,7 @@ class LyricsCacheManager(context: Context) {
             }
 
             existingJson.put("lastAccessed", System.currentTimeMillis())
-            file.writeText(existingJson.toString())
+            writeFile(file, existingJson.toString())
             Log.d(TAG, "Updated cache entry: $cacheKey")
             return true
         } catch (e: Exception) {
@@ -665,8 +692,8 @@ class LyricsCacheManager(context: Context) {
         return try {
             val json = JSONObject(metadataFile.readText())
             val version = json.optInt("version", 1)
-            if (version != 1) {
-                Log.w(TAG, "Unknown metadata version $version, rebuilding index")
+            if (version != METADATA_VERSION) {
+                Log.d(TAG, "Rebuilding metadata version $version with Unicode normalization")
                 return null
             }
 
@@ -750,26 +777,18 @@ class LyricsCacheManager(context: Context) {
             }
 
             val json = JSONObject().apply {
-                put("version", 1)
+                put("version", METADATA_VERSION)
                 put("entries", entriesArray)
             }
 
-            val tempFile = File(cacheDir, "metadata.json.tmp")
-            tempFile.writeText(json.toString())
-
-            if (metadataFile.exists() && !metadataFile.delete()) {
-                Log.w(TAG, "Failed to delete old metadata file before rewrite")
-            }
-
-            if (!tempFile.renameTo(metadataFile)) {
-                Log.w(TAG, "Atomic rename failed for metadata, falling back to direct write")
-                metadataFile.writeText(json.toString())
-                tempFile.delete()
-            }
+            writeFile(metadataFile, json.toString())
 
             metadataCacheLastModified = metadataFile.lastModified()
         } catch (e: Exception) {
             Log.e(TAG, "Error writing metadata index", e)
+            metadataCache = null
+            metadataCacheLastModified = -1L
+            throw e
         }
     }
 
@@ -1077,7 +1096,7 @@ class LyricsCacheManager(context: Context) {
     }
 
     private fun normalizeString(str: String): String {
-        return str.trim()
+        return Normalizer.normalize(str, Normalizer.Form.NFC).trim()
             .lowercase()
             // Normalize common artist separators to spaces before removing special chars
             .replace(Regex("\\s+and\\s+"), " ") // " and " -> " "
@@ -1086,7 +1105,7 @@ class LyricsCacheManager(context: Context) {
             .replace(Regex("\\s+vs\\.?\\s+"), " ") // " vs " or " vs. " -> " "
             .replace(Regex("\\s*&\\s*"), " ") // " & " -> " "
             .replace(Regex("\\s*,\\s*"), " ") // " , " or "," -> " "
-            .replace(Regex("[^a-z0-9\\s]"), "") // Remove remaining special chars
+            .replace(Regex("[^\\p{L}\\p{M}\\p{N}\\s]"), "") // Keep letters and marks in every script.
             .replace(Regex("\\s+"), " ") // Normalize whitespace
             .trim()
     }
@@ -1100,5 +1119,18 @@ class LyricsCacheManager(context: Context) {
         val md = MessageDigest.getInstance("MD5")
         val digest = md.digest(this.toByteArray())
         return digest.joinToString("") { "%02x".format(it) }
+    }
+}
+
+internal fun writeLyricsFileAtomically(file: File, content: String) {
+    val temporary = File.createTempFile("lyrics-", ".tmp", file.parentFile)
+    try {
+        temporary.writeText(content)
+        Files.move(
+            temporary.toPath(), file.toPath(),
+            StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING
+        )
+    } finally {
+        temporary.delete()
     }
 }

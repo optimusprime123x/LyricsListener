@@ -51,6 +51,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.text.Normalizer
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 import android.os.Handler
@@ -148,7 +149,8 @@ class LyricService : NotificationListenerService() {
     private var lastFetchSourceSelection: List<Boolean>? = null
 
     private fun normalizeSongStringForComparison(value: String?): String {
-        return value?.trim()?.lowercase()?.replace(Regex("\\s+"), " ") ?: ""
+        return value?.let { Normalizer.normalize(it, Normalizer.Form.NFC) }
+            ?.trim()?.lowercase()?.replace(Regex("\\s+"), " ") ?: ""
     }
 
     private fun matchesCurrentSongContext(title: String?, artist: String?): Boolean {
@@ -1313,7 +1315,7 @@ class LyricService : NotificationListenerService() {
             Log.i(TAG, "New song detected ($source): '$newTitle' by '$newArtist'. Old: '$lastDetectedSongTitle' by '$lastDetectedSongArtist'. Token: $currentMediaSessionToken")
             lastDetectedSongTitle = newTitle
             lastDetectedSongArtist = newArtist
-            currentSongDurationMs = if (newDuration > 0) newDuration else (currentLyricsData?.durationMs ?: 0L)
+            currentSongDurationMs = newDuration.coerceAtLeast(0L)
             this.currentPlaybackState = playbackState
             isShowingTranslatedLyrics = false
             currentLyricsHasTranslation = false
@@ -1336,38 +1338,16 @@ class LyricService : NotificationListenerService() {
                  }
             }
         } else {
-             if (newDuration > 0 && newDuration != currentSongDurationMs) {
-                Log.d(TAG,"Duration updated for '$newTitle' ($currentMediaSessionToken) to $newDuration ms")
-                currentSongDurationMs = newDuration
-                currentLyricsData = when(val cd = currentLyricsData) {
-                    is LyricsData.Synced -> if (cd.durationMs != newDuration) cd.copy(durationMs = newDuration) else cd
-                    is LyricsData.Plain -> if (cd.durationMs != newDuration) cd.copy(durationMs = newDuration) else cd
-                    is LyricsData.Info -> if (cd.durationMs != newDuration) cd.copy(durationMs = newDuration) else cd
-                    is LyricsData.MismatchInfo -> {
-                        val original = cd.originalLyricsData
-                        if (original != null && original.durationMs != newDuration) {
-                            val updatedOriginal = when (original) {
-                                is LyricsData.Synced -> original.copy(durationMs = newDuration)
-                                is LyricsData.Plain -> original.copy(durationMs = newDuration)
-                                is LyricsData.Info -> original.copy(durationMs = newDuration)
-                                else -> original
-                            }
-                            cd.copy(originalLyricsData = updatedOriginal)
-                        } else {
-                            cd
-                        }
-                    }
-                    null -> null
-                }
-                 if (lyricsView != null && currentLyricsData != null) {
-                    showLyricsWindow(currentLyricsData!!)
-                }
-            }
             if (this.currentPlaybackState != playbackState) {
                 this.currentPlaybackState = playbackState
             }
-
-            // Refetch with this callback's duration; LRCLib rejects unknown or stale durations.
+            if (newDuration > 0 && newDuration != currentSongDurationMs) {
+                Log.d(TAG, "Duration updated for '$newTitle' to $newDuration ms; retrying lyrics with current metadata")
+                currentSongDurationMs = newDuration
+                refreshLyricsForCurrentSong()
+                return
+            }
+            // Refresh the current song if the user changed the enabled sources.
             if (refreshLyricsAfterSourceChange()) return
 
             // Re-apply colors when metadata changes (e.g., album art loads after cached lyrics shown)
@@ -1843,11 +1823,16 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         val title = lastDetectedSongTitle ?: return false
         if (lastFetchSourceSelection == null || lastFetchSourceSelection == sourceAccess.selection()) return false
         Log.i(TAG, "Lyrics Sources changed. Fetching lyrics again for '$title'.")
+        refreshLyricsForCurrentSong()
+        return true
+    }
+
+    private fun refreshLyricsForCurrentSong() {
+        val title = lastDetectedSongTitle ?: return
         val loading = LyricsData.Info(title, lastDetectedSongArtist, "Loading lyrics...", currentSongDurationMs)
         currentLyricsData = loading
         if (lyricsView != null) showLyricsWindow(loading)
         fetchAndDisplayLyrics(title, lastDetectedSongArtist ?: "", currentSongDurationMs)
-        return true
     }
 
     private fun fetchAndDisplayLyrics(title: String, artist: String, durationFromMediaMs: Long) {
@@ -4063,7 +4048,6 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             nextDelay = LISTENER_HEALTH_SHORT_INTERVAL_MS
         } else if (!refreshListenerBindingState("evaluateListenerHealth")) {
             // Don't show floating window for status messages - only use persistent notification
-            // maybeShowStatusInfo("Waiting for notification listener connection… If stuck here, Go to the app's help and support section and follow the steps under question 1. ")
             updatePersistentNotification("Waiting for notification listener...")
             requestNotificationListenerRebind("Health check: listener never connected")
             maybeResetNotificationListenerComponent("Health check: listener never connected")
@@ -4078,7 +4062,6 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             val heartbeat = lastListenerHeartbeatMs.get()
             val elapsedSinceHeartbeat = if (heartbeat == 0L) Long.MAX_VALUE else now - heartbeat
             if (elapsedSinceHeartbeat >= LISTENER_STALE_NOTIFICATION_THRESHOLD_MS) {
-                // maybeShowStatusInfo("Refreshing notification listener… Feel free to close this window")
                 updatePersistentNotification("Waiting for songs..")
                 requestNotificationListenerRebind("Health check: listener idle for ${if (elapsedSinceHeartbeat == Long.MAX_VALUE) "unknown" else "$elapsedSinceHeartbeat ms"}")
                 tryToConnectToActiveMediaSessions(CONNECT_RETRY_DELAY_MS)
@@ -4101,7 +4084,6 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         Log.w(TAG, "handleMissingNotificationAccess: Notification access missing. Reason: $reason")
         maybeLogNotificationAccessDebug("handleMissingNotificationAccess: $reason")
         updatePersistentNotification("Notification access missing. Tap to fix.")
-        //maybeShowStatusInfo("Notification access missing. If stuck here, Go to the app's help and support section and follow the steps under question 1. ")
     }
 
     private fun maybeLogNotificationAccessDebug(
@@ -4132,28 +4114,6 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             TAG,
             "Notification access debug ($reason): enabledPackages=$resolvedPackages, enabledListeners=$resolvedListeners, componentFlat=$flat, componentShort=$short"
         )
-    }
-
-    private fun maybeShowStatusInfo(message: String) {
-        if (!isServiceManuallyStarted.get()) return
-
-        val currentData = currentLyricsData
-        if (currentData is LyricsData.Info && currentData.message == message) {
-            return
-        }
-
-        val isWindowVisible = lyricsView?.isVisible == true
-        val shouldShowInfo = currentData == null || currentData is LyricsData.Info || isWindowVisible
-        if (shouldShowInfo) {
-            showLyricsWindow(
-                LyricsData.Info(
-                    lastDetectedSongTitle,
-                    lastDetectedSongArtist,
-                    message,
-                    currentSongDurationMs
-                )
-            )
-        }
     }
 
     private fun scheduleServiceRestart(reason: String) {

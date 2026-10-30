@@ -37,8 +37,6 @@ class MainActivity : FlutterActivity() {
         Pattern.compile("^\\[(\\d{1,}):(\\d{1,2})(?:([.:])(\\d{1,3}))?\\](.*)$")
     private val timestampLikeTagBodyPattern: Pattern =
         Pattern.compile("^\\d{1,3}:\\d{1,3}(?:[.:]\\d{0,4})?$")
-    private val lrcMetadataTagPattern: Pattern =
-        Pattern.compile("^\\[[A-Za-z]{1,12}\\s*:[^\\]]*]$")
     private val lrcMetadataTagPrefixPattern: Pattern =
         Pattern.compile("^\\[([A-Za-z]{1,12})\\s*:[^\\]]*\\](.*)$")
     private val supportedLrcMetadataKeys =
@@ -363,12 +361,6 @@ class MainActivity : FlutterActivity() {
                             return@setMethodCallHandler
                         }
 
-                        val overwrittenCount = if (overwriteExisting) {
-                            cacheManager.deleteExactEntries(artist, title)
-                        } else {
-                            0
-                        }
-
                         val customLyrics = LyricsData.Synced(
                             title = title,
                             artist = artist,
@@ -376,19 +368,24 @@ class MainActivity : FlutterActivity() {
                             translatedLines = null,
                             durationMs = 0L
                         )
-                        cacheManager.put(
+                        val saved = cacheManager.put(
                             artist = artist,
                             title = title,
                             durationMs = 0L,
                             lyrics = customLyrics,
-                            source = "custom"
+                            source = "custom",
+                            replaceExactMatches = overwriteExisting
                         )
+                        if (!saved) {
+                            result.error("ERROR_ADD_CUSTOM_LYRICS", "Could not save custom lyrics. Please try again.", null)
+                            return@setMethodCallHandler
+                        }
 
                         result.success(
                             mapOf(
                                 "status" to "saved",
                                 "lineCount" to parsedLines.size,
-                                "overwrittenCount" to overwrittenCount
+                                "overwrittenCount" to if (overwriteExisting) exactMatches.size else 0
                             )
                         )
                     } catch (e: IllegalArgumentException) {
@@ -641,21 +638,6 @@ class MainActivity : FlutterActivity() {
         }
 
         return remaining
-    }
-
-    private fun isSupportedLrcMetadataTag(line: String): Boolean {
-        val trimmed = line.trim()
-        if (!lrcMetadataTagPattern.matcher(trimmed).matches()) {
-            return false
-        }
-
-        val matcher = lrcMetadataTagPrefixPattern.matcher(trimmed)
-        if (!matcher.matches()) {
-            return false
-        }
-
-        val key = matcher.group(1)?.lowercase() ?: return false
-        return supportedLrcMetadataKeys.contains(key)
     }
 
     private class LogStreamHandler : EventChannel.StreamHandler {
