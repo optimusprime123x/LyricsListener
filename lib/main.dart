@@ -2028,7 +2028,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return AlertDialog(
           title: const Text('Clear all lyrics'),
           content: const Text(
-            'Are you sure? This will delete all stored lyrics. '
+            'Are you sure? This will delete ALL stored lyrics, including any saved custom lyrics. '
+            'You can delete any particular inaccurate cached lyrics from the Manage Lyrics option above.'
             'Cached lyrics load faster and reduce network usage.',
           ),
           actions: [
