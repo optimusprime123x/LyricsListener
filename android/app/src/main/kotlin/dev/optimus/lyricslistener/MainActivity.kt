@@ -129,24 +129,16 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "canDrawOverlays" -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        result.success(Settings.canDrawOverlays(this))
-                    } else {
-                        result.success(true)
-                    }
+                    result.success(Settings.canDrawOverlays(this))
                 }
                 "requestOverlayPermission" -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        try {
-                            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
-                            startActivity(intent)
-                            result.success(null)
-                        } catch (e: Exception) {
-                            Log.e("MainActivity", "Error opening overlay settings: ${e.message}")
-                            result.error("ERROR_OPEN_OVERLAY_SETTINGS", e.message, null)
-                        }
-                    } else {
+                    try {
+                        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+                        startActivity(intent)
                         result.success(null)
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Error opening overlay settings: ${e.message}")
+                        result.error("ERROR_OPEN_OVERLAY_SETTINGS", e.message, null)
                     }
                 }
                 "isPostNotificationsGranted" -> {
@@ -173,11 +165,7 @@ class MainActivity : FlutterActivity() {
                         val serviceIntent = Intent(this, LyricService::class.java).apply {
                             action = LyricService.ACTION_USER_INITIATED_START
                         }
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            startForegroundService(serviceIntent)
-                        } else {
-                            startService(serviceIntent)
-                        }
+                        startForegroundService(serviceIntent)
                         result.success(null)
                     } catch (e: Exception) {
                         Log.e("MainActivity", "Error starting LyricService: ${e.message}")
@@ -189,13 +177,9 @@ class MainActivity : FlutterActivity() {
                         val serviceIntent = Intent(this, LyricService::class.java).apply {
                             action = LyricService.ACTION_USER_INITIATED_STOP
                         }
-                         // We still need to call startService/startForegroundService to deliver the stop intent
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            startForegroundService(serviceIntent)
-                        } else {
-                            startService(serviceIntent)
-                        }
-                        // LyricService itself will call stopSelf() or stopForeground(true)
+                        // Deliver the stop action to the service, even if it is not running.
+                        startForegroundService(serviceIntent)
+                        // LyricService itself will leave the foreground and stop.
                         result.success(null)
                     } catch (e: Exception) {
                         Log.e("MainActivity", "Error stopping LyricService: ${e.message}")
@@ -209,40 +193,32 @@ class MainActivity : FlutterActivity() {
                     result.success(isManuallyStarted && isActuallyRunning)
                 }
                 "isIgnoringBatteryOptimizations" -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-                        result.success(powerManager.isIgnoringBatteryOptimizations(packageName))
-                    } else {
-                        result.success(true)
-                    }
+                    val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                    result.success(powerManager.isIgnoringBatteryOptimizations(packageName))
                 }
                 "requestDisableBatteryOptimization" -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        try {
-                            val intent = Intent()
-                            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-                            if (powerManager.isIgnoringBatteryOptimizations(packageName)) {
-                                result.success(true) // Already ignoring
-                                return@setMethodCallHandler
-                            }
-                            intent.action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
-                            intent.data = Uri.parse("package:$packageName")
-                            startActivity(intent)
-                            result.success(null) // User will be taken to settings
-                        } catch (e: Exception) {
-                            Log.e("MainActivity", "Could not open specific battery optimization request: ${e.message}")
-                            try {
-                                // Fallback to general battery optimization settings if specific one fails
-                                val generalIntent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                                startActivity(generalIntent)
-                                result.success(null) // User will be taken to settings
-                            } catch (se: Exception) {
-                                Log.e("MainActivity", "Could not open general battery optimization settings: ${se.message}")
-                                result.error("BATTERY_OPTIMIZATION_SETTINGS_UNAVAILABLE", "Battery optimization settings could not be opened.", null)
-                            }
+                    try {
+                        val intent = Intent()
+                        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                        if (powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                            result.success(true) // Already ignoring
+                            return@setMethodCallHandler
                         }
-                    } else {
-                        result.success(true) // Not applicable for older versions
+                        intent.action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                        intent.data = Uri.parse("package:$packageName")
+                        startActivity(intent)
+                        result.success(null) // User will be taken to settings
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Could not open specific battery optimization request: ${e.message}")
+                        try {
+                            // Fallback to general battery optimization settings if specific one fails
+                            val generalIntent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                            startActivity(generalIntent)
+                            result.success(null) // User will be taken to settings
+                        } catch (se: Exception) {
+                            Log.e("MainActivity", "Could not open general battery optimization settings: ${se.message}")
+                            result.error("BATTERY_OPTIMIZATION_SETTINGS_UNAVAILABLE", "Battery optimization settings could not be opened.", null)
+                        }
                     }
                 }
                 "clearLyricsCache" -> {
@@ -400,11 +376,7 @@ class MainActivity : FlutterActivity() {
                         val intent = Intent(this, LyricService::class.java).apply {
                             action = LyricService.ACTION_DEBUG_ACTIVE_NOTIFICATION
                         }
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            startForegroundService(intent)
-                        } else {
-                            startService(intent)
-                        }
+                        startForegroundService(intent)
                         result.success(null)
                     } catch (e: Exception) {
                         Log.e("MainActivity", "Error starting debug action: ${e.message}")
@@ -430,11 +402,7 @@ class MainActivity : FlutterActivity() {
                         val intent = Intent(this, LyricService::class.java).apply {
                             action = LyricService.ACTION_DEBUG_REFRESH_MUSIXMATCH_TOKEN
                         }
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            startForegroundService(intent)
-                        } else {
-                            startService(intent)
-                        }
+                        startForegroundService(intent)
                         result.success(null)
                     } catch (e: Exception) {
                         Log.e("MainActivity", "Error requesting Musixmatch token refresh: ${e.message}")

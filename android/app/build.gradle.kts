@@ -99,7 +99,7 @@ dependencies {
     testImplementation("org.json:json:20240303")
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.media:media:1.7.0")
-    implementation("androidx.recyclerview:recyclerview:1.3.2")
+    implementation("androidx.recyclerview:recyclerview:1.4.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.palette:palette-ktx:1.0.0")
     implementation("org.slf4j:slf4j-api:2.0.7")
@@ -113,7 +113,7 @@ dependencies {
     val kotlinxSerializationVersion = "1.6.3"
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:$kotlinxSerializationVersion")
 
-    val kotlinxCoroutinesVersion = "1.8.0"
+    val kotlinxCoroutinesVersion = "1.10.2"
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinxCoroutinesVersion")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:$kotlinxCoroutinesVersion")
 }

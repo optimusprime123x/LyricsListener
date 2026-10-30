@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Preserve the colour artwork unless the launcher enables themed icons. -->
+    <background android:drawable="@android:color/transparent" />
+    <foreground android:drawable="@drawable/launcher_icon_foreground" />
+    <monochrome android:drawable="@drawable/launcher_icon_monochrome" />
+</adaptive-icon>
