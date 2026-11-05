@@ -3083,7 +3083,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                         'Lyrics popup is not shown, or shows waiting for song even when music is playing.',
                     answerParts: [
                       const TextSpan(
-                        text: "Why this happens? ",
+                        text: "Why does this happen? ",
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                       const TextSpan(
@@ -3091,7 +3091,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                             'Notification access might be missing, see below.\n\n',
                       ),
                       const TextSpan(
-                        text: "What to do? ",
+                        text: "What can I do? ",
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                       const TextSpan(
@@ -3117,23 +3117,23 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   _buildFaqItem(
                     context,
                     question:
-                        'Youtube videos show "Lyrics not found" or incorrect lyrics',
+                        'YouTube videos show "Lyrics not found" or incorrect lyrics',
                     answerParts: [
                       const TextSpan(
-                        text: "Why this happens? ",
+                        text: "Why does this happen? ",
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                       const TextSpan(
                         text:
-                            "Youtube video notifications often don't have standard song titles, making it hard to find the right lyrics.\n\n",
+                            "YouTube video notifications often don't have standard song titles, making it hard to find the right lyrics.\n\n",
                       ),
                       const TextSpan(
-                        text: "What to do? ",
+                        text: "What can I do? ",
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                       const TextSpan(
                         text:
-                            "This is being worked on. Later versions should be better, but synced lyrics may not be perfect if the video length differs from the actual song.",
+                            'Tap the retry button (!) in the lyrics window to try another enabled source. You can also try YouTube Music or another music player with standard song metadata. Lyrics may still be out of sync if the video length differs from the original song.',
                       ),
                     ],
                   ),
@@ -3143,22 +3143,23 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     question: 'Incorrect (or no) lyrics are displayed',
                     answerParts: [
                       const TextSpan(
-                        text: "Why this happens? ",
+                        text: "Why does this happen? ",
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                       const TextSpan(
                         text:
-                            "The lyrics source(s) may not have lyrics for that particular song.\n\n",
+                            'The lyrics source(s) might not have (accurate) lyrics for that particular song.\n\n',
                       ),
                       const TextSpan(
-                        text: "What to do? ",
+                        text: "What can I do? ",
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                       const TextSpan(
-                        text: 'You can try a different song, a different ',
+                        text:
+                            'Tap the retry button (!) in the lyrics window to choose a different enabled source. In Mini mode, long-press the lyrics to open the retry options. If a source repeatedly gives inaccurate results, disable it entirely in ',
                       ),
                       TextSpan(
-                        text: 'source',
+                        text: 'Lyrics Sources',
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.primary,
                           decoration: TextDecoration.underline,
@@ -3167,7 +3168,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       ),
                       const TextSpan(
                         text:
-                            ', or try again a few days later. If you have the LRC file for that song, add it yourself from the ',
+                            '. Disabling a source keeps its cached lyrics; a successful retry replaces the cached result for that song. You can also try again later or add your own LRC file from the ',
                       ),
                       TextSpan(
                         text: 'Custom Lyrics page',

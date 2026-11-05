@@ -36,6 +36,7 @@ void main() {
   const keys = [
     'lyrics_source_lrclib_enabled',
     'lyrics_source_musixmatch_enabled',
+    'lyrics_source_lrcred_enabled',
     'lyrics_source_others_enabled',
   ];
 
@@ -220,21 +221,43 @@ void main() {
     expect(sourceTile(tester, keys.first).onChanged, isNotNull);
   });
 
-  testWidgets('guidance links open Manage Lyrics and Add custom lyrics', (
-    tester,
-  ) async {
-    await openPage(tester);
-    await tester.tap(find.text('What is this page for?'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Manage Lyrics'));
-    await tester.pumpAndSettle();
-    expect(find.byType(ManageLyricsPage), findsOneWidget);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Custom Lyrics'));
-    await tester.pumpAndSettle();
-    expect(find.byType(AddCustomLyricsPage), findsOneWidget);
-  });
+  testWidgets(
+    'retry guidance explains cache behavior and links to lyrics pages',
+    (tester) async {
+      await openPage(tester);
+      expect(
+        find.text('Control lyrics sources and fix inaccuracies'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('What is this page for?'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Tap the retry button (!) in the lyrics window'),
+        findsWidgets,
+      );
+      expect(find.textContaining('long-press the lyrics'), findsOneWidget);
+      expect(
+        find.textContaining('A successful retry replaces the cached lyrics'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Turning off a source keeps its cached lyrics.'),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(find.text('Manage Lyrics'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Manage Lyrics'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ManageLyricsPage), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Custom Lyrics'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Custom Lyrics'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AddCustomLyricsPage), findsOneWidget);
+    },
+  );
 
   for (final textScale in [1.0, 2.0]) {
     testWidgets('guide numbers align with the first text baseline at $textScale', (
@@ -246,11 +269,10 @@ void main() {
       await tester.tap(find.text('What is this page for?'));
       await tester.pumpAndSettle();
       final steps = [
-        'Scroll down the lyrics window to see where the lyrics were fetched from.',
-        'Go to Manage Lyrics, search for the song and delete the cached lyrics.',
-        'Disable the corresponding source above.',
-        '??? (play the song again)',
-        'Profit',
+        'Tap the retry button (!) in the lyrics window and choose another enabled source. In Mini mode, long-press the lyrics to open the retry options.',
+        'A successful retry replaces the cached lyrics for that song. If a source repeatedly gives inaccurate results, turn it off above to stop future requests.',
+        'Turning off a source keeps its cached lyrics. To remove an existing result without retrying, find the song in Manage Lyrics and delete it.',
+        'Play the song again to fetch lyrics from the remaining enabled sources.',
       ];
       double baseline(Finder finder) {
         final paragraph = tester.renderObject<RenderParagraph>(
@@ -271,7 +293,7 @@ void main() {
       }
       expect(
         tester.getRect(find.text('Manage Lyrics')).top,
-        greaterThan(tester.getRect(find.text(steps[1])).bottom),
+        greaterThan(tester.getRect(find.text(steps[2])).bottom),
       );
     });
   }
@@ -355,12 +377,21 @@ void main() {
     await tester.tap(find.byIcon(Icons.help_outline_rounded));
     await tester.pumpAndSettle();
 
+    final paragraphFinder = find.byWidgetPredicate(
+      (widget) =>
+          widget is RichText &&
+          widget.text.toPlainText().contains(
+            'The lyrics source(s) might not have (accurate) lyrics for that particular song.',
+          ),
+    );
+    expect(paragraphFinder, findsOneWidget);
+    final answer = tester.widget<RichText>(paragraphFinder).text.toPlainText();
+    expect(answer, contains('retry button (!)'));
+    expect(answer, contains('long-press the lyrics'));
+    expect(answer, contains('disable it entirely in Lyrics Sources'));
+    expect(answer, contains('Disabling a source keeps its cached lyrics'));
+
     Future<void> tapLink(String text) async {
-      final paragraphFinder = find.byWidgetPredicate(
-        (widget) =>
-            widget is RichText &&
-            widget.text.toPlainText().contains('You can try a different song'),
-      );
       await tester.ensureVisible(paragraphFinder);
       final paragraph = tester.renderObject<RenderParagraph>(paragraphFinder);
       final content = paragraph.text.toPlainText();
@@ -375,7 +406,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    await tapLink('source');
+    await tapLink('Lyrics Sources');
     expect(find.byType(LyricsSourcesPage), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();

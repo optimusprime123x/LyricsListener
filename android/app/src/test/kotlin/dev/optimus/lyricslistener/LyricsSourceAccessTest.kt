@@ -17,7 +17,7 @@ class LyricsSourceAccessTest {
     }
 
     @Test fun everyToggleCombinationSkipsOnlyDisabledRequestsAndLogsThem() = runBlocking {
-        for (mask in 0..7) {
+        for (mask in 0 until (1 shl LyricsSource.entries.size)) {
             val preferences = LyricsSource.entries.mapIndexed { index, source ->
                 source.preferenceKey to (mask and (1 shl index) != 0)
             }.toMap()
@@ -83,5 +83,67 @@ class LyricsSourceAccessTest {
         } catch (expected: CancellationException) {
             assertEquals("Song changed", expected.message)
         }
+    }
+
+    @Test fun sourceIdentifierAndAttributionMapToExpectedLyricsSource() {
+        assertEquals(LyricsSource.LRCLIB, LyricsSource.fromSourceIdentifier("lrclib", 180000L))
+        assertEquals(LyricsSource.MUSIXMATCH, LyricsSource.fromSourceIdentifier("musixmatch", 180000L))
+        assertEquals(LyricsSource.LRCRED, LyricsSource.fromSourceIdentifier("lrc.red", 180000L))
+        assertEquals(LyricsSource.LRCRED, LyricsSource.fromSourceIdentifier("lrcred", 180000L))
+        assertEquals(LyricsSource.OTHERS, LyricsSource.fromSourceIdentifier("Apple Music", 180000L))
+        assertEquals(LyricsSource.OTHERS, LyricsSource.fromSourceIdentifier("custom", 180000L))
+        assertNull(LyricsSource.fromSourceIdentifier("custom", 0L))
+        assertNull(LyricsSource.fromSourceIdentifier("", 180000L))
+
+        assertEquals(
+            LyricsSource.LRCRED,
+            LyricsSource.fromAttributionText("Lyrics provided by lrc.red", 180000L)
+        )
+        assertEquals(
+            LyricsSource.LRCRED,
+            LyricsSource.fromAttributionText("Lyrics provided by lrc.red (cached)", 180000L)
+        )
+        assertEquals(
+            LyricsSource.LRCLIB,
+            LyricsSource.fromAttributionText("Lyrics provided by LRCLib (cached)", 180000L)
+        )
+        assertEquals(
+            LyricsSource.OTHERS,
+            LyricsSource.fromAttributionText("Lyrics provided by Netease", 180000L)
+        )
+    }
+
+    @Test fun retryOptionsGreyOutCurrentSourceAndKeepEnabledAlternativesTappable() {
+        val prefs = mutableMapOf(
+            LyricsSource.LRCLIB.preferenceKey to true,
+            LyricsSource.MUSIXMATCH.preferenceKey to true,
+            LyricsSource.LRCRED.preferenceKey to true,
+            LyricsSource.OTHERS.preferenceKey to true
+        )
+        val access = LyricsSourceAccess(prefs::get, {})
+
+        val options = access.retryOptions(LyricsSource.LRCLIB)
+        assertEquals(
+            listOf("LRCLib (current)", "Musixmatch", "lrc.red", "Others"),
+            options.map { it.displayText }
+        )
+        assertEquals(listOf(true, false, false, false), options.map { it.isCurrent })
+        assertEquals(listOf(false, true, true, true), options.map { it.isTappable })
+
+        // Disabling a non-current source removes it from retry choices, while a cached current
+        // source remains shown as (current) and non-tappable.
+        prefs[LyricsSource.MUSIXMATCH.preferenceKey] = false
+        val filtered = access.retryOptions(LyricsSource.LRCLIB)
+        assertEquals(
+            listOf("LRCLib (current)", "lrc.red", "Others"),
+            filtered.map { it.displayText }
+        )
+
+        val cachedDisabledCurrent = access.retryOptions(LyricsSource.MUSIXMATCH)
+        assertEquals(
+            listOf("LRCLib", "Musixmatch (current)", "lrc.red", "Others"),
+            cachedDisabledCurrent.map { it.displayText }
+        )
+        assertEquals(listOf(true, false, true, true), cachedDisabledCurrent.map { it.isTappable })
     }
 }

@@ -40,6 +40,8 @@
         android:id="@+id/lyricsOverlayContent"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:clipChildren="false"
+        android:clipToPadding="false"
         android:paddingStart="16dp"
         android:paddingTop="14dp"
         android:paddingEnd="16dp"
@@ -79,8 +81,24 @@
             app:tint="@android:color/white"
             android:contentDescription="Toggle translated lyrics"
             app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/retryButton"
+            android:layout_marginEnd="8dp"
+            android:visibility="gone"
+            tools:visibility="visible"
+            android:alpha="0.85"/>
+
+        <ImageButton
+            android:id="@+id/retryButton"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_round_report_lyrics_24"
+            android:scaleType="fitCenter"
+            app:tint="@android:color/white"
+            android:contentDescription="Retry lyrics from another source"
+            app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintEnd_toStartOf="@id/expandCollapseButton"
-            android:layout_marginEnd="10dp"
+            android:layout_marginEnd="8dp"
             android:visibility="gone"
             tools:visibility="visible"
             android:alpha="0.85"/>
@@ -96,7 +114,7 @@
             android:contentDescription="Expand or collapse lyrics"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintEnd_toStartOf="@id/closeButton"
-            android:layout_marginEnd="10dp"
+            android:layout_marginEnd="8dp"
             android:alpha="0.85"/>
 
         <ImageButton
@@ -118,7 +136,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             app:barrierDirection="bottom"
-            app:constraint_referenced_ids="songInfoTextView,translateButton,expandCollapseButton,closeButton" />
+            app:constraint_referenced_ids="songInfoTextView,translateButton,retryButton,expandCollapseButton,closeButton" />
 
         <!-- Subtle separator between header and lyrics -->
         <View
@@ -146,6 +164,98 @@
             app:layout_constraintBottom_toBottomOf="parent"
             tools:listitem="@layout/item_lyric_line"
             tools:itemCount="5"/>
+
+        <LinearLayout
+            android:id="@+id/retryPanelContainer"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:clipChildren="false"
+            android:clipToPadding="false"
+            android:paddingStart="6dp"
+            android:paddingTop="0dp"
+            android:paddingEnd="2dp"
+            android:paddingBottom="2dp"
+            android:orientation="vertical"
+            android:visibility="gone"
+            app:layout_constraintTop_toBottomOf="@id/headerDivider"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/retryPromptTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:fontFamily="sans-serif-medium"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.005"
+                    android:text="Wrong or out-of-sync lyrics?"
+                    android:textColor="@android:color/white"
+                    android:textSize="17sp"
+                    android:shadowColor="#99000000"
+                    android:shadowDx="0"
+                    android:shadowDy="1"
+                    android:shadowRadius="4" />
+
+                <TextView
+                    android:id="@+id/retryCancelButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_marginEnd="-4dp"
+                    android:fontFamily="sans-serif-medium"
+                    android:gravity="center"
+                    android:minHeight="32dp"
+                    android:paddingStart="10dp"
+                    android:paddingTop="4dp"
+                    android:paddingEnd="10dp"
+                    android:paddingBottom="4dp"
+                    android:text="Back"
+                    android:textColor="#C8FFFFFF"
+                    android:textSize="13.5sp"
+                    android:shadowColor="#88000000"
+                    android:shadowDx="0"
+                    android:shadowDy="1"
+                    android:shadowRadius="3" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/retryPromptSubtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:fontFamily="sans-serif"
+                android:letterSpacing="0.01"
+                android:text="You can retry with:"
+                android:textColor="#CCFFFFFF"
+                android:textSize="14sp"
+                android:shadowColor="#88000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="3" />
+
+            <!-- Negative start margin lines the first source's icon up with the title text;
+                 each option carries its own padding as an invisible touch target. -->
+            <dev.optimus.lyricslistener.RetrySourceFlowLayout
+                android:id="@+id/retrySourcesFlowLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="-10dp"
+                android:layout_marginTop="6dp"
+                android:clipChildren="false"
+                android:clipToPadding="false" />
+
+        </LinearLayout>
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 

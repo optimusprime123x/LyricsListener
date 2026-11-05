@@ -152,4 +152,76 @@ class LyricsCacheManagerTest {
             assertEquals(TimedLyricLine(12345, "Hello"), original.lines.first())
         }
     }
+
+    @Test fun getWithMetadataReturnsSourceAndLrcRedCachedAttribution() {
+        val cache = LyricsCacheManager(temporary.newFolder())
+        assertTrue(cache.put("Alan Walker, Sorana", "Void", 191861L, synced("Void", "Into the void", 191861L), "lrc.red"))
+
+        val hit = cache.getWithMetadata("Alan Walker & Sorana", "Void", 192000L)
+        assertNotNull(hit)
+        assertEquals("lrc.red", hit!!.source)
+        val syncedData = hit.data as LyricsData.Synced
+        val attribution = syncedData.lines.last()
+        assertEquals(LyricService.ATTRIBUTION_TIMESTAMP, attribution.timestamp)
+        assertEquals("Lyrics provided by lrc.red (cached)", attribution.text)
+    }
+
+    @Test fun deleteForSongRemovesFuzzyAndToleranceMatchedCurrentSongOnly() {
+        val cache = LyricsCacheManager(temporary.newFolder())
+        assertTrue(cache.put("Alan Walker, Sorana", "Void", 191861L, synced("Void", "Wrong lyrics", 191861L), "lrclib"))
+        assertTrue(cache.put("Alan Walker", "Faded", 212000L, synced("Faded", "Where are you now", 212000L), "musixmatch"))
+
+        val deleted = cache.deleteForSong("Alan Walker & Sorana", "Void", 193000L)
+        assertEquals(1, deleted)
+        assertNull(cache.get("Alan Walker & Sorana", "Void", 191861L))
+        assertNotNull(cache.get("Alan Walker", "Faded", 212000L))
+    }
+
+    @Test fun deleteForSongWithUnknownDurationOnlyBypassesDurationForCustomLyrics() {
+        val cache = LyricsCacheManager(temporary.newFolder())
+        assertTrue(cache.put("Artist", "Song", 180000L, synced("Song", "Online", 180000L), "lrclib"))
+        assertTrue(cache.put("Artist", "Song", 200000L, synced("Song", "Custom", 200000L), "custom"))
+        assertEquals("Custom", (cache.get("Artist", "Song", 0L) as LyricsData.Synced).lines.first().text)
+
+        assertEquals(1, cache.deleteForSong("Artist", "Song", 0L))
+        assertEquals("Online", (cache.get("Artist", "Song", 180000L) as LyricsData.Synced).lines.first().text)
+        assertNull(cache.get("Artist", "Song", 200000L))
+    }
+
+    @Test fun successfulRetryReplacementRemovesOlderMatchesButKeepsOtherVersions() {
+        val cache = LyricsCacheManager(temporary.newFolder())
+        assertTrue(cache.put("Alan Walker, Sorana", "Void", 191861L, synced("Void", "Old", 191861L), "lrclib"))
+        assertTrue(cache.put("Alan Walker", "Void", 220000L, synced("Void", "Other version", 220000L), "lrclib"))
+
+        assertTrue(cache.put(
+            "Alan Walker & Sorana", "Void", 192000L, synced("Void", "Replacement", 192000L), "lrc.red",
+            replaceMatchingSong = true
+        ))
+
+        assertEquals(2, cache.getAllEntries().size)
+        assertEquals("Replacement", (cache.get("Alan Walker & Sorana", "Void", 192000L) as LyricsData.Synced).lines.first().text)
+        assertEquals("Other version", (cache.get("Alan Walker", "Void", 220000L) as LyricsData.Synced).lines.first().text)
+    }
+
+    @Test fun failedRetryReplacementKeepsPreviousLyricsAndMetadata() {
+        for (failMetadataOnly in listOf(false, true)) {
+            val directory = temporary.newFolder()
+            var failWrites = false
+            val cache = LyricsCacheManager(directory) { file, content ->
+                if (failWrites && (!failMetadataOnly || file.name == "metadata.json")) {
+                    throw IOException("Storage unavailable")
+                }
+                writeLyricsFileAtomically(file, content)
+            }
+            assertTrue(cache.put("Alan Walker, Sorana", "Void", 191861L, synced("Void", "Original", 191861L), "lrclib"))
+            val filesBefore = directory.listFiles()!!.associate { it.name to it.readText() }
+
+            failWrites = true
+            assertFalse(cache.put(
+                "Alan Walker & Sorana", "Void", 192000L, synced("Void", "Replacement", 192000L), "lrc.red",
+                replaceMatchingSong = true
+            ))
+            assertEquals(filesBefore, directory.listFiles()!!.associate { it.name to it.readText() })
+        }
+    }
 }

@@ -10,18 +10,25 @@ const _sources = [
     key: 'lyrics_source_lrclib_enabled',
     title: 'LRCLib',
     description:
-        'Open database of a large number of synced lyrics, occasionally inaccurate but fast.',
+        'Open lyrics database with fast access to a large collection of synced lyrics. Accuracy varies by song.',
   ),
   (
     key: 'lyrics_source_musixmatch_enabled',
     title: 'Musixmatch',
     description:
-        'Huge collection of accurately synced lyrics, however this might be slower and unstable.',
+        'Large collection of synced lyrics. Requests may be slower or occasionally unavailable.',
+  ),
+  (
+    key: 'lyrics_source_lrcred_enabled',
+    title: 'lrc.red',
+    description:
+        'Community catalog of synced lyrics. Word-synced lyrics are displayed line by line.',
   ),
   (
     key: 'lyrics_source_others_enabled',
     title: 'Others',
-    description: 'Tries Apple Music, Netease, Deezer for uncommon songs.',
+    description:
+        'Additional sources, including Apple Music, NetEase and Deezer, for a wider selection of songs.',
   ),
 ];
 
@@ -255,27 +262,32 @@ class _LyricsSourcesPageState extends State<LyricsSourcesPage> {
             fontWeight: FontWeight.w700,
           ),
         ),
-        subtitle: const Text('Fix inaccurate or missing lyrics'),
+        subtitle: const Text('Control lyrics sources and fix inaccuracies'),
         children: [
           const Text(
-            "Well, if you're getting inaccurate results for a song, you can fix that from here. Steps:",
+            'Choose which online sources can fetch lyrics. If the lyrics are wrong or out of sync, try another source for the current song before disabling one entirely:',
           ),
           _step(
             1,
-            'Scroll down the lyrics window to see where the lyrics were fetched from.',
+            'Tap the retry button (!) in the lyrics window and choose another enabled source. In Mini mode, long-press the lyrics to open the retry options.',
           ),
           _step(
             2,
-            'Go to Manage Lyrics, search for the song and delete the cached lyrics.',
+            'A successful retry replaces the cached lyrics for that song. If a source repeatedly gives inaccurate results, turn it off above to stop future requests.',
+          ),
+          _step(
+            3,
+            'Turning off a source keeps its cached lyrics. To remove an existing result without retrying, find the song in Manage Lyrics and delete it.',
             action: _link('Manage Lyrics', const ManageLyricsPage()),
           ),
-          _step(3, 'Disable the corresponding source above.'),
-          _step(4, '??? (play the song again)'),
-          _step(5, 'Profit'),
+          _step(
+            4,
+            'Play the song again to fetch lyrics from the remaining enabled sources.',
+          ),
           const SizedBox(height: 20),
           const Text(
-            'As long as at least one of the three sources above has correct lyrics '
-            'for your song, you can get them. If not, you can add them yourself:',
+            'If none of the enabled sources has accurate lyrics for your song, '
+            'you can add your own LRC file:',
           ),
           Align(
             alignment: AlignmentDirectional.centerStart,
@@ -322,7 +334,7 @@ class _LyricsSourcesPageState extends State<LyricsSourcesPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Choose which sources we should fetch lyrics from.',
+                                'Choose which online sources can fetch lyrics.',
                                 style: theme.textTheme.bodyLarge?.copyWith(
                                   color: colors.onSurface,
                                 ),
@@ -339,7 +351,7 @@ class _LyricsSourcesPageState extends State<LyricsSourcesPage> {
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
-                                      "Any change is auto-saved, leave these as-is unless you're sure of what you're doing.",
+                                      'Changes are saved automatically. You can turn off any source that repeatedly returns inaccurate lyrics.',
                                       style: theme.textTheme.bodySmall
                                           ?.copyWith(
                                             color: colors.onSurfaceVariant,
@@ -375,7 +387,7 @@ class _LyricsSourcesPageState extends State<LyricsSourcesPage> {
                           key: 'lyrics_source_cache',
                           title: 'Cache',
                           description:
-                              'Lyrics cached locally in your storage. This is always tried first, and cannot be disabled. Custom lyrics are saved here.',
+                              'Locally saved and custom lyrics. Always checked first, even when an online source is turned off. This cannot be disabled.',
                           icon: Icons.folder_copy_rounded,
                           accent: colors.secondaryContainer,
                           onAccent: colors.onSecondaryContainer,
@@ -420,17 +432,20 @@ class _LyricsSourcesPageState extends State<LyricsSourcesPage> {
                             icon: [
                               Icons.library_music_rounded,
                               Icons.graphic_eq_rounded,
+                              Icons.lyrics_rounded,
                               Icons.travel_explore_rounded,
                             ][i],
                             accent: [
                               colors.primaryContainer,
                               colors.tertiaryContainer,
                               colors.secondaryContainer,
+                              colors.primaryContainer,
                             ][i],
                             onAccent: [
                               colors.onPrimaryContainer,
                               colors.onTertiaryContainer,
                               colors.onSecondaryContainer,
+                              colors.onPrimaryContainer,
                             ][i],
                             corners: BorderRadius.vertical(
                               top: Radius.circular(i == 0 ? 28 : 4),
@@ -446,7 +461,7 @@ class _LyricsSourcesPageState extends State<LyricsSourcesPage> {
                           child: Text(
                             enabledCount == 0
                                 ? 'Only cached and custom lyrics will be available while all online sources are off.'
-                                : 'Changes are saved automatically and apply to the next lyrics fetch. Cached lyrics are kept.',
+                                : 'Changes apply to the next lyrics fetch. Cached lyrics are kept; use the retry button (!) to try another source for the current song.',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: colors.onSurfaceVariant,
                               height: 1.4,

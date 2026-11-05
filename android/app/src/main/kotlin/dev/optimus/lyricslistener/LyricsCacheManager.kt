@@ -48,13 +48,20 @@ class LyricsCacheManager internal constructor(
         val entries: MutableList<MetadataEntry>
     )
 
+    data class CachedLyricsResult(
+        val cacheKey: String,
+        val data: LyricsData,
+        val source: String,
+        val durationMs: Long
+    )
+
     private data class CacheFileLookupResult(
         val file: File?,
         val staleKeys: Set<String>
     )
 
     private data class CacheLookupResult(
-        val data: LyricsData?,
+        val entry: CachedLyricsResult?,
         val staleKeys: Set<String>
     )
 
@@ -82,7 +89,13 @@ class LyricsCacheManager internal constructor(
      * @return LyricsData if found in cache, null otherwise
      * Always returns null on any error to ensure fallback to network fetch
      */
-    fun get(artist: String?, title: String?, durationMs: Long): LyricsData? {
+    fun get(artist: String?, title: String?, durationMs: Long): LyricsData? =
+        getWithMetadata(artist, title, durationMs)?.data
+
+    /**
+     * Retrieves cached lyrics along with stored source/cacheKey metadata for the given song.
+     */
+    fun getWithMetadata(artist: String?, title: String?, durationMs: Long): CachedLyricsResult? {
         try {
             val normalizedArtist = normalizeString(artist ?: "")
             val normalizedTitle = normalizeString(title ?: "")
@@ -116,19 +129,26 @@ class LyricsCacheManager internal constructor(
                     return@read CacheLookupResult(null, staleKeys)
                 }
 
+                val cacheKey = matchingFile.nameWithoutExtension
                 // Update last accessed time (best effort, don't fail if this errors)
                 try {
-                    updateAccessTime(matchingFile.nameWithoutExtension)
+                    updateAccessTime(cacheKey)
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to update access time, continuing anyway", e)
                 }
 
                 Log.d(TAG, "Cache hit successfully loaded for: '$normalizedArtist' - '$normalizedTitle'")
-                return@read CacheLookupResult(cachedData, fileLookup.staleKeys)
+                val resultEntry = CachedLyricsResult(
+                    cacheKey = cacheKey,
+                    data = cachedData,
+                    source = json.optString("source", ""),
+                    durationMs = json.optLong("durationMs", durationMs)
+                )
+                return@read CacheLookupResult(resultEntry, fileLookup.staleKeys)
             }
 
             var rebuiltMetadata = false
-            if (lookupResult.data == null) {
+            if (lookupResult.entry == null) {
                 val staleness = lock.read { checkMetadataStalenessOnMissLocked() }
                 if (staleness.shouldRebuild) {
                     Log.d(
@@ -163,14 +183,21 @@ class LyricsCacheManager internal constructor(
                             return@read CacheLookupResult(null, staleKeys)
                         }
 
+                        val cacheKey = matchingFile.nameWithoutExtension
                         try {
-                            updateAccessTime(matchingFile.nameWithoutExtension)
+                            updateAccessTime(cacheKey)
                         } catch (e: Exception) {
                             Log.w(TAG, "Failed to update access time, continuing anyway", e)
                         }
 
                         Log.d(TAG, "Cache hit successfully loaded for: '$normalizedArtist' - '$normalizedTitle'")
-                        return@read CacheLookupResult(cachedData, fileLookup.staleKeys)
+                        val resultEntry = CachedLyricsResult(
+                            cacheKey = cacheKey,
+                            data = cachedData,
+                            source = json.optString("source", ""),
+                            durationMs = json.optLong("durationMs", durationMs)
+                        )
+                        return@read CacheLookupResult(resultEntry, fileLookup.staleKeys)
                     }
                 } else {
                     Log.d(TAG, "Metadata index looks current after cache miss; skipping rebuild")
@@ -183,13 +210,13 @@ class LyricsCacheManager internal constructor(
                 }
             }
 
-            if (lookupResult.data == null) {
+            if (lookupResult.entry == null) {
                 Log.d(TAG, "Cache miss for: '$normalizedArtist' - '$normalizedTitle'. Will fallback to network fetch.")
             } else if (rebuiltMetadata) {
                 Log.d(TAG, "Cache hit after metadata rebuild for: '$normalizedArtist' - '$normalizedTitle'")
             }
 
-            return lookupResult.data
+            return lookupResult.entry
         } catch (e: Exception) {
             Log.e(TAG, "Error reading from cache for '${artist ?: ""}' - '${title ?: ""}'. Will fallback to network fetch.", e)
             return null
@@ -199,10 +226,12 @@ class LyricsCacheManager internal constructor(
     /**
      * Saves lyrics to cache.
      * @param source Source/provider identifier stored for attribution and diagnostics
+     * @param replaceMatchingSong Remove older fuzzy/duration matches only after the new entry is saved
      */
     fun put(
         artist: String?, title: String?, durationMs: Long, lyrics: LyricsData, source: String,
-        replaceExactMatches: Boolean = false
+        replaceExactMatches: Boolean = false,
+        replaceMatchingSong: Boolean = false
     ): Boolean = lock.write {
         try {
             val trimmedSource = source.trim()
@@ -287,6 +316,9 @@ class LyricsCacheManager internal constructor(
             // Keep existing entries until the replacement file and metadata are committed.
             if (replaceExactMatches) {
                 deleteExactEntries(artist, title, keepCacheKey = cacheKey)
+            }
+            if (replaceMatchingSong) {
+                deleteForSong(artist, title, durationMs, keepCacheKey = cacheKey)
             }
 
             // Check cache size and evict if needed
@@ -565,6 +597,76 @@ class LyricsCacheManager internal constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error deleting entry $cacheKey", e)
             return false
+        }
+    }
+
+    /**
+     * Deletes all cached lyrics entries matching the given song (using the same fuzzy artist
+     * and ±3s duration / custom-zero-duration matching as [get]).
+     * @return Number of cached song files deleted
+     */
+    fun deleteForSong(artist: String?, title: String?, durationMs: Long): Int =
+        deleteForSong(artist, title, durationMs, keepCacheKey = null)
+
+    private fun deleteForSong(
+        artist: String?,
+        title: String?,
+        durationMs: Long,
+        keepCacheKey: String?
+    ): Int {
+        try {
+            val normalizedArtist = normalizeString(artist ?: "")
+            val normalizedTitle = normalizeString(title ?: "")
+            if (normalizedTitle.isEmpty()) return 0
+
+            ensureMetadataLoaded()
+
+            return lock.write {
+                var index = loadMetadataIndexLocked()
+                if (checkMetadataStalenessOnMissLocked().shouldRebuild) {
+                    index = rebuildMetadataIndexLocked()
+                    metadataCache = index
+                    metadataCacheLastModified = metadataFile.lastModified()
+                }
+
+                var deletedFiles = 0
+                val keysToRemove = mutableSetOf<String>()
+
+                for (entry in index.entries) {
+                    if (entry.cacheKey == keepCacheKey) continue
+                    if (entry.title != normalizedTitle || !fuzzyArtistMatch(entry.artist, normalizedArtist)) {
+                        continue
+                    }
+
+                    val file = File(cacheDir, "${entry.cacheKey}.json")
+                    if (!file.exists()) {
+                        keysToRemove.add(entry.cacheKey)
+                        continue
+                    }
+
+                    val durationMatch = Math.abs(entry.durationMs - durationMs) <= DURATION_TOLERANCE_MS
+                    val allowCustomBypass = (durationMs <= 0L || entry.durationMs <= 0L) &&
+                        isCustomSourceCacheFile(file)
+
+                    if (durationMatch || allowCustomBypass) {
+                        if (file.delete()) {
+                            deletedFiles++
+                            keysToRemove.add(entry.cacheKey)
+                            Log.d(TAG, "Deleted cached song entry '${entry.cacheKey}' for '$normalizedArtist' - '$normalizedTitle'")
+                        }
+                    }
+                }
+
+                if (keysToRemove.isNotEmpty()) {
+                    index.entries.removeAll { keysToRemove.contains(it.cacheKey) }
+                    writeMetadataIndexLocked(index)
+                }
+
+                deletedFiles
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error deleting cached entries for '${artist ?: ""}' - '${title ?: ""}'", e)
+            return 0
         }
     }
 
@@ -1037,6 +1139,7 @@ class LyricsCacheManager internal constructor(
         val displaySource = when (raw.lowercase()) {
             "musixmatch" -> "Musixmatch"
             "lrclib" -> "LRCLib"
+            "lrc.red", "lrcred" -> "lrc.red"
             else -> raw
         }
         return "Lyrics provided by $displaySource (cached)"

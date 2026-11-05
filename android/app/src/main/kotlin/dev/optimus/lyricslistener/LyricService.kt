@@ -16,6 +16,7 @@ import android.view.WindowManager
 import android.graphics.PixelFormat
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.media.MediaMetadata
 import android.media.session.MediaController
@@ -23,9 +24,11 @@ import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.view.LayoutInflater
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.widget.TextView
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.app.PendingIntent
@@ -62,15 +65,24 @@ import androidx.core.graphics.ColorUtils
 import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import androidx.palette.graphics.Palette
+import android.animation.ValueAnimator
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.PorterDuff
+import android.graphics.RectF
 import android.graphics.RenderEffect
 import android.graphics.Shader
+import android.graphics.Typeface
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
+import android.util.TypedValue
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
+import android.widget.LinearLayout
 import androidx.recyclerview.widget.LinearSmoothScroller
 import io.ktor.serialization.kotlinx.KotlinxSerializationConverter
 import kotlinx.serialization.SerialName
@@ -119,8 +131,20 @@ class LyricService : NotificationListenerService() {
     }
     private val fitLyricsWindowRunnable = Runnable { fitLyricsWindowToScreen() }
     private val lyricsWindowLayoutListener = View.OnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
-        overlayAlbumArtImageView?.let { applyOverlayArtworkTransform(it) }
+        overlayAlbumArtImageView?.let {
+            applyOverlayArtworkTransform(it)
+            applyOverlayArtworkBlurEffect(it)
+        }
         scheduleLyricsWindowFit(view)
+    }
+    private val overlayArtworkLayoutListener = View.OnLayoutChangeListener { view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+        val imageView = view as? ImageView ?: return@OnLayoutChangeListener
+        val newW = right - left
+        val newH = bottom - top
+        if (newW > 0 && newH > 0 && (newW != oldRight - oldLeft || newH != oldBottom - oldTop)) {
+            applyOverlayArtworkTransform(imageView)
+            applyOverlayArtworkBlurEffect(imageView)
+        }
     }
     // Keep track of every overlay instance so we can clean up a residual window even if the main reference drifts.
     private val knownLyricsOverlayViews = mutableSetOf<View>()
@@ -128,11 +152,18 @@ class LyricService : NotificationListenerService() {
     private var songInfoTextView: TextView? = null
     private var expandCollapseButton: ImageButton? = null
     private var translateButton: ImageButton? = null
+    private var retryButton: ImageButton? = null
     private var overlayAlbumArtImageView: ImageView? = null
     private var overlayScrimView: View? = null
     private var headerDivider: View? = null
     private var overlayContentLayout: ConstraintLayout? = null
+    private var retryPanelContainer: LinearLayout? = null
+    private var retryPromptTitle: TextView? = null
+    private var retryPromptSubtitle: TextView? = null
+    private var retryCancelButton: TextView? = null
+    private var retrySourcesFlowLayout: RetrySourceFlowLayout? = null
     private var miniTouchInterceptor: RecyclerView.OnItemTouchListener? = null
+    private var miniTouchInterceptorBoundRecyclerView: RecyclerView? = null
     private var viewMover: ViewMover? = null
     private var lyricsAdapter: LyricsAdapter? = null
     private lateinit var linearLayoutManager: LinearLayoutManager
@@ -140,6 +171,12 @@ class LyricService : NotificationListenerService() {
     private var lastDetectedSongTitle: String? = null
     private var lastDetectedSongArtist: String? = null
     @Volatile private var currentLyricsData: LyricsData? = null
+    @Volatile private var currentLyricsSource: LyricsSource? = null
+    @Volatile private var isCurrentLyricsFromCache: Boolean = false
+    private var isRetryPanelVisible: Boolean = false
+    private var lastAppliedTitleIconColor: Int = DEFAULT_STATIC_TITLE_COLOR
+    private var lastAppliedOverlayBgColor: Int = DEFAULT_STATIC_BACKGROUND_COLOR
+    private var lastAppliedRetryAccentColor: Int = DEFAULT_RETRY_ACCENT_COLOR
     private var currentSongDurationMs: Long = 0L
 
     private var serviceJob = SupervisorJob()
@@ -298,26 +335,24 @@ class LyricService : NotificationListenerService() {
     private val COLLAPSED_LYRICS_MAX_HEIGHT_DP = 100
     private lateinit var notificationManager: NotificationManager
     private val EXPANDED_LYRICS_MAX_HEIGHT_DP = 300
-    private val OVERLAY_ARTWORK_ZOOM = 1.25f
-    private val OVERLAY_ARTWORK_VERTICAL_BIAS = 0.08f
-    private val overlayArtworkColorFilter by lazy {
-        val saturationMatrix = ColorMatrix().apply { setSaturation(1.2f) }
-        val brightnessMatrix = ColorMatrix(
-            floatArrayOf(
-                0.55f, 0f, 0f, 0f, 0f,
-                0f, 0.55f, 0f, 0f, 0f,
-                0f, 0f, 0.55f, 0f, 0f,
-                0f, 0f, 0f, 1f, 0f
-            )
-        )
-        saturationMatrix.postConcat(brightnessMatrix)
-        ColorMatrixColorFilter(saturationMatrix)
-    }
+    private data class CachedArtworkDimming(
+        val bitmapIdentity: Int,
+        val bitmapGenerationId: Int,
+        val blurActive: Boolean,
+        val spec: OverlayArtworkDimming.Spec,
+        val colorFilter: ColorMatrixColorFilter,
+        val colorField: Bitmap
+    )
+    private var cachedArtworkDimming: CachedArtworkDimming? = null
+    private var lastAppliedBlurRadii: Pair<Float, Float>? = null
+    private var lastAppliedScrimState: Pair<OverlayArtworkDimming.Spec, Boolean>? = null
+    private var scrimFocusAnimator: ValueAnimator? = null
 
     private enum class LyricsProvider(val source: LyricsSource) {
         MUSIXMATCH(LyricsSource.MUSIXMATCH),
         CUSTOM(LyricsSource.OTHERS),
-        LRCLIB(LyricsSource.LRCLIB)
+        LRCLIB(LyricsSource.LRCLIB),
+        LRCRED(LyricsSource.LRCRED)
     }
 
     private data class ProviderLyricsResult(
@@ -330,7 +365,7 @@ class LyricService : NotificationListenerService() {
     @Volatile private var _listenerEverConnected = false
     @Volatile private var _listenerCurrentlyBound = false
     @Volatile private var _isAttemptingConnection = false
-    @Volatile private var wasHiddenByPausePreference = false
+    private val hideOnPauseCoordinator = HideOnPauseCoordinator()
 
     @Volatile private var currentNotificationText: String? = null
     @Volatile private var pendingDebugNotificationReset = false
@@ -461,6 +496,7 @@ class LyricService : NotificationListenerService() {
     private val DEFAULT_STATIC_TITLE_COLOR = Color.parseColor("#F0E8E8E8")
     private val DEFAULT_STATIC_BACKGROUND_COLOR = Color.parseColor("#E6181818")
     private val DEFAULT_STATIC_HIGHLIGHT_COLOR = Color.argb(85, 200, 200, 200)
+    private val DEFAULT_RETRY_ACCENT_COLOR = Color.parseColor("#7E8EFF")
 
     private fun getStoredColorPreference(
         prefs: SharedPreferences,
@@ -505,6 +541,90 @@ class LyricService : NotificationListenerService() {
         if (key == PREF_LYRICS_WINDOW_TRANSPARENCY || key == null) {
             serviceScope.launch { applyLyricsWindowTransparency() }
         }
+        if (key == PREF_HIDE_WINDOW_ON_PAUSE || key == null) {
+            mainHandler.post { applyHideWindowOnPausePreferenceChange() }
+        }
+    }
+
+    private fun isHideWindowOnPauseEnabled(): Boolean {
+        return try {
+            (appearancePreferences.all[PREF_HIDE_WINDOW_ON_PAUSE] as? Boolean)
+                ?: appearancePreferences.getBoolean(PREF_HIDE_WINDOW_ON_PAUSE, true)
+        } catch (_: Exception) {
+            true
+        }
+    }
+
+    private fun currentActiveSessionPlaybackState(): PlaybackState? {
+        val controller = activeMediaController
+        return if (controller != null && controller.sessionToken == currentMediaSessionToken) {
+            controller.playbackState ?: currentPlaybackState
+        } else {
+            currentPlaybackState
+        }
+    }
+
+    private fun isLyricsWindowCurrentlyShown(): Boolean {
+        return lyricsView != null ||
+            pendingBubbleExpansion ||
+            knownLyricsOverlayViewSnapshot().any { it.isAttachedToWindow }
+    }
+
+    private fun executeHideOnPauseAction(action: HideOnPauseCoordinator.Action, reason: String) {
+        when (action) {
+            HideOnPauseCoordinator.Action.HIDE_WINDOW -> {
+                Log.d(TAG, "Hide-on-pause ($reason): hiding lyrics window")
+                pendingBubbleExpansion = false
+                bubbleOverlay.hide()
+                hideLyricsWindow()
+            }
+            HideOnPauseCoordinator.Action.SHOW_WINDOW -> {
+                Log.d(TAG, "Hide-on-pause ($reason): re-showing lyrics window")
+                val data = currentLyricsData
+                if (data != null) {
+                    showLyricsWindow(data)
+                } else if (lastDetectedSongTitle != null) {
+                    showLyricsWindow(
+                        LyricsData.Info(
+                            lastDetectedSongTitle,
+                            lastDetectedSongArtist,
+                            "Loading lyrics...",
+                            currentSongDurationMs
+                        )
+                    )
+                }
+            }
+            HideOnPauseCoordinator.Action.NONE -> Unit
+        }
+    }
+
+    private fun syncHideOnPauseWithPlaybackState(state: PlaybackState?, reason: String) {
+        if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) return
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { syncHideOnPauseWithPlaybackState(state, reason) }
+            return
+        }
+        val action = hideOnPauseCoordinator.onPlaybackStateUpdated(
+            stateCode = state?.state,
+            hideOnPauseEnabled = isHideWindowOnPauseEnabled(),
+            isLyricsOverlayActive = overlayDisplay == OverlayDisplay.LYRICS,
+            isWindowCurrentlyShown = isLyricsWindowCurrentlyShown(),
+            hasActiveSession = currentMediaSessionToken != null && activeMediaController != null
+        )
+        executeHideOnPauseAction(action, "$reason (${stateToString(state)})")
+    }
+
+    private fun applyHideWindowOnPausePreferenceChange() {
+        if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) return
+        val effectiveState = currentActiveSessionPlaybackState()
+        val action = hideOnPauseCoordinator.onPreferenceChanged(
+            hideOnPauseEnabled = isHideWindowOnPauseEnabled(),
+            stateCode = effectiveState?.state,
+            isLyricsOverlayActive = overlayDisplay == OverlayDisplay.LYRICS,
+            isWindowCurrentlyShown = isLyricsWindowCurrentlyShown(),
+            hasActiveSession = currentMediaSessionToken != null && activeMediaController != null
+        )
+        executeHideOnPauseAction(action, "preference changed (${stateToString(effectiveState)})")
     }
 
     private fun applyLyricsWindowTransparency() {
@@ -795,7 +915,7 @@ class LyricService : NotificationListenerService() {
     private fun performStopActions() {
         Log.i(TAG, "performStopActions: Initiating service stop procedures.")
         isServiceManuallyStarted.set(false)
-        wasHiddenByPausePreference = false
+        hideOnPauseCoordinator.reset()
         cancelPendingSongContextClear("performStopActions")
         mainHandler.removeCallbacks(executeFindActiveMediaSessionsRunnable)
         cancelListenerHealthChecks("performStopActions")
@@ -807,6 +927,9 @@ class LyricService : NotificationListenerService() {
         lastDetectedSongArtist = null
         currentSongDurationMs = 0L
         currentLyricsData = null
+        currentLyricsSource = null
+        isCurrentLyricsFromCache = false
+        isRetryPanelVisible = false
         currentMediaSessionToken = null
         currentPlaybackState = null
         setMusixmatchUserToken(null)
@@ -1196,27 +1319,7 @@ class LyricService : NotificationListenerService() {
                     }
 
                     // Hide/show lyrics window on pause if the preference is enabled
-                    if (oldStateValue != state?.state) {
-                        val hideOnPause = try {
-                            applicationContext.getSharedPreferences(FLUTTER_SHARED_PREFERENCES, Context.MODE_PRIVATE)
-                                .getBoolean(PREF_HIDE_WINDOW_ON_PAUSE, true)
-                        } catch (_: Exception) { false }
-
-                        if (!nowPlaying && hideOnPause && overlayDisplay == OverlayDisplay.LYRICS) {
-                            Log.d(TAG, "Hide-on-pause: hiding lyrics window (state=${stateToString(state)})")
-                            wasHiddenByPausePreference = true
-                            pendingBubbleExpansion = false
-                            bubbleOverlay.hide()
-                            hideLyricsWindow()
-                        } else if (nowPlaying && lyricsView == null && wasHiddenByPausePreference &&
-                            overlayDisplay == OverlayDisplay.LYRICS) {
-                            Log.d(TAG, "Hide-on-pause: re-showing lyrics window (state=${stateToString(state)}, hiddenByPausePref=$wasHiddenByPausePreference)")
-                            currentLyricsData?.let {
-                                showLyricsWindow(it)
-                                wasHiddenByPausePreference = false
-                            }
-                        }
-                    }
+                    syncHideOnPauseWithPlaybackState(state, "onPlaybackStateChanged")
 
                     if (nowPlaying && refreshLyricsAfterSourceChange()) return
 
@@ -1311,9 +1414,11 @@ class LyricService : NotificationListenerService() {
             lastDetectedSongTitle = newTitle
             lastDetectedSongArtist = newArtist
             currentSongDurationMs = newDuration.coerceAtLeast(0L)
-            this.currentPlaybackState = playbackState
             isShowingTranslatedLyrics = false
             currentLyricsHasTranslation = false
+            currentLyricsSource = null
+            isCurrentLyricsFromCache = false
+            isRetryPanelVisible = false
 
             val songInfoForDisplay = newArtist?.takeIf { it.isNotBlank() }?.let { "$newTitle by $it" } ?: newTitle ?: "Unknown Song"
             updatePersistentNotification("Lyrics for: $songInfoForDisplay")
@@ -1321,6 +1426,9 @@ class LyricService : NotificationListenerService() {
             if (newTitle != null) {
                 val loadingData = LyricsData.Info(newTitle, newArtist, "Loading lyrics...", currentSongDurationMs)
                 currentLyricsData = loadingData
+                if (playbackState != null) {
+                    syncHideOnPauseWithPlaybackState(playbackState, "processMediaMetadata new song")
+                }
                 if (lyricsView != null) {
                     showLyricsWindow(loadingData)
                 }
@@ -1328,13 +1436,16 @@ class LyricService : NotificationListenerService() {
             } else {
                  Log.w(TAG, "New song detected but title is null. Cannot fetch lyrics. Token: $currentMediaSessionToken")
                  currentLyricsData = LyricsData.Info(null, newArtist, "Song title not available.", currentSongDurationMs)
+                 if (playbackState != null) {
+                     syncHideOnPauseWithPlaybackState(playbackState, "processMediaMetadata null title")
+                 }
                  if (lyricsView != null) {
                     showLyricsWindow(currentLyricsData!!)
                  }
             }
         } else {
-            if (this.currentPlaybackState != playbackState) {
-                this.currentPlaybackState = playbackState
+            if (playbackState != null) {
+                syncHideOnPauseWithPlaybackState(playbackState, "processMediaMetadata same song")
             }
             if (newDuration > 0 && newDuration != currentSongDurationMs) {
                 Log.d(TAG, "Duration updated for '$newTitle' to $newDuration ms; retrying lyrics with current metadata")
@@ -1450,6 +1561,7 @@ class LyricService : NotificationListenerService() {
                 if (mcMetadata != null && notifTitle != null && notifTitle != mcMetadata.getString(MediaMetadata.METADATA_KEY_TITLE)) {
                     Log.w(TAG, "Notification title ('$notifTitle') for $currentMediaSessionToken differs from MC title ('${mcMetadata.getString(MediaMetadata.METADATA_KEY_TITLE)}'). Re-processing MC metadata.")
                     processMediaMetadata(mcMetadata, mcPlaybackState, "NotificationUpdateTrigger (Title Discrepancy for $currentMediaSessionToken)")
+                    mcPlaybackState?.let { mediaControllerCallback?.onPlaybackStateChanged(it) }
                 } else {
                     Log.d(TAG, "Notification for active session $currentMediaSessionToken. Triggering playback state update from MC if needed.")
                     mcPlaybackState?.let { mediaControllerCallback?.onPlaybackStateChanged(it) }
@@ -1489,11 +1601,14 @@ class LyricService : NotificationListenerService() {
         val tokenThatWasActive = currentMediaSessionToken
         Log.i(TAG, "clearSongContextAndHideLyrics: Starting. Was for token: $tokenThatWasActive, Title: $lastDetectedSongTitle")
 
-        wasHiddenByPausePreference = false
+        hideOnPauseCoordinator.reset()
         lastDetectedSongTitle = null
         lastDetectedSongArtist = null
         currentSongDurationMs = 0L
         currentLyricsData = null
+        currentLyricsSource = null
+        isCurrentLyricsFromCache = false
+        isRetryPanelVisible = false
         isShowingTranslatedLyrics = false
         currentLyricsHasTranslation = false
 
@@ -1584,6 +1699,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         val sourceLabel = when (source?.trim()?.lowercase()) {
             "musixmatch" -> "Musixmatch"
             "lrclib" -> "LRCLib"
+            "lrc.red", "lrcred" -> "lrc.red"
             null, "" -> "Unknown"
             else -> source!!.trim()
         }
@@ -1594,11 +1710,24 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         }
     }
 
+    private fun inferLyricsSourceFromData(data: LyricsData?): LyricsSource? {
+        return when (data) {
+            is LyricsData.Synced -> {
+                val attributionLine = data.lines.firstOrNull { it.timestamp == ATTRIBUTION_TIMESTAMP }
+                    ?: data.translatedLines?.firstOrNull { it.timestamp == ATTRIBUTION_TIMESTAMP }
+                LyricsSource.fromAttributionText(attributionLine?.text, data.durationMs)
+            }
+            is LyricsData.MismatchInfo -> inferLyricsSourceFromData(data.originalLyricsData)
+            else -> null
+        }
+    }
+
     private fun cacheConcurrentWinnerIfEligible(
         providerResult: ProviderLyricsResult,
         requestedTitle: String,
         requestedArtist: String,
-        requestedDurationMs: Long
+        requestedDurationMs: Long,
+        replaceMatchingSong: Boolean = false
     ) {
         when (providerResult.provider) {
             LyricsProvider.MUSIXMATCH -> {
@@ -1619,7 +1748,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                                 requestedTitle,
                                 requestedDurationMs,
                                 syncedToCache,
-                                providerResult.cacheSource ?: "musixmatch"
+                                providerResult.cacheSource ?: "musixmatch",
+                                replaceMatchingSong = replaceMatchingSong
                             )
                         }
                     }
@@ -1636,7 +1766,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                                 requestedTitle,
                                 requestedDurationMs,
                                 plainToCache,
-                                providerResult.cacheSource ?: "musixmatch"
+                                providerResult.cacheSource ?: "musixmatch",
+                                replaceMatchingSong = replaceMatchingSong
                             )
                         }
                     }
@@ -1661,7 +1792,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                                 requestedTitle,
                                 durationToCache,
                                 syncedToCache,
-                                providerResult.cacheSource ?: "custom"
+                                providerResult.cacheSource ?: "custom",
+                                replaceMatchingSong = replaceMatchingSong
                             )
                         }
                     }
@@ -1686,7 +1818,34 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                                 requestedTitle,
                                 durationToCache,
                                 syncedToCache,
-                                providerResult.cacheSource ?: "lrclib"
+                                providerResult.cacheSource ?: "lrclib",
+                                replaceMatchingSong = replaceMatchingSong
+                            )
+                        }
+                    }
+                    else -> Unit
+                }
+            }
+            LyricsProvider.LRCRED -> {
+                when (val data = providerResult.data) {
+                    is LyricsData.Synced -> {
+                        val linesToCache = stripAttributionLines(data.lines).orEmpty()
+                        if (linesToCache.isNotEmpty()) {
+                            val durationToCache = if (data.durationMs > 0) data.durationMs else requestedDurationMs
+                            val syncedToCache = LyricsData.Synced(
+                                title = requestedTitle,
+                                artist = requestedArtist.ifEmpty { null },
+                                lines = linesToCache,
+                                translatedLines = null,
+                                durationMs = durationToCache
+                            )
+                            cacheManager.put(
+                                requestedArtist.ifEmpty { null },
+                                requestedTitle,
+                                durationToCache,
+                                syncedToCache,
+                                providerResult.cacheSource ?: LrcRedClient.CACHE_SOURCE,
+                                replaceMatchingSong = replaceMatchingSong
                             )
                         }
                     }
@@ -1700,7 +1859,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         title: String,
         artist: String,
         durationFromMediaMs: Long
-    ): LyricsData? = coroutineScope {
+    ): ProviderLyricsResult? = coroutineScope {
         val pendingRequests = mutableSetOf<Deferred<ProviderLyricsResult>>()
 
         if (sourceAccess.canFetch(LyricsSource.MUSIXMATCH)) {
@@ -1745,6 +1904,20 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                     allowCacheWrite = false
                 ),
                 cacheSource = "lrclib"
+            )
+        })
+
+        if (sourceAccess.canFetch(LyricsSource.LRCRED)) pendingRequests.add(async(Dispatchers.IO) {
+            ProviderLyricsResult(
+                provider = LyricsProvider.LRCRED,
+                data = searchWithLrcRed(
+                    title = title,
+                    artist = artist,
+                    durationFromMediaMs = durationFromMediaMs,
+                    enableFallbackRetries = false,
+                    allowCacheWrite = false
+                ),
+                cacheSource = LrcRedClient.CACHE_SOURCE
             )
         })
         // Plain (unsynced) lyrics are only used if no provider delivers a synced result.
@@ -1797,7 +1970,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 requestedArtist = artist,
                 requestedDurationMs = durationFromMediaMs
             )
-            return@coroutineScope providerResult.data
+            return@coroutineScope providerResult
         }
 
         heldPlainResult?.takeIf { sourceAccess.canFetch(it.provider.source) }?.let { plainResult ->
@@ -1808,7 +1981,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 requestedArtist = artist,
                 requestedDurationMs = durationFromMediaMs
             )
-            return@coroutineScope plainResult.data
+            return@coroutineScope plainResult
         }
 
         Log.d(TAG, "Initial concurrent fetch did not produce a valid result from any provider.")
@@ -1824,6 +1997,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
 
     private fun refreshLyricsForCurrentSong() {
         val title = lastDetectedSongTitle ?: return
+        isRetryPanelVisible = false
         val loading = LyricsData.Info(title, lastDetectedSongArtist, "Loading lyrics...", currentSongDurationMs)
         currentLyricsData = loading
         if (lyricsView != null) showLyricsWindow(loading)
@@ -1837,6 +2011,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         lyricsHighlightingJob?.cancel()
         currentLyricsHasTranslation = false
         isShowingTranslatedLyrics = false
+        isRetryPanelVisible = false
 
         val tokenForThisFetch = currentMediaSessionToken
         val titleForThisFetch = title
@@ -1852,14 +2027,16 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             Log.d(TAG, "Fetching lyrics for '$titleForThisFetch' by '$artistForThisFetch' (Token: $tokenForThisFetch, Media Duration: ${durationFromMediaMs}ms)")
 
             var fetchedLyricsDataLocal: LyricsData? = null
+            var resolvedSourceLocal: LyricsSource? = null
+            var resolvedFromCacheLocal = false
 
             try {
                 // Cache and locally added custom lyrics are always available, for every player.
-                val cachedLyrics = cacheManager.get(artistForThisFetch, titleForThisFetch, durationFromMediaMs)
-                if (cachedLyrics != null) {
-                    Log.d(TAG, "Cache hit for '$titleForThisFetch' by '$artistForThisFetch'")
+                val cachedResult = cacheManager.getWithMetadata(artistForThisFetch, titleForThisFetch, durationFromMediaMs)
+                if (cachedResult != null) {
+                    Log.d(TAG, "Cache hit for '$titleForThisFetch' by '$artistForThisFetch' (source=${cachedResult.source})")
                     // Update attribution to include "(cached)" and keep artist aligned with current request
-                    val preparedCachedLyrics = updateCachedLyricsForDisplay(cachedLyrics, artistForThisFetch)
+                    val preparedCachedLyrics = updateCachedLyricsForDisplay(cachedResult.data, artistForThisFetch)
                     val cachedTitle = when (preparedCachedLyrics) {
                         is LyricsData.Synced -> preparedCachedLyrics.title
                         is LyricsData.Plain -> preparedCachedLyrics.title
@@ -1875,6 +2052,11 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
 
                     if (matchesCurrentSongContextForLyrics(preparedCachedLyrics)) {
                         fetchedLyricsDataLocal = preparedCachedLyrics
+                        resolvedSourceLocal = LyricsSource.fromSourceIdentifier(
+                            cachedResult.source,
+                            cachedResult.durationMs
+                        ) ?: inferLyricsSourceFromData(preparedCachedLyrics)
+                        resolvedFromCacheLocal = true
                     } else {
                         Log.w(
                             TAG,
@@ -1885,20 +2067,46 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
 
                 if (fetchedLyricsDataLocal == null) {
                     Log.d(TAG, "Starting concurrent fetch from enabled lyrics sources.")
-                    fetchedLyricsDataLocal = fetchFirstValidLyricsFromConcurrentProviders(
+                    val concurrentWinner = fetchFirstValidLyricsFromConcurrentProviders(
                         title = titleForThisFetch,
                         artist = artistForThisFetch,
                         durationFromMediaMs = durationFromMediaMs
                     )
+                    if (concurrentWinner != null) {
+                        fetchedLyricsDataLocal = concurrentWinner.data
+                        resolvedSourceLocal = concurrentWinner.provider.source
+                        resolvedFromCacheLocal = false
+                    }
 
                     if (fetchedLyricsDataLocal == null && sourceAccess.canFetch(LyricsSource.LRCLIB)) {
                         Log.d(TAG, "Initial concurrent fetch had no valid winner. Running retry mechanisms (LRCLIB fallback retries).")
-                        fetchedLyricsDataLocal = searchWithLrcLib(
+                        val fallbackLrcLib = searchWithLrcLib(
                             title = titleForThisFetch,
                             artist = artistForThisFetch,
                             durationFromMediaMs = durationFromMediaMs,
                             enableFallbackRetries = true
                         )
+                        if (isValidInitialProviderResult(fallbackLrcLib)) {
+                            fetchedLyricsDataLocal = fallbackLrcLib
+                            resolvedSourceLocal = LyricsSource.LRCLIB
+                            resolvedFromCacheLocal = false
+                        }
+                    }
+
+                    if (fetchedLyricsDataLocal == null && sourceAccess.canFetch(LyricsSource.LRCRED)) {
+                        Log.d(TAG, "Running fallback retry for lrc.red.")
+                        val fallbackLrcRed = searchWithLrcRed(
+                            title = titleForThisFetch,
+                            artist = artistForThisFetch,
+                            durationFromMediaMs = durationFromMediaMs,
+                            enableFallbackRetries = true,
+                            allowCacheWrite = true
+                        )
+                        if (isValidInitialProviderResult(fallbackLrcRed)) {
+                            fetchedLyricsDataLocal = fallbackLrcRed
+                            resolvedSourceLocal = LyricsSource.LRCRED
+                            resolvedFromCacheLocal = false
+                        }
                     }
                 }
 
@@ -1909,6 +2117,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                         "Lyrics not found."
                     }
                     fetchedLyricsDataLocal = LyricsData.Info(titleForThisFetch, artistForThisFetch, message, durationFromMediaMs)
+                    resolvedSourceLocal = null
+                    resolvedFromCacheLocal = false
                 }
 
 
@@ -1918,6 +2128,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 }
 
                 currentLyricsData = fetchedLyricsDataLocal
+                currentLyricsSource = resolvedSourceLocal
+                isCurrentLyricsFromCache = resolvedFromCacheLocal
                 currentLyricsHasTranslation = (fetchedLyricsDataLocal as? LyricsData.Synced)?.translatedLines?.isNotEmpty() ?: false
 
                 // Update song duration from lyrics if not present from media player
@@ -1931,6 +2143,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 Log.e(TAG, "Exception fetching/processing lyrics for '$titleForThisFetch'", e)
                 if (isActive && tokenForThisFetch == currentMediaSessionToken && titleForThisFetch == lastDetectedSongTitle && artistForThisFetch == (lastDetectedSongArtist ?: "")) {
                     currentLyricsData = LyricsData.Info(titleForThisFetch, artistForThisFetch.ifEmpty { null }, "Could not load lyrics.", durationFromMediaMs.takeIf { it > 0 } ?: 0L)
+                    currentLyricsSource = null
+                    isCurrentLyricsFromCache = false
                 }
             }
 
@@ -1945,6 +2159,236 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                         }
                     } else {
                         Log.d(TAG, "Song changed or job cancelled/service stopped before lyrics for '$titleForThisFetch' could be displayed.")
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun searchWithLrcRed(
+        title: String,
+        artist: String,
+        durationFromMediaMs: Long,
+        enableFallbackRetries: Boolean = true,
+        allowCacheWrite: Boolean = true
+    ): LyricsData? {
+        val isFromYouTube = isYouTubeBasedPlayer(activeMediaController?.packageName)
+        val cleanedQuery = if (isFromYouTube) cleanYouTubeTitleForSearch(title) else null
+        val fetchResult = LrcRedClient.fetchLyrics(
+            httpClient = httpClient,
+            sourceAccess = sourceAccess,
+            title = title,
+            artist = artist,
+            durationFromMediaMs = durationFromMediaMs,
+            isFromYouTube = isFromYouTube,
+            cleanedYouTubeQuery = cleanedQuery,
+            enableFallbackRetries = enableFallbackRetries,
+            parseLrcLines = ::parseSyncedLyrics
+        ) ?: return null
+
+        if (allowCacheWrite && fetchResult.rawLinesForCache.isNotEmpty()) {
+            val lyricsToCache = LyricsData.Synced(
+                title = title,
+                artist = artist.ifEmpty { null },
+                lines = fetchResult.rawLinesForCache,
+                translatedLines = null,
+                durationMs = fetchResult.durationMs
+            )
+            cacheManager.put(
+                artist.ifEmpty { null },
+                title,
+                fetchResult.durationMs,
+                lyricsToCache,
+                LrcRedClient.CACHE_SOURCE
+            )
+        }
+
+        return fetchResult.displayLyrics
+    }
+
+    private suspend fun fetchLyricsFromSingleSource(
+        targetSource: LyricsSource,
+        title: String,
+        artist: String,
+        durationFromMediaMs: Long
+    ): ProviderLyricsResult {
+        return when (targetSource) {
+            LyricsSource.MUSIXMATCH -> {
+                if (musixmatchUserToken == null) {
+                    initializeMusixmatchToken("retry source fetch", onlyIfMissing = true).join()
+                }
+                ProviderLyricsResult(
+                    provider = LyricsProvider.MUSIXMATCH,
+                    data = searchWithMusixmatch(
+                        title = title,
+                        artist = artist,
+                        durationFromMediaMs = durationFromMediaMs,
+                        allowCacheWrite = false
+                    ),
+                    cacheSource = "musixmatch"
+                )
+            }
+            LyricsSource.LRCLIB -> {
+                ProviderLyricsResult(
+                    provider = LyricsProvider.LRCLIB,
+                    data = searchWithLrcLib(
+                        title = title,
+                        artist = artist,
+                        durationFromMediaMs = durationFromMediaMs,
+                        enableFallbackRetries = true,
+                        allowCacheWrite = false
+                    ),
+                    cacheSource = "lrclib"
+                )
+            }
+            LyricsSource.LRCRED -> {
+                ProviderLyricsResult(
+                    provider = LyricsProvider.LRCRED,
+                    data = searchWithLrcRed(
+                        title = title,
+                        artist = artist,
+                        durationFromMediaMs = durationFromMediaMs,
+                        enableFallbackRetries = true,
+                        allowCacheWrite = false
+                    ),
+                    cacheSource = LrcRedClient.CACHE_SOURCE
+                )
+            }
+            LyricsSource.OTHERS -> {
+                searchWithCustomLyricsApi(
+                    title = title,
+                    artist = artist,
+                    durationFromMediaMs = durationFromMediaMs,
+                    allowCacheWrite = false
+                )
+            }
+        }
+    }
+
+    private fun retryLyricsWithSource(targetSource: LyricsSource) {
+        if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) return
+        val title = lastDetectedSongTitle?.takeIf { it.isNotBlank() } ?: return
+        val artist = lastDetectedSongArtist ?: ""
+        val durationFromMediaMs = currentSongDurationMs
+
+        val effectiveCurrentSource = currentLyricsSource ?: inferLyricsSourceFromData(currentLyricsData)
+        if (targetSource == effectiveCurrentSource || !sourceAccess.isEnabled(targetSource)) {
+            return
+        }
+
+        Log.d(TAG, "Retrying with ${targetSource.shortLabel} (previous lyrics cached=$isCurrentLyricsFromCache)")
+        isRetryPanelVisible = false
+        lyricsFetchJob?.cancel("User initiated retry with ${targetSource.shortLabel}")
+        lastFetchSourceSelection = sourceAccess.selection()
+        lyricsHighlightingJob?.cancel()
+        currentLyricsHasTranslation = false
+        isShowingTranslatedLyrics = false
+
+        val loadingInfo = LyricsData.Info(
+            title,
+            artist.ifEmpty { null },
+            "Retrying with ${targetSource.shortLabel}...",
+            durationFromMediaMs
+        )
+        currentLyricsData = loadingInfo
+        if (lyricsView != null) {
+            showLyricsWindow(loadingInfo, preserveWindowMode = true)
+        }
+
+        val tokenForThisFetch = currentMediaSessionToken
+        val titleForThisFetch = title
+        val artistForThisFetch = artist
+
+        lyricsFetchJob = serviceScope.launch(Dispatchers.IO) {
+            if (!isActive) return@launch
+            if (tokenForThisFetch != currentMediaSessionToken ||
+                titleForThisFetch != lastDetectedSongTitle ||
+                artistForThisFetch != (lastDetectedSongArtist ?: "")
+            ) {
+                return@launch
+            }
+
+            try {
+                val providerResult = fetchLyricsFromSingleSource(
+                    targetSource = targetSource,
+                    title = titleForThisFetch,
+                    artist = artistForThisFetch,
+                    durationFromMediaMs = durationFromMediaMs
+                )
+
+                if (!isActive ||
+                    tokenForThisFetch != currentMediaSessionToken ||
+                    titleForThisFetch != lastDetectedSongTitle ||
+                    artistForThisFetch != (lastDetectedSongArtist ?: "")
+                ) {
+                    return@launch
+                }
+
+                val fetchedData = providerResult.data
+                if (isValidInitialProviderResult(fetchedData)) {
+                    // Keep the previous cache until a cacheable replacement is safely saved.
+                    cacheConcurrentWinnerIfEligible(
+                        providerResult = providerResult,
+                        requestedTitle = titleForThisFetch,
+                        requestedArtist = artistForThisFetch,
+                        requestedDurationMs = durationFromMediaMs,
+                        replaceMatchingSong = true
+                    )
+                    currentLyricsData = fetchedData
+                    currentLyricsSource = targetSource
+                    isCurrentLyricsFromCache = false
+                    currentLyricsHasTranslation =
+                        (fetchedData as? LyricsData.Synced)?.translatedLines?.isNotEmpty() ?: false
+
+                    if (currentSongDurationMs <= 0 && fetchedData != null && fetchedData.durationMs > 0) {
+                        currentSongDurationMs = fetchedData.durationMs
+                    }
+                } else {
+                    currentLyricsData = LyricsData.Info(
+                        titleForThisFetch,
+                        artistForThisFetch.ifEmpty { null },
+                        "No lyrics found on ${targetSource.shortLabel}. Tap ! to try another source.",
+                        durationFromMediaMs.takeIf { it > 0 } ?: 0L
+                    )
+                    currentLyricsSource = targetSource
+                    isCurrentLyricsFromCache = false
+                    currentLyricsHasTranslation = false
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Exception retrying lyrics from ${targetSource.shortLabel} for '$titleForThisFetch'", e)
+                if (isActive &&
+                    tokenForThisFetch == currentMediaSessionToken &&
+                    titleForThisFetch == lastDetectedSongTitle &&
+                    artistForThisFetch == (lastDetectedSongArtist ?: "")
+                ) {
+                    currentLyricsData = LyricsData.Info(
+                        titleForThisFetch,
+                        artistForThisFetch.ifEmpty { null },
+                        "Could not load lyrics from ${targetSource.shortLabel}.",
+                        durationFromMediaMs.takeIf { it > 0 } ?: 0L
+                    )
+                    currentLyricsSource = targetSource
+                    isCurrentLyricsFromCache = false
+                }
+            }
+
+            if (isActive) {
+                withContext(Dispatchers.Main.immediate) {
+                    if (!serviceJob.isCancelled &&
+                        isServiceManuallyStarted.get() &&
+                        tokenForThisFetch == currentMediaSessionToken &&
+                        titleForThisFetch == lastDetectedSongTitle &&
+                        artistForThisFetch == (lastDetectedSongArtist ?: "")
+                    ) {
+                        currentLyricsData?.let { showLyricsWindow(it, preserveWindowMode = true) }
+                        if (currentLyricsData is LyricsData.Synced &&
+                            activeMediaController?.playbackState?.state == PlaybackState.STATE_PLAYING &&
+                            activeMediaController?.sessionToken == tokenForThisFetch
+                        ) {
+                            startOrUpdateLyricsHighlighting()
+                        }
                     }
                 }
             }
@@ -2327,10 +2771,21 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         lyricsRecyclerView = view.findViewById(R.id.lyricsRecyclerView)
         expandCollapseButton = view.findViewById(R.id.expandCollapseButton)
         translateButton = view.findViewById(R.id.translateButton)
-        overlayAlbumArtImageView = view.findViewById(R.id.overlayAlbumArtImageView)
+        retryButton = view.findViewById(R.id.retryButton)
+        overlayAlbumArtImageView?.removeOnLayoutChangeListener(overlayArtworkLayoutListener)
+        overlayAlbumArtImageView = view.findViewById<ImageView>(R.id.overlayAlbumArtImageView)?.also {
+            it.addOnLayoutChangeListener(overlayArtworkLayoutListener)
+        }
+        lastAppliedBlurRadii = null
+        resetOverlayScrimState()
         overlayScrimView = view.findViewById(R.id.overlayScrimView)
         headerDivider = view.findViewById(R.id.headerDivider)
         overlayContentLayout = view.findViewById(R.id.lyricsOverlayContent)
+        retryPanelContainer = view.findViewById(R.id.retryPanelContainer)
+        retryPromptTitle = view.findViewById(R.id.retryPromptTitle)
+        retryPromptSubtitle = view.findViewById(R.id.retryPromptSubtitle)
+        retryCancelButton = view.findViewById(R.id.retryCancelButton)
+        retrySourcesFlowLayout = view.findViewById(R.id.retrySourcesFlowLayout)
         val closeButton = view.findViewById<ImageButton>(R.id.closeButton)
 
         val existingLayoutManager = lyricsRecyclerView?.layoutManager as? LinearLayoutManager
@@ -2355,7 +2810,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 val layoutParams = params ?: return@setOnClickListener
                 minimisedWindowPosition = Pair(layoutParams.x, layoutParams.y)
                 overlayDisplay = OverlayDisplay.BUBBLE
-                wasHiddenByPausePreference = false
+                hideOnPauseCoordinator.onOverlayMinimisedOrDismissed()
                 lyricsHighlightingJob?.cancel()
                 if (!bubbleOverlay.collapseFrom(getCurrentAlbumArtBitmap(), view, layoutParams) {
                         if (overlayDisplay == OverlayDisplay.BUBBLE && lyricsView === view) hideLyricsWindow()
@@ -2378,6 +2833,18 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             }
             toggleTranslation()
         }
+        retryButton?.setOnClickListener {
+            if (handleLyricsOverlayInteraction(view, "retry button")) {
+                return@setOnClickListener
+            }
+            toggleRetryPanel()
+        }
+        retryCancelButton?.setOnClickListener {
+            if (handleLyricsOverlayInteraction(view, "retry cancel button")) {
+                return@setOnClickListener
+            }
+            dismissRetryPanel()
+        }
         viewMover = ViewMover(view)
         view.setOnTouchListener(viewMover)
     }
@@ -2391,15 +2858,29 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             params = null
             windowManager = null
         }
+        miniTouchInterceptor?.let { listener ->
+            miniTouchInterceptorBoundRecyclerView?.removeOnItemTouchListener(listener)
+            lyricsRecyclerView?.removeOnItemTouchListener(listener)
+        }
+        miniTouchInterceptorBoundRecyclerView = null
+        viewMover?.cancelPendingLongPress()
+        overlayAlbumArtImageView?.removeOnLayoutChangeListener(overlayArtworkLayoutListener)
+        lastAppliedBlurRadii = null
+        resetOverlayScrimState()
         songInfoTextView = null
         lyricsRecyclerView = null
         expandCollapseButton = null
         translateButton = null
+        retryButton = null
         overlayAlbumArtImageView = null
         overlayScrimView = null
         headerDivider = null
         overlayContentLayout = null
-        miniTouchInterceptor?.let { lyricsRecyclerView?.removeOnItemTouchListener(it) }
+        retryPanelContainer = null
+        retryPromptTitle = null
+        retryPromptSubtitle = null
+        retryCancelButton = null
+        retrySourcesFlowLayout = null
         miniTouchInterceptor = null
         viewMover = null
         lyricsAdapter = null
@@ -2434,6 +2915,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         try {
             view.removeCallbacks(fitLyricsWindowRunnable)
             view.removeOnLayoutChangeListener(lyricsWindowLayoutListener)
+            view.findViewById<ImageView>(R.id.overlayAlbumArtImageView)
+                ?.removeOnLayoutChangeListener(overlayArtworkLayoutListener)
             view.setOnApplyWindowInsetsListener(null)
             currentWindowManager.removeViewImmediate(view)
             Log.d(TAG, "Detached lyrics overlay for $reason.")
@@ -2481,6 +2964,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             lyricsRecyclerView == null ||
             expandCollapseButton == null ||
             translateButton == null ||
+            retryButton == null ||
+            retryPanelContainer == null ||
             overlayAlbumArtImageView == null ||
             overlayScrimView == null ||
             lyricsAdapter == null
@@ -2665,8 +3150,22 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         val bounds = getLyricsWindowBounds()
 
         val recyclerView = lyricsRecyclerView
+        val retryPanel = retryPanelContainer
         val content = overlayContentLayout
-        if (recyclerView != null && content != null) {
+        if (isRetryPanelVisible && retryPanel != null && content != null) {
+            val headerHeight = content.top + retryPanel.top + content.paddingBottom + view.paddingBottom
+            val naturalHeight = retryPanel.height
+            val targetHeight = bounds.constrainLyricsHeight(naturalHeight, headerHeight)
+            if (targetHeight < naturalHeight) {
+                if (retryPanel.layoutParams.height != targetHeight) {
+                    retryPanel.layoutParams = retryPanel.layoutParams.apply { height = targetHeight }
+                }
+            } else if (retryPanel.layoutParams.height != ViewGroup.LayoutParams.WRAP_CONTENT) {
+                retryPanel.layoutParams = retryPanel.layoutParams.apply {
+                    height = ViewGroup.LayoutParams.WRAP_CONTENT
+                }
+            }
+        } else if (recyclerView != null && content != null) {
             val headerHeight = content.top + recyclerView.top + content.paddingBottom + view.paddingBottom
             val requestedHeight = when {
                 lyricsWindowMode == LyricsWindowMode.EXPANDED -> EXPANDED_LYRICS_MAX_HEIGHT_DP.dpToPx()
@@ -2754,6 +3253,31 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         return !simulateLegacyOverlay
     }
 
+    private fun resolveArtworkDimming(bitmap: Bitmap, blurActive: Boolean): CachedArtworkDimming {
+        val identity = System.identityHashCode(bitmap)
+        val genId = bitmap.generationId
+        cachedArtworkDimming?.let { cached ->
+            if (cached.bitmapIdentity == identity &&
+                cached.bitmapGenerationId == genId &&
+                cached.blurActive == blurActive
+            ) {
+                return cached
+            }
+        }
+        // Analyse the same colour field that is displayed so dimming matches what the user sees.
+        val colorField = OverlayArtworkColorField.build(bitmap)
+        val profile = OverlayArtworkDimming.analyzeLuminanceGrid(colorField.luminanceGrid)
+        val spec = OverlayArtworkDimming.computeSpec(profile, blurActive = blurActive)
+        return CachedArtworkDimming(
+            bitmapIdentity = identity,
+            bitmapGenerationId = genId,
+            blurActive = blurActive,
+            spec = spec,
+            colorFilter = spec.toColorFilter(),
+            colorField = colorField.bitmap
+        ).also { cachedArtworkDimming = it }
+    }
+
     private fun applyOverlayArtwork(bitmap: Bitmap?) {
         overlayAlbumArtImageView?.let { imageView ->
             if (bitmap == null || !areDynamicLyricsWindowColorsEnabled()) {
@@ -2762,48 +3286,65 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 imageView.scaleType = ImageView.ScaleType.CENTER_CROP
                 imageView.isVisible = false
                 overlayScrimView?.isVisible = false
+                resetOverlayScrimState()
+                lastAppliedBlurRadii = null
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     imageView.setRenderEffect(null)
                 }
                 return
             }
 
-            imageView.setImageBitmap(bitmap)
+            val blurActive = isBlurOverlayEffectActive()
+            val dimming = resolveArtworkDimming(bitmap, blurActive)
+
+            val currentField = (imageView.drawable as? BitmapDrawable)?.bitmap
+            if (currentField !== dimming.colorField) {
+                imageView.setImageDrawable(
+                    BitmapDrawable(resources, dimming.colorField).apply {
+                        // Smooth bilinear upscaling turns the coarse grid into soft colour blobs.
+                        isFilterBitmap = true
+                        setDither(true)
+                    }
+                )
+            }
             imageView.scaleType = ImageView.ScaleType.MATRIX
             applyOverlayArtworkTransform(imageView)
-            imageView.colorFilter = overlayArtworkColorFilter
+            imageView.colorFilter = dimming.colorFilter
             imageView.isVisible = true
+            applyOverlayArtworkBlurEffect(imageView, blurActive)
 
-            val blurActive = isBlurOverlayEffectActive()
-            if (blurActive) {
-                imageView.setRenderEffect(
-                    RenderEffect.createBlurEffect(40f, 40f, Shader.TileMode.CLAMP)
-                )
-                // Skip the dark scrim if the album art is already dark — the blur +
-                // darkening color filter already produce a sufficiently dim background.
-                val avgLuminance = estimateBitmapLuminance(bitmap)
-                overlayScrimView?.isVisible = avgLuminance > 0.3
-            } else {
-                overlayScrimView?.isVisible = true
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    imageView.setRenderEffect(null)
-                }
-            }
+            overlayScrimView?.let { scrim -> applyOverlayScrim(scrim, dimming.spec) }
         }
     }
 
-    /** Sample a down-scaled copy to cheaply estimate average perceptual luminance (0..1). */
-    private fun estimateBitmapLuminance(bitmap: Bitmap): Double {
-        val small = Bitmap.createScaledBitmap(bitmap, 24, 24, true)
-        var totalLuminance = 0.0
-        val px = small.width * small.height
-        for (y in 0 until small.height) {
-            for (x in 0 until small.width) {
-                totalLuminance += ColorUtils.calculateLuminance(small.getPixel(x, y))
-            }
+    private fun applyOverlayArtworkBlurEffect(
+        imageView: ImageView,
+        blurActive: Boolean = isBlurOverlayEffectActive()
+    ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return
         }
-        if (small !== bitmap) small.recycle()
-        return totalLuminance / px
+        if (!blurActive || !imageView.isVisible || imageView.drawable == null) {
+            if (lastAppliedBlurRadii != null) {
+                imageView.setRenderEffect(null)
+                lastAppliedBlurRadii = null
+            }
+            return
+        }
+        // Slightly softer than before so the upscaled colour grid melts into smooth blobs.
+        val radiusX = 52f
+        val radiusY = OverlayArtworkDimming.computeVerticalBlurRadiusPx(imageView.height, 52f)
+        val previous = lastAppliedBlurRadii
+        if (previous != null &&
+            kotlin.math.abs(previous.first - radiusX) < 0.5f &&
+            kotlin.math.abs(previous.second - radiusY) < 0.5f
+        ) {
+            return
+        }
+        lastAppliedBlurRadii = radiusX to radiusY
+        imageView.setRenderEffect(
+            RenderEffect.createBlurEffect(radiusX, radiusY, Shader.TileMode.CLAMP)
+        )
     }
 
     private fun applyOverlayArtworkTransform(imageView: ImageView) {
@@ -2820,26 +3361,26 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             imageView.post {
                 if (overlayAlbumArtImageView === imageView && imageView.drawable != null) {
                     applyOverlayArtworkTransform(imageView)
+                    applyOverlayArtworkBlurEffect(imageView)
                 }
             }
             return
         }
 
-        val baseScale = maxOf(viewWidth / drawableWidth, viewHeight / drawableHeight)
-        val scale = baseScale * OVERLAY_ARTWORK_ZOOM
-        val scaledWidth = drawableWidth * scale
-        val scaledHeight = drawableHeight * scale
-        val horizontalExcess = (scaledWidth - viewWidth).coerceAtLeast(0f)
-        val verticalExcess = (scaledHeight - viewHeight).coerceAtLeast(0f)
-
-        val dx = -horizontalExcess / 2f
-        val centeredDy = -verticalExcess / 2f
-        val desiredDy = centeredDy - (verticalExcess * OVERLAY_ARTWORK_VERTICAL_BIAS)
-        val dy = desiredDy.coerceIn(-verticalExcess, 0f)
+        // The drawable is the pre-trimmed colour field (see OverlayArtworkColorField), so it is
+        // mapped across the full window: every region of the cover keeps its place, and with
+        // no recognisable detail left there is nothing to look stretched in any window shape.
+        val srcRect = RectF(0f, 0f, drawableWidth, drawableHeight)
+        val bleedPx = 2.dpToPx().coerceAtLeast(2).toFloat()
+        val dstRect = RectF(
+            -bleedPx,
+            -bleedPx,
+            viewWidth + bleedPx,
+            viewHeight + bleedPx
+        )
 
         imageView.imageMatrix = Matrix().apply {
-            setScale(scale, scale)
-            postTranslate(dx, dy)
+            setRectToRect(srcRect, dstRect, Matrix.ScaleToFit.FILL)
         }
     }
 
@@ -2870,10 +3411,10 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         return allDetached
     }
 
-    private fun showLyricsWindow(data: LyricsData) {
+    private fun showLyricsWindow(data: LyricsData, preserveWindowMode: Boolean = false) {
         if (serviceJob.isCancelled || !isServiceManuallyStarted.get()) { Log.w(TAG, "showLyricsWindow: Aborting. ServiceJob cancelled or service not manually started."); return }
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            mainHandler.post { if (!serviceJob.isCancelled && isServiceManuallyStarted.get()) showLyricsWindow(data) }
+            mainHandler.post { if (!serviceJob.isCancelled && isServiceManuallyStarted.get()) showLyricsWindow(data, preserveWindowMode) }
             return
         }
         when (overlayDisplay) {
@@ -2883,8 +3424,21 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 return
             }
             OverlayDisplay.LYRICS -> {
-                if (wasHiddenByPausePreference &&
-                    activeMediaController?.playbackState?.state != PlaybackState.STATE_PLAYING) return
+                val effectiveState = currentActiveSessionPlaybackState()
+                val hasActiveSession = currentMediaSessionToken != null && activeMediaController != null
+                if (hideOnPauseCoordinator.shouldSuppressShowWindow(
+                        hasActiveSession = hasActiveSession,
+                        stateCode = effectiveState?.state,
+                        hideOnPauseEnabled = isHideWindowOnPauseEnabled(),
+                        isLyricsOverlayActive = true
+                    )
+                ) {
+                    Log.d(TAG, "showLyricsWindow: Suppressing window while playback is not active (${stateToString(effectiveState)}).")
+                    if (isLyricsWindowCurrentlyShown()) {
+                        hideLyricsWindow()
+                    }
+                    return
+                }
             }
         }
 
@@ -3001,10 +3555,12 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             }
         }
 
-        defaultLyricsWindowMode = loadDefaultLyricsWindowMode()
-        lyricsWindowMode = defaultLyricsWindowMode
-        lyricsWindowModeExpanding = true
-        translateButton?.isVisible = currentLyricsHasTranslation && lyricsWindowMode != LyricsWindowMode.MINI
+        if (!preserveWindowMode) {
+            defaultLyricsWindowMode = loadDefaultLyricsWindowMode()
+            lyricsWindowMode = defaultLyricsWindowMode
+            lyricsWindowModeExpanding = true
+        }
+        translateButton?.isVisible = currentLyricsHasTranslation && lyricsWindowMode != LyricsWindowMode.MINI && !isRetryPanelVisible
         applyOverlayArtwork(getCurrentAlbumArtBitmap())
 
         val songDisplayTitle = when (data) {
@@ -3100,11 +3656,22 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                                 val paletteHighlightColor = highlightSwatch?.rgb?.let {
                                     ColorUtils.setAlphaComponent(it, 85)
                                 } ?: finalLyricsHighlightBgColor
+                                val paletteRetryAccent = p.vibrantSwatch?.rgb
+                                    ?: p.lightVibrantSwatch?.rgb
+                                    ?: p.mutedSwatch?.rgb
+                                    ?: p.dominantSwatch?.rgb
+                                    ?: DEFAULT_RETRY_ACCENT_COLOR
 
                                 Log.d(TAG, "Palette applied. BG Light: $isBackgroundLight. OverlayBG (translucent): #${Integer.toHexString(paletteOverlayBgColor)}, Title/Icon: #${Integer.toHexString(finalPaletteTitleColor)}, LyricHighlightBG: #${Integer.toHexString(paletteHighlightColor)}")
 
                                 // Update with palette colors (this will smoothly transition from defaults to palette colors)
-                                applyThemeToOverlayElements(paletteOverlayBgColor, finalPaletteTitleColor, finalLyricsTextColor, paletteHighlightColor)
+                                applyThemeToOverlayElements(
+                                    paletteOverlayBgColor,
+                                    finalPaletteTitleColor,
+                                    finalLyricsTextColor,
+                                    paletteHighlightColor,
+                                    paletteRetryAccent
+                                )
                             } ?: Log.d(TAG, "Palette object was null. Keeping defaults.")
                         }
                     } else {
@@ -3192,8 +3759,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                  lyricsAdapter?.updateLyrics(listOf(TimedLyricLine(0,"Error displaying lyrics (mismatch type).")), false)
             }
         }
-        lyricsRecyclerView?.isVisible = true
-        wasHiddenByPausePreference = false
+        lyricsRecyclerView?.isVisible = !isRetryPanelVisible
+        hideOnPauseCoordinator.onWindowShown()
 
         applyLyricsWindowMode()
         if (dataToDisplayForAdapter is LyricsData.Synced &&
@@ -3203,7 +3770,16 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             startOrUpdateLyricsHighlighting()
         }
     }
-    private fun applyThemeToOverlayElements(overlayBgColor: Int, titleIconColor: Int, lyricTextColor: Int, lyricHighlightBgColor: Int ) {
+    private fun applyThemeToOverlayElements(
+        overlayBgColor: Int,
+        titleIconColor: Int,
+        lyricTextColor: Int,
+        lyricHighlightBgColor: Int,
+        retryAccentColor: Int = DEFAULT_RETRY_ACCENT_COLOR
+    ) {
+        lastAppliedTitleIconColor = titleIconColor
+        lastAppliedOverlayBgColor = overlayBgColor
+        lastAppliedRetryAccentColor = retryAccentColor
         lyricsView?.let { view ->
             val bgDrawable = view.background?.mutate()
             if (bgDrawable is GradientDrawable) {
@@ -3221,8 +3797,10 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         songInfoTextView?.setTextColor(titleIconColor)
 
         translateButton?.setColorFilter(titleIconColor, PorterDuff.Mode.SRC_IN)
+        retryButton?.setColorFilter(titleIconColor, PorterDuff.Mode.SRC_IN)
         expandCollapseButton?.setColorFilter(titleIconColor, PorterDuff.Mode.SRC_IN)
         lyricsView?.findViewById<ImageButton>(R.id.closeButton)?.setColorFilter(titleIconColor, PorterDuff.Mode.SRC_IN)
+        styleRetryPanelElements(titleIconColor)
 
         lyricsAdapter?.updateThemeColors(
             normalLineTextColor = lyricTextColor,
@@ -3230,6 +3808,244 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             highlightedLineBackgroundColor = lyricHighlightBgColor,
             showHighlightedLineBackground = !areDynamicLyricsWindowColorsEnabled()
         )
+    }
+
+    /**
+     * Press-only feedback for the box-free retry flow: a soft rounded ripple that only
+     * appears while touched (no resting background) plus a gentle M3 Expressive scale spring.
+     */
+    private fun applyTextOnlyPressFeedback(view: View, rippleTint: Int) {
+        val mask = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 14.dpToPx().toFloat()
+            setColor(Color.WHITE)
+        }
+        view.background = RippleDrawable(
+            ColorStateList.valueOf(ColorUtils.setAlphaComponent(rippleTint, 46)),
+            null,
+            mask
+        )
+        view.setOnTouchListener { v, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> v.animate()
+                    .scaleX(0.94f)
+                    .scaleY(0.94f)
+                    .setStartDelay(0L)
+                    .setDuration(100L)
+                    .setInterpolator(DecelerateInterpolator())
+                    .start()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate()
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .setStartDelay(0L)
+                    .setDuration(260L)
+                    .setInterpolator(OvershootInterpolator(2f))
+                    .start()
+            }
+            // Return false so standard click & ripple handling proceed normally.
+            false
+        }
+    }
+
+    private fun updateRetryButtonAppearance() {
+        // Same borderless treatment as the expand/collapse and close controls; the open
+        // state only brightens the icon so the header row stays visually consistent.
+        retryButton?.alpha = if (isRetryPanelVisible) 1.0f else 0.85f
+    }
+
+    private fun styleRetryPanelElements(titleIconColor: Int = lastAppliedTitleIconColor) {
+        updateRetryButtonAppearance()
+
+        // Typography-led panel: no containers. Readability comes from the deeper artwork
+        // scrim applied while the panel is open (see applyOverlayScrim) and text shadows.
+        retryPanelContainer?.background = null
+        retryPromptTitle?.setTextColor(ColorUtils.setAlphaComponent(titleIconColor, 255))
+        retryPromptSubtitle?.setTextColor(ColorUtils.setAlphaComponent(titleIconColor, 204))
+        retryCancelButton?.let { cancelBtn ->
+            cancelBtn.setTextColor(ColorUtils.setAlphaComponent(titleIconColor, 200))
+            applyTextOnlyPressFeedback(cancelBtn, titleIconColor)
+        }
+        if (isRetryPanelVisible) {
+            populateRetrySourceOptions(titleIconColor)
+        }
+    }
+
+    private fun populateRetrySourceOptions(
+        titleIconColor: Int = lastAppliedTitleIconColor,
+        animateEntrance: Boolean = false
+    ) {
+        val flowLayout = retrySourcesFlowLayout ?: return
+        val activeOverlay = lyricsView ?: return
+        val activeSource = currentLyricsSource ?: inferLyricsSourceFromData(currentLyricsData)
+        val options = sourceAccess.retryOptions(activeSource)
+
+        retryPromptSubtitle?.text = if (options.any { it.isTappable }) {
+            "You can retry with:"
+        } else {
+            "Enable another source in Settings > Lyrics > Lyrics Sources to retry."
+        }
+
+        flowLayout.removeAllViews()
+        // Each option carries its own padding as an invisible touch target, so only a
+        // small gap is needed between them.
+        flowLayout.horizontalSpacingPx = 2.dpToPx()
+        flowLayout.verticalSpacingPx = 0
+        val horizontalPad = 10.dpToPx()
+        val verticalPad = 8.dpToPx()
+        val iconSize = 17.dpToPx()
+        val shadowColor = Color.argb(150, 0, 0, 0)
+
+        options.forEachIndexed { index, option ->
+            val contentAlpha = if (option.isTappable) 255 else 128
+            val icon = getDrawable(
+                if (option.isCurrent) R.drawable.ic_round_check_18 else R.drawable.ic_round_refresh_18
+            )?.mutate()?.apply {
+                setBounds(0, 0, iconSize, iconSize)
+                setTint(ColorUtils.setAlphaComponent(titleIconColor, if (option.isTappable) 235 else 128))
+            }
+            val optionView = TextView(this).apply {
+                text = option.displayText
+                maxLines = 1
+                gravity = Gravity.CENTER_VERTICAL
+                minHeight = 40.dpToPx()
+                setPadding(horizontalPad, verticalPad, horizontalPad + 2.dpToPx(), verticalPad)
+                setCompoundDrawablesRelative(icon, null, null, null)
+                compoundDrawablePadding = 7.dpToPx()
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15.5f)
+                letterSpacing = 0.01f
+                setTextColor(ColorUtils.setAlphaComponent(titleIconColor, contentAlpha))
+                setShadowLayer(4f, 0f, 1f, shadowColor)
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+
+                if (option.isTappable) {
+                    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                    contentDescription = "Retry lyrics with ${option.source.shortLabel}"
+                    isClickable = true
+                    isFocusable = true
+                    applyTextOnlyPressFeedback(this, titleIconColor)
+                    setOnClickListener {
+                        if (handleLyricsOverlayInteraction(activeOverlay, "retry source ${option.source.shortLabel}")) {
+                            return@setOnClickListener
+                        }
+                        retryLyricsWithSource(option.source)
+                    }
+                } else {
+                    // Current source: greyed out with a check mark and "(current)" label.
+                    typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+                    isEnabled = false
+                    isClickable = false
+                }
+            }
+            if (animateEntrance) {
+                optionView.alpha = 0f
+                optionView.translationY = 6.dpToPx().toFloat()
+                optionView.animate()
+                    .alpha(1f)
+                    .translationY(0f)
+                    .setStartDelay((60L + index * 35L).coerceAtMost(200L))
+                    .setDuration(220L)
+                    .setInterpolator(DecelerateInterpolator(1.6f))
+                    .start()
+            }
+            flowLayout.addView(optionView)
+        }
+    }
+
+    /**
+     * Applies the regional artwork scrim. While the retry panel is open the scrim is deepened
+     * (animated) so the box-free retry text stays legible over any artwork.
+     */
+    private fun applyOverlayScrim(scrim: View, spec: OverlayArtworkDimming.Spec) {
+        val focusBoost = isRetryPanelVisible
+        val previous = lastAppliedScrimState
+        if (previous != null && previous.first == spec && previous.second == focusBoost) {
+            return
+        }
+        val target = if (focusBoost) spec.withFocusBoost() else spec
+        val animateFocusChange = previous != null && previous.first == spec && scrim.isAttachedToWindow
+        lastAppliedScrimState = spec to focusBoost
+        scrimFocusAnimator?.cancel()
+        scrimFocusAnimator = null
+
+        if (animateFocusChange) {
+            val from = if (focusBoost) spec else spec.withFocusBoost()
+            val drawable = from.toScrimDrawable()
+            scrim.background = drawable
+            scrim.isVisible = true
+            scrimFocusAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 240L
+                interpolator = DecelerateInterpolator()
+                addUpdateListener { anim ->
+                    val t = anim.animatedFraction
+                    val top = (from.topScrimAlpha + (target.topScrimAlpha - from.topScrimAlpha) * t).toInt()
+                    val bottom = (from.bottomScrimAlpha + (target.bottomScrimAlpha - from.bottomScrimAlpha) * t).toInt()
+                    drawable.colors = intArrayOf(
+                        Color.argb(top.coerceIn(0, 255), 0, 0, 0),
+                        Color.argb(bottom.coerceIn(0, 255), 0, 0, 0)
+                    )
+                }
+                start()
+            }
+        } else if (target.maxScrimAlpha > 0) {
+            scrim.background = target.toScrimDrawable()
+            scrim.isVisible = true
+        } else {
+            scrim.background = null
+            scrim.isVisible = false
+        }
+    }
+
+    private fun resetOverlayScrimState() {
+        scrimFocusAnimator?.cancel()
+        scrimFocusAnimator = null
+        lastAppliedScrimState = null
+    }
+
+    private fun dismissRetryPanel() {
+        if (!isRetryPanelVisible) return
+        isRetryPanelVisible = false
+        applyLyricsWindowMode()
+        val highlighted = lyricsAdapter?.getCurrentHighlightedPosition() ?: -1
+        if (highlighted >= 0 && ::linearLayoutManager.isInitialized) {
+            lyricsRecyclerView?.post {
+                if (::linearLayoutManager.isInitialized) {
+                    linearLayoutManager.scrollToPosition(highlighted)
+                }
+            }
+        }
+    }
+
+    private fun toggleRetryPanel() {
+        val title = lastDetectedSongTitle?.takeIf { it.isNotBlank() } ?: return
+        if (isRetryPanelVisible) {
+            dismissRetryPanel()
+        } else {
+            isRetryPanelVisible = true
+            if (songInfoTextView?.text.isNullOrBlank()) {
+                val artist = lastDetectedSongArtist
+                songInfoTextView?.text = artist?.takeIf { it.isNotBlank() }?.let { "$title - $it" } ?: title
+            }
+            styleRetryPanelElements(lastAppliedTitleIconColor)
+            populateRetrySourceOptions(lastAppliedTitleIconColor, animateEntrance = true)
+            applyLyricsWindowMode()
+            retryPanelContainer?.let { panel ->
+                panel.animate().cancel()
+                panel.alpha = 0f
+                panel.scaleX = 1f
+                panel.scaleY = 1f
+                panel.translationY = 4.dpToPx().toFloat()
+                // Calm, non-overshooting reveal; the source options then stagger in.
+                panel.animate()
+                    .alpha(1f)
+                    .translationY(0f)
+                    .setDuration(200L)
+                    .setInterpolator(DecelerateInterpolator(1.5f))
+                    .start()
+            }
+        }
     }
 
     /**
@@ -3328,11 +4144,22 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                         val paletteHighlightColor = highlightSwatch?.rgb?.let {
                             ColorUtils.setAlphaComponent(it, 85)
                         } ?: DEFAULT_STATIC_HIGHLIGHT_COLOR
+                        val paletteRetryAccent = p.vibrantSwatch?.rgb
+                            ?: p.lightVibrantSwatch?.rgb
+                            ?: p.mutedSwatch?.rgb
+                            ?: p.dominantSwatch?.rgb
+                            ?: DEFAULT_RETRY_ACCENT_COLOR
 
                         Log.d(TAG, "updateLyricsWindowColors: Palette colors extracted and applied. BG: #${Integer.toHexString(paletteOverlayBgColor)}, Title: #${Integer.toHexString(finalPaletteTitleColor)}, Highlight: #${Integer.toHexString(paletteHighlightColor)}")
 
                         // Update with palette colors
-                        applyThemeToOverlayElements(paletteOverlayBgColor, finalPaletteTitleColor, finalLyricsTextColor, paletteHighlightColor)
+                        applyThemeToOverlayElements(
+                            paletteOverlayBgColor,
+                            finalPaletteTitleColor,
+                            finalLyricsTextColor,
+                            paletteHighlightColor,
+                            paletteRetryAccent
+                        )
                     } ?: Log.d(TAG, "updateLyricsWindowColors: Palette object was null")
                 }
             } else {
@@ -3356,6 +4183,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     }
     
     private fun cycleLyricsWindowMode() {
+        isRetryPanelVisible = false
         when (lyricsWindowMode) {
             LyricsWindowMode.MINI -> {
                 lyricsWindowMode = LyricsWindowMode.COMPACT
@@ -3396,17 +4224,37 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         }
     }
 
+    private fun isMiniLongPressRetryEligible(): Boolean {
+        val isMini = lyricsWindowMode == LyricsWindowMode.MINI
+        val isSynced = lyricsAdapter?.isSynced() ?: false
+        val hasActiveSong = !lastDetectedSongTitle.isNullOrBlank()
+        return isMini && isSynced && !isRetryPanelVisible && hasActiveSong
+    }
+
     private fun applyLyricsWindowMode() {
         val isMini = lyricsWindowMode == LyricsWindowMode.MINI
         val isSynced = lyricsAdapter?.isSynced() ?: false
-        // Mini mode only applies to synced lyrics — fall back to compact for plain
-        val effectiveMode = if (isMini && !isSynced) LyricsWindowMode.COMPACT else lyricsWindowMode
+        val hasActiveSong = !lastDetectedSongTitle.isNullOrBlank()
+        if (!hasActiveSong && isRetryPanelVisible) {
+            isRetryPanelVisible = false
+        }
+        // Mini mode only applies to synced lyrics when the retry panel is closed —
+        // fall back to compact for plain/info lyrics or while choosing a retry source.
+        val effectiveMode = if (isMini && (!isSynced || isRetryPanelVisible)) {
+            LyricsWindowMode.COMPACT
+        } else {
+            lyricsWindowMode
+        }
         val isMiniEffective = effectiveMode == LyricsWindowMode.MINI
 
-        // Header visibility — in mini mode, hide song info, translate, and divider entirely
+        // Set child visibilities BEFORE ConstraintSet.clone(layout) so ConstraintSet preserves them.
         songInfoTextView?.visibility = if (isMiniEffective) View.GONE else View.VISIBLE
-        translateButton?.visibility = if (!isMiniEffective && currentLyricsHasTranslation) View.VISIBLE else View.GONE
+        translateButton?.visibility = if (!isMiniEffective && currentLyricsHasTranslation && !isRetryPanelVisible) View.VISIBLE else View.GONE
+        retryButton?.visibility = if (!isMiniEffective && hasActiveSong) View.VISIBLE else View.GONE
         headerDivider?.visibility = if (isMiniEffective) View.GONE else View.VISIBLE
+        lyricsRecyclerView?.visibility = if (isRetryPanelVisible) View.GONE else View.VISIBLE
+        retryPanelContainer?.visibility = if (isRetryPanelVisible) View.VISIBLE else View.GONE
+        updateRetryButtonAppearance()
 
         // Reposition buttons and RecyclerView via ConstraintSet for mini mode
         overlayContentLayout?.let { layout ->
@@ -3420,7 +4268,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 cs.clear(R.id.closeButton, ConstraintSet.TOP)
                 cs.connect(R.id.closeButton, ConstraintSet.TOP, R.id.lyricsRecyclerView, ConstraintSet.TOP)
                 cs.connect(R.id.closeButton, ConstraintSet.BOTTOM, R.id.lyricsRecyclerView, ConstraintSet.BOTTOM)
-                // RecyclerView starts at parent top, ends before buttons so text doesn't overlap
+                // RecyclerView starts at parent top, ends before expand/collapse button so text doesn't overlap
                 cs.connect(R.id.lyricsRecyclerView, ConstraintSet.TOP, ConstraintSet.PARENT_ID, ConstraintSet.TOP)
                 cs.setMargin(R.id.lyricsRecyclerView, ConstraintSet.TOP, 0)
                 cs.connect(R.id.lyricsRecyclerView, ConstraintSet.END, R.id.expandCollapseButton, ConstraintSet.START)
@@ -3429,6 +4277,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 layout.setPadding(layout.paddingStart, 8.dpToPx(), layout.paddingEnd, 6.dpToPx())
             } else {
                 // Restore buttons to parent top
+                cs.clear(R.id.retryButton, ConstraintSet.BOTTOM)
+                cs.connect(R.id.retryButton, ConstraintSet.TOP, ConstraintSet.PARENT_ID, ConstraintSet.TOP)
                 cs.clear(R.id.expandCollapseButton, ConstraintSet.BOTTOM)
                 cs.connect(R.id.expandCollapseButton, ConstraintSet.TOP, ConstraintSet.PARENT_ID, ConstraintSet.TOP)
                 cs.clear(R.id.closeButton, ConstraintSet.BOTTOM)
@@ -3444,24 +4294,39 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             cs.applyTo(layout)
         }
 
-        // In mini mode, disable RV scrolling so touch events fall through to ViewMover for drag
+        // In mini mode, disable RV scrolling so touch events forward to ViewMover for drag & long-press retry
         if (isMiniEffective) {
             if (miniTouchInterceptor == null) {
                 miniTouchInterceptor = object : RecyclerView.OnItemTouchListener {
-                    override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent) = true
+                    override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
+                        if (e.actionMasked == MotionEvent.ACTION_DOWN) {
+                            lyricsView?.let { viewMover?.onTouch(it, e) }
+                        }
+                        return true
+                    }
                     override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) {
-                        // Forward to ViewMover directly for window dragging
-                        lyricsView?.let { viewMover?.onTouch(it, e) }
+                        if (e.actionMasked != MotionEvent.ACTION_DOWN) {
+                            // Forward subsequent touch events to ViewMover for window dragging / long-press tracking
+                            lyricsView?.let { viewMover?.onTouch(it, e) }
+                        }
                     }
                     override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {}
                 }
             }
-            miniTouchInterceptor?.let { listener ->
-                lyricsRecyclerView?.removeOnItemTouchListener(listener)
-                lyricsRecyclerView?.addOnItemTouchListener(listener)
+            val rv = lyricsRecyclerView
+            val listener = miniTouchInterceptor
+            if (rv != null && listener != null && miniTouchInterceptorBoundRecyclerView !== rv) {
+                miniTouchInterceptorBoundRecyclerView?.removeOnItemTouchListener(listener)
+                rv.addOnItemTouchListener(listener)
+                miniTouchInterceptorBoundRecyclerView = rv
             }
         } else {
-            miniTouchInterceptor?.let { lyricsRecyclerView?.removeOnItemTouchListener(it) }
+            viewMover?.cancelPendingLongPress()
+            miniTouchInterceptor?.let { listener ->
+                miniTouchInterceptorBoundRecyclerView?.removeOnItemTouchListener(listener)
+                lyricsRecyclerView?.removeOnItemTouchListener(listener)
+            }
+            miniTouchInterceptorBoundRecyclerView = null
         }
 
         // RecyclerView height
@@ -3646,9 +4511,14 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         }
     }
     private fun reopenLyricsWindow(animateFromBubble: Boolean = false) {
+        isRetryPanelVisible = false
         pendingBubbleExpansion = animateFromBubble && bubbleOverlay.isShowing
         overlayDisplay = OverlayDisplay.LYRICS
-        wasHiddenByPausePreference = false
+        val effectiveState = currentActiveSessionPlaybackState()
+        hideOnPauseCoordinator.onManualReopen(
+            hasActiveSession = currentMediaSessionToken != null && activeMediaController != null,
+            stateCode = effectiveState?.state
+        )
         if (!pendingBubbleExpansion) bubbleOverlay.hide()
         val dataToShow = currentLyricsData ?: LyricsData.Info(
             lastDetectedSongTitle, lastDetectedSongArtist,
@@ -3671,7 +4541,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         pendingBubbleExpansion = false
         overlayDisplay = OverlayDisplay.HIDDEN
         minimisedWindowPosition = null
-        wasHiddenByPausePreference = false
+        hideOnPauseCoordinator.onOverlayMinimisedOrDismissed()
         bubbleOverlay.dismiss()
         hideLyricsWindow()
     }
@@ -3681,6 +4551,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             mainHandler.post { hideLyricsWindow() }
             return
         }
+        isRetryPanelVisible = false
+        viewMover?.cancelPendingLongPress()
         if (pendingBubbleExpansion) {
             pendingBubbleExpansion = false
             bubbleOverlay.hide()
@@ -4168,36 +5040,91 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     private inner class ViewMover(private val targetView: View) : View.OnTouchListener {
         private var initialX: Int = 0; private var initialY: Int = 0
         private var initialTouchX: Float = 0f; private var initialTouchY: Float = 0f
-        private val touchSlop by lazy { android.view.ViewConfiguration.get(applicationContext).scaledTouchSlop }
+        private var dragStartWindowX: Int = 0; private var dragStartWindowY: Int = 0
+        private var dragStartTouchX: Float = 0f; private var dragStartTouchY: Float = 0f
+        private val touchSlop by lazy { ViewConfiguration.get(applicationContext).scaledTouchSlop }
         private var isDragging = false
+        private var longPressTriggered = false
+        private var lastScheduledDownTime: Long = -1L
+
+        private val miniLongPressRunnable = Runnable {
+            if (!isDragging &&
+                lyricsView === targetView &&
+                targetView.isAttachedToWindow &&
+                isMiniLongPressRetryEligible()
+            ) {
+                longPressTriggered = true
+                targetView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                toggleRetryPanel()
+            }
+        }
+
+        fun cancelPendingLongPress() {
+            mainHandler.removeCallbacks(miniLongPressRunnable)
+        }
 
         override fun onTouch(v: View, event: MotionEvent): Boolean {
-            if (event.action == MotionEvent.ACTION_DOWN || lyricsView !== targetView) {
+            val action = event.actionMasked
+            if (action == MotionEvent.ACTION_DOWN || lyricsView !== targetView) {
                 if (handleLyricsOverlayInteraction(targetView, "drag")) {
+                    cancelPendingLongPress()
                     return true
                 }
             }
 
             val currentParams = this@LyricService.params ?: return false
             val currentWindowManager = this@LyricService.windowManager ?: return false
-            if (!targetView.isAttachedToWindow) return false
+            if (!targetView.isAttachedToWindow) {
+                cancelPendingLongPress()
+                return false
+            }
 
-            when (event.action) {
+            when (action) {
                 MotionEvent.ACTION_DOWN -> {
                     initialX = currentParams.x; initialY = currentParams.y
                     initialTouchX = event.rawX; initialTouchY = event.rawY
-                    isDragging = false; return true
+                    dragStartWindowX = initialX; dragStartWindowY = initialY
+                    dragStartTouchX = initialTouchX; dragStartTouchY = initialTouchY
+                    isDragging = false
+                    longPressTriggered = false
+                    if (event.downTime != lastScheduledDownTime) {
+                        lastScheduledDownTime = event.downTime
+                        cancelPendingLongPress()
+                        if (isMiniLongPressRetryEligible()) {
+                            mainHandler.postDelayed(
+                                miniLongPressRunnable,
+                                ViewConfiguration.getLongPressTimeout().toLong()
+                            )
+                        }
+                    }
+                    return true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = event.rawX - initialTouchX; val dy = event.rawY - initialTouchY
-                    if (!isDragging && (kotlin.math.abs(dx) > touchSlop || kotlin.math.abs(dy) > touchSlop)) {
+                    if (longPressTriggered) {
+                        return true
+                    }
+                    // Compare physical screen coordinates (rawX/rawY) so window resizing when
+                    // Mini lyric lines grow or shrink never falsely cancels a long-press.
+                    val dxFromDown = event.rawX - initialTouchX
+                    val dyFromDown = event.rawY - initialTouchY
+                    if (!isDragging && (dxFromDown * dxFromDown + dyFromDown * dyFromDown) > touchSlop * touchSlop) {
                         isDragging = true
+                        cancelPendingLongPress()
+                        dragStartWindowX = currentParams.x
+                        dragStartWindowY = currentParams.y
+                        dragStartTouchX = event.rawX
+                        dragStartTouchY = event.rawY
                         v.parent?.requestDisallowInterceptTouchEvent(true)
                     }
                     if (isDragging) {
+                        val dragDx = (event.rawX - dragStartTouchX).toInt()
+                        val dragDy = (event.rawY - dragStartTouchY).toInt()
                         val bounds = getLyricsWindowBounds()
                         val (x, y) = bounds.constrainPosition(
-                            initialX + dx.toInt(), initialY + dy.toInt(), targetView.width, targetView.height
+                            dragStartWindowX + dragDx,
+                            dragStartWindowY + dragDy,
+                            targetView.width,
+                            targetView.height
                         )
                         currentParams.x = x
                         currentParams.y = y
@@ -4207,6 +5134,12 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                     return true
                 }
                 MotionEvent.ACTION_UP -> {
+                    cancelPendingLongPress()
+                    lastScheduledDownTime = -1L
+                    if (longPressTriggered) {
+                        longPressTriggered = false
+                        return true
+                    }
                     if (isDragging) {
                         v.parent?.requestDisallowInterceptTouchEvent(false)
                         isDragging = false
@@ -4216,6 +5149,9 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                     return false
                 }
                 MotionEvent.ACTION_CANCEL -> {
+                    cancelPendingLongPress()
+                    lastScheduledDownTime = -1L
+                    longPressTriggered = false
                     val wasDragging = isDragging
                     v.parent?.requestDisallowInterceptTouchEvent(false)
                     isDragging = false
