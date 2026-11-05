@@ -565,9 +565,9 @@ class LyricService : NotificationListenerService() {
     }
 
     private fun isLyricsWindowCurrentlyShown(): Boolean {
-        return lyricsView != null ||
+        return lyricsView?.let(::isLyricsOverlayWindowManaged) == true ||
             pendingBubbleExpansion ||
-            knownLyricsOverlayViewSnapshot().any { it.isAttachedToWindow }
+            knownLyricsOverlayViewSnapshot().any(::isLyricsOverlayWindowManaged)
     }
 
     private fun executeHideOnPauseAction(action: HideOnPauseCoordinator.Action, reason: String) {
@@ -2893,6 +2893,12 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         return views.distinct()
     }
 
+    private fun isLyricsOverlayWindowManaged(view: View): Boolean {
+        // addView() can return before isAttachedToWindow becomes true. Its ViewRootImpl
+        // parent already exists then, so keep updating/tracking the root until removal.
+        return OverlayWindowLifecycle.isManaged(view.isAttachedToWindow, view.parent != null)
+    }
+
     private fun syncLyricsOverlayBinding(view: View) {
         lyricsView = view
         knownLyricsOverlayViews.add(view)
@@ -2903,7 +2909,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     }
 
     private fun detachLyricsOverlayView(view: View, reason: String): Boolean {
-        if (!view.isAttachedToWindow && view.parent == null) {
+        if (!isLyricsOverlayWindowManaged(view)) {
             knownLyricsOverlayViews.remove(view)
             return true
         }
@@ -2926,7 +2932,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             Log.e(TAG, "Error detaching lyrics overlay during $reason", e)
         }
 
-        if (!view.isAttachedToWindow) {
+        if (!isLyricsOverlayWindowManaged(view)) {
             knownLyricsOverlayViews.remove(view)
             return true
         }
@@ -2935,26 +2941,23 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     }
 
     private fun pruneDuplicateLyricsOverlayViews(reason: String, preferredView: View? = lyricsView): View? {
-        val attachedViews = knownLyricsOverlayViewSnapshot().filter { it.isAttachedToWindow }
-        if (attachedViews.isEmpty()) {
-            knownLyricsOverlayViews.removeAll { !it.isAttachedToWindow }
-            return null
-        }
+        val selection = OverlayWindowLifecycle.select(
+            views = knownLyricsOverlayViewSnapshot(),
+            preferredView = preferredView,
+            isManaged = ::isLyricsOverlayWindowManaged
+        )
+        knownLyricsOverlayViews.removeAll(selection.detached.toSet())
+        val survivingView = selection.survivor ?: return null
 
-        val survivingView = when {
-            preferredView?.isAttachedToWindow == true -> preferredView
-            else -> attachedViews.lastOrNull()
-        } ?: return null
-
-        val duplicateViews = attachedViews.filter { it !== survivingView }
+        val duplicateViews = selection.duplicates
         if (duplicateViews.isNotEmpty()) {
             Log.w(TAG, "Pruning ${duplicateViews.size} duplicate lyrics overlay(s) during $reason.")
         }
 
-        var attachedDuplicateRemains = false
+        var managedDuplicateRemains = false
         duplicateViews.forEach { duplicateView ->
             if (!detachLyricsOverlayView(duplicateView, "$reason duplicate cleanup")) {
-                attachedDuplicateRemains = true
+                managedDuplicateRemains = true
             }
         }
 
@@ -2976,8 +2979,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             syncLyricsOverlayBinding(survivingView)
         }
 
-        if (attachedDuplicateRemains) {
-            Log.w(TAG, "At least one duplicate lyrics overlay remained attached during $reason.")
+        if (managedDuplicateRemains) {
+            Log.w(TAG, "At least one duplicate lyrics overlay remained in WindowManager during $reason.")
         }
 
         return survivingView
@@ -2986,7 +2989,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
     private fun handleLyricsOverlayInteraction(view: View, reason: String): Boolean {
         knownLyricsOverlayViews.add(view)
 
-        if (!view.isAttachedToWindow) {
+        if (!isLyricsOverlayWindowManaged(view)) {
             knownLyricsOverlayViews.remove(view)
             if (lyricsView === view) {
                 clearLyricsWindowReferences()
@@ -2998,12 +3001,12 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         if (lyricsView !== view) {
             Log.w(TAG, "Interaction came from a stale lyrics overlay during $reason. Removing stale view.")
             detachLyricsOverlayView(view, "stale interaction: $reason")
-            ensureLyricsViewBoundToAttachedOverlay("after stale interaction: $reason")
+            ensureLyricsViewBoundToManagedOverlay("after stale interaction: $reason")
             return true
         }
 
         syncLyricsOverlayBinding(view)
-        ensureLyricsViewBoundToAttachedOverlay(reason)
+        ensureLyricsViewBoundToManagedOverlay(reason)
         return false
     }
 
@@ -3028,7 +3031,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             return false
         }
 
-        if (!targetView.isAttachedToWindow) {
+        if (!isLyricsOverlayWindowManaged(targetView)) {
             knownLyricsOverlayViews.remove(targetView)
             Log.d(TAG, "$reason: overlay view detached before async theme update.")
             return false
@@ -3055,24 +3058,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         return true
     }
 
-    private fun ensureLyricsViewBoundToAttachedOverlay(reason: String): Boolean {
-        pruneDuplicateLyricsOverlayViews(reason, lyricsView)?.let { survivingView ->
-            syncLyricsOverlayBinding(survivingView)
-            return true
-        }
-
-        val currentView = lyricsView
-        val attachedView = knownLyricsOverlayViewSnapshot().lastOrNull { it.isAttachedToWindow }
-        if (attachedView != null) {
-            Log.w(TAG, "Rebinding lyrics window references to an attached overlay for $reason.")
-            syncLyricsOverlayBinding(attachedView)
-            bindLyricsWindowView(attachedView)
-            return true
-        }
-
-        currentView?.let { knownLyricsOverlayViews.remove(it) }
-        knownLyricsOverlayViews.removeAll { !it.isAttachedToWindow }
-        return false
+    private fun ensureLyricsViewBoundToManagedOverlay(reason: String): Boolean {
+        return pruneDuplicateLyricsOverlayViews(reason, lyricsView) != null
     }
 
     private fun createLyricsWindowLayoutParams(): WindowManager.LayoutParams {
@@ -3391,20 +3378,20 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         }
 
         var allDetached = true
-        val stillAttachedViews = mutableListOf<View>()
+        val stillManagedViews = mutableListOf<View>()
 
         for (view in knownViews) {
             if (!detachLyricsOverlayView(view, reason)) {
                 allDetached = false
-                stillAttachedViews.add(view)
+                stillManagedViews.add(view)
             }
         }
 
         if (!allDetached) {
-            stillAttachedViews.firstOrNull()?.let { attachedView ->
-                Log.w(TAG, "A lyrics overlay is still attached after $reason. Keeping it bound so later actions target the real window.")
-                params = params ?: (attachedView.layoutParams as? WindowManager.LayoutParams)
-                bindLyricsWindowView(attachedView)
+            stillManagedViews.firstOrNull()?.let { managedView ->
+                Log.w(TAG, "A lyrics overlay is still in WindowManager after $reason. Keeping it bound so later actions target the real window.")
+                params = params ?: (managedView.layoutParams as? WindowManager.LayoutParams)
+                bindLyricsWindowView(managedView)
             }
         }
 
@@ -3502,8 +3489,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             return
         }
 
-        ensureLyricsViewBoundToAttachedOverlay("showLyricsWindow")
-        if (lyricsView != null && lyricsView?.isAttachedToWindow != true) {
+        ensureLyricsViewBoundToManagedOverlay("showLyricsWindow")
+        if (lyricsView?.let { !isLyricsOverlayWindowManaged(it) } == true) {
             Log.w(TAG, "showLyricsWindow: Found a stale detached overlay reference. Clearing it before recreating the window.")
             lyricsView?.let { knownLyricsOverlayViews.remove(it) }
             clearLyricsWindowReferences()
@@ -3533,7 +3520,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
 
             try {
                 val currentLyricsView = lyricsView ?: return
-                if (!currentLyricsView.isAttachedToWindow) {
+                if (!isLyricsOverlayWindowManaged(currentLyricsView)) {
                     this.windowManager?.addView(currentLyricsView, this.params)
                     Log.d(TAG, "Lyrics window added to WindowManager.")
                 } else {

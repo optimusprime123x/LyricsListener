@@ -3125,7 +3125,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       ),
                       const TextSpan(
                         text:
-                            "YouTube video notifications often don't have standard song titles, making it hard to find the right lyrics.\n\n",
+                            "YouTube video notifications often don't have standard song titles and durations, making it hard to find the right lyrics.\n\n",
                       ),
                       const TextSpan(
                         text: "What can I do? ",
@@ -3133,7 +3133,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       ),
                       const TextSpan(
                         text:
-                            'Tap the retry button (!) in the lyrics window to try another enabled source. You can also try YouTube Music or another music player with standard song metadata. Lyrics may still be out of sync if the video length differs from the original song.',
+                            'You can try YouTube Music or another music player with standard song metadata. Lyrics may still be out of sync if the video length differs from the original song.',
                       ),
                     ],
                   ),
@@ -3156,7 +3156,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       ),
                       const TextSpan(
                         text:
-                            'Tap the retry button (!) in the lyrics window to choose a different enabled source. In Mini mode, long-press the lyrics to open the retry options. If a source repeatedly gives inaccurate results, disable it entirely in ',
+                            'Tap the retry button (!) in the lyrics window to choose a different enabled source. In Minimal mode, long-press the lyrics to open the retry options. If a source repeatedly gives inaccurate results, disable it entirely in ',
                       ),
                       TextSpan(
                         text: 'Lyrics Sources',
@@ -3168,7 +3168,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       ),
                       const TextSpan(
                         text:
-                            '. Disabling a source keeps its cached lyrics; a successful retry replaces the cached result for that song. You can also try again later or add your own LRC file from the ',
+                            '. Disabling a source keeps its cached lyrics; retry for all inaccurate ones to clear the cached result for those songs. You can also try again later or add your own LRC file from the ',
                       ),
                       TextSpan(
                         text: 'Custom Lyrics page',

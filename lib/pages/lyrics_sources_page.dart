@@ -269,21 +269,18 @@ class _LyricsSourcesPageState extends State<LyricsSourcesPage> {
           ),
           _step(
             1,
-            'Tap the retry button (!) in the lyrics window and choose another enabled source. In Mini mode, long-press the lyrics to open the retry options.',
+            'Tap the retry button (!) in the lyrics window and choose another enabled source. In Minimal mode, long-press the lyrics to open the retry options.',
           ),
           _step(
             2,
-            'A successful retry replaces the cached lyrics for that song. If a source repeatedly gives inaccurate results, turn it off above to stop future requests.',
+            'A successful retry replaces the cached lyrics for that song. If a source repeatedly gives inaccurate, or no results, turn it off above to stop future requests there.',
           ),
           _step(
             3,
-            'Turning off a source keeps its cached lyrics. To remove an existing result without retrying, find the song in Manage Lyrics and delete it.',
+            'Turning off a source keeps its previously cached lyrics. To remove an existing result without retrying, find the song in Manage Lyrics and delete it.',
             action: _link('Manage Lyrics', const ManageLyricsPage()),
           ),
-          _step(
-            4,
-            'Play the song again to fetch lyrics from the remaining enabled sources.',
-          ),
+          _step(4, 'Profit!'),
           const SizedBox(height: 20),
           const Text(
             'If none of the enabled sources has accurate lyrics for your song, '
@@ -334,7 +331,7 @@ class _LyricsSourcesPageState extends State<LyricsSourcesPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Choose which online sources can fetch lyrics.',
+                                'Choose which online sources fetch your lyrics.',
                                 style: theme.textTheme.bodyLarge?.copyWith(
                                   color: colors.onSurface,
                                 ),
