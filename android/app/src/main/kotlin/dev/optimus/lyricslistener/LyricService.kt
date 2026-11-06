@@ -24,7 +24,6 @@ import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.view.LayoutInflater
 import android.view.Gravity
-import android.view.HapticFeedbackConstants
 import android.view.View
 import android.widget.TextView
 import android.view.MotionEvent
@@ -152,7 +151,6 @@ class LyricService : NotificationListenerService() {
     private var songInfoTextView: TextView? = null
     private var expandCollapseButton: ImageButton? = null
     private var translateButton: ImageButton? = null
-    private var retryButton: ImageButton? = null
     private var overlayAlbumArtImageView: ImageView? = null
     private var overlayScrimView: View? = null
     private var headerDivider: View? = null
@@ -2771,7 +2769,6 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         lyricsRecyclerView = view.findViewById(R.id.lyricsRecyclerView)
         expandCollapseButton = view.findViewById(R.id.expandCollapseButton)
         translateButton = view.findViewById(R.id.translateButton)
-        retryButton = view.findViewById(R.id.retryButton)
         overlayAlbumArtImageView?.removeOnLayoutChangeListener(overlayArtworkLayoutListener)
         overlayAlbumArtImageView = view.findViewById<ImageView>(R.id.overlayAlbumArtImageView)?.also {
             it.addOnLayoutChangeListener(overlayArtworkLayoutListener)
@@ -2833,18 +2830,28 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             }
             toggleTranslation()
         }
-        retryButton?.setOnClickListener {
-            if (handleLyricsOverlayInteraction(view, "retry button")) {
-                return@setOnClickListener
-            }
-            toggleRetryPanel()
-        }
         retryCancelButton?.setOnClickListener {
             if (handleLyricsOverlayInteraction(view, "retry cancel button")) {
                 return@setOnClickListener
             }
             dismissRetryPanel()
         }
+        // Native long-click handling on rows and empty list space lets RecyclerView
+        // keep its normal scroll interception and touch-slop cancellation.
+        val retryOnLongClick = View.OnLongClickListener {
+            when {
+                lyricsView !== view || !view.isAttachedToWindow -> false
+                handleLyricsOverlayInteraction(view, "long-press retry") -> true
+                !isLongPressRetryEligible() -> false
+                else -> {
+                    toggleRetryPanel()
+                    true
+                }
+            }
+        }
+        view.setOnLongClickListener(retryOnLongClick)
+        lyricsRecyclerView?.setOnLongClickListener(retryOnLongClick)
+        lyricsAdapter?.onLyricsLongClick = { retryOnLongClick.onLongClick(view) }
         viewMover = ViewMover(view)
         view.setOnTouchListener(viewMover)
     }
@@ -2871,7 +2878,6 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         lyricsRecyclerView = null
         expandCollapseButton = null
         translateButton = null
-        retryButton = null
         overlayAlbumArtImageView = null
         overlayScrimView = null
         headerDivider = null
@@ -2967,7 +2973,6 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
             lyricsRecyclerView == null ||
             expandCollapseButton == null ||
             translateButton == null ||
-            retryButton == null ||
             retryPanelContainer == null ||
             overlayAlbumArtImageView == null ||
             overlayScrimView == null ||
@@ -3784,7 +3789,6 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         songInfoTextView?.setTextColor(titleIconColor)
 
         translateButton?.setColorFilter(titleIconColor, PorterDuff.Mode.SRC_IN)
-        retryButton?.setColorFilter(titleIconColor, PorterDuff.Mode.SRC_IN)
         expandCollapseButton?.setColorFilter(titleIconColor, PorterDuff.Mode.SRC_IN)
         lyricsView?.findViewById<ImageButton>(R.id.closeButton)?.setColorFilter(titleIconColor, PorterDuff.Mode.SRC_IN)
         styleRetryPanelElements(titleIconColor)
@@ -3834,15 +3838,7 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         }
     }
 
-    private fun updateRetryButtonAppearance() {
-        // Same borderless treatment as the expand/collapse and close controls; the open
-        // state only brightens the icon so the header row stays visually consistent.
-        retryButton?.alpha = if (isRetryPanelVisible) 1.0f else 0.85f
-    }
-
     private fun styleRetryPanelElements(titleIconColor: Int = lastAppliedTitleIconColor) {
-        updateRetryButtonAppearance()
-
         // Typography-led panel: no containers. Readability comes from the deeper artwork
         // scrim applied while the panel is open (see applyOverlayScrim) and text shadows.
         retryPanelContainer?.background = null
@@ -4211,11 +4207,8 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         }
     }
 
-    private fun isMiniLongPressRetryEligible(): Boolean {
-        val isMini = lyricsWindowMode == LyricsWindowMode.MINI
-        val isSynced = lyricsAdapter?.isSynced() ?: false
-        val hasActiveSong = !lastDetectedSongTitle.isNullOrBlank()
-        return isMini && isSynced && !isRetryPanelVisible && hasActiveSong
+    private fun isLongPressRetryEligible(): Boolean {
+        return !isRetryPanelVisible && !lastDetectedSongTitle.isNullOrBlank()
     }
 
     private fun applyLyricsWindowMode() {
@@ -4237,11 +4230,9 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         // Set child visibilities BEFORE ConstraintSet.clone(layout) so ConstraintSet preserves them.
         songInfoTextView?.visibility = if (isMiniEffective) View.GONE else View.VISIBLE
         translateButton?.visibility = if (!isMiniEffective && currentLyricsHasTranslation && !isRetryPanelVisible) View.VISIBLE else View.GONE
-        retryButton?.visibility = if (!isMiniEffective && hasActiveSong) View.VISIBLE else View.GONE
         headerDivider?.visibility = if (isMiniEffective) View.GONE else View.VISIBLE
         lyricsRecyclerView?.visibility = if (isRetryPanelVisible) View.GONE else View.VISIBLE
         retryPanelContainer?.visibility = if (isRetryPanelVisible) View.VISIBLE else View.GONE
-        updateRetryButtonAppearance()
 
         // Reposition buttons and RecyclerView via ConstraintSet for mini mode
         overlayContentLayout?.let { layout ->
@@ -4264,8 +4255,6 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                 layout.setPadding(layout.paddingStart, 8.dpToPx(), layout.paddingEnd, 6.dpToPx())
             } else {
                 // Restore buttons to parent top
-                cs.clear(R.id.retryButton, ConstraintSet.BOTTOM)
-                cs.connect(R.id.retryButton, ConstraintSet.TOP, ConstraintSet.PARENT_ID, ConstraintSet.TOP)
                 cs.clear(R.id.expandCollapseButton, ConstraintSet.BOTTOM)
                 cs.connect(R.id.expandCollapseButton, ConstraintSet.TOP, ConstraintSet.PARENT_ID, ConstraintSet.TOP)
                 cs.clear(R.id.closeButton, ConstraintSet.BOTTOM)
@@ -5034,20 +5023,19 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
         private var longPressTriggered = false
         private var lastScheduledDownTime: Long = -1L
 
-        private val miniLongPressRunnable = Runnable {
+        private val longPressRunnable = Runnable {
             if (!isDragging &&
                 lyricsView === targetView &&
                 targetView.isAttachedToWindow &&
-                isMiniLongPressRetryEligible()
+                isLongPressRetryEligible()
             ) {
                 longPressTriggered = true
-                targetView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                toggleRetryPanel()
+                targetView.performLongClick()
             }
         }
 
         fun cancelPendingLongPress() {
-            mainHandler.removeCallbacks(miniLongPressRunnable)
+            mainHandler.removeCallbacks(longPressRunnable)
         }
 
         override fun onTouch(v: View, event: MotionEvent): Boolean {
@@ -5077,9 +5065,9 @@ private fun cleanYouTubeTitleForSearch(title: String): String {
                     if (event.downTime != lastScheduledDownTime) {
                         lastScheduledDownTime = event.downTime
                         cancelPendingLongPress()
-                        if (isMiniLongPressRetryEligible()) {
+                        if (isLongPressRetryEligible()) {
                             mainHandler.postDelayed(
-                                miniLongPressRunnable,
+                                longPressRunnable,
                                 ViewConfiguration.getLongPressTimeout().toLong()
                             )
                         }

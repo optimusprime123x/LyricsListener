@@ -107,7 +107,12 @@ class _LyricsSourcesPageState extends State<LyricsSourcesPage> {
     label: Text(text),
   );
 
-  Widget _step(int number, String text, {Widget? action}) {
+  Widget _step(
+    int number,
+    String text, {
+    String? supportingText,
+    Widget? action,
+  }) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return Padding(
@@ -138,6 +143,10 @@ class _LyricsSourcesPageState extends State<LyricsSourcesPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(text, style: theme.textTheme.bodyMedium),
+                if (supportingText != null) ...[
+                  const SizedBox(height: 8),
+                  Text(supportingText, style: theme.textTheme.bodyMedium),
+                ],
                 if (action != null) ...[const SizedBox(height: 4), action],
               ],
             ),
@@ -269,15 +278,19 @@ class _LyricsSourcesPageState extends State<LyricsSourcesPage> {
           ),
           _step(
             1,
-            'Tap the retry button (!) in the lyrics window and choose another enabled source. In Minimal mode, long-press the lyrics to open the retry options.',
+            'Long-press the lyrics in any window mode to open the retry options, then choose another enabled source.',
+            supportingText:
+                'A successful retry replaces the cached lyrics for that song.',
           ),
           _step(
             2,
-            'A successful retry replaces the cached lyrics for that song. If a source repeatedly gives inaccurate, or no results, turn it off above to stop future requests there.',
+            'If a source repeatedly gives inaccurate, or no results, turn it off above to stop future requests there.',
+            supportingText:
+                'Turning off a source keeps its previously cached lyrics.',
           ),
           _step(
             3,
-            'Turning off a source keeps its previously cached lyrics. To remove an existing result without retrying, find the song in Manage Lyrics and delete it.',
+            'To remove an existing result without retrying, find the song in Manage Lyrics and delete it.',
             action: _link('Manage Lyrics', const ManageLyricsPage()),
           ),
           _step(4, 'Profit!'),
@@ -458,7 +471,7 @@ class _LyricsSourcesPageState extends State<LyricsSourcesPage> {
                           child: Text(
                             enabledCount == 0
                                 ? 'Only cached and custom lyrics will be available while all online sources are off.'
-                                : 'Changes apply to the next lyrics fetch. Cached lyrics are kept; use the retry button (!) to try another source for the current song.',
+                                : 'Changes apply to the next lyrics fetch. Cached lyrics are kept; long-press the lyrics in any window mode to try another source for the current song.',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: colors.onSurfaceVariant,
                               height: 1.4,
