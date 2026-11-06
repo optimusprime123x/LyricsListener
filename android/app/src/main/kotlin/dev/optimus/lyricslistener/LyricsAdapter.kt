@@ -20,6 +20,8 @@ class LyricsAdapter(
     private var lyricLines: List<TimedLyricLine>
 ) : RecyclerView.Adapter<LyricsAdapter.ViewHolder>() {
 
+    var onLyricsLongClick: (() -> Boolean)? = null
+
     private var highlightedPosition = -1
     private var isSyncedMode = false
     private var isPlaying = false
@@ -65,6 +67,7 @@ class LyricsAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val view = LayoutInflater.from(parent.context)
             .inflate(R.layout.item_lyric_line, parent, false)
+        view.setOnLongClickListener { onLyricsLongClick?.invoke() ?: false }
         return ViewHolder(view)
     }
 

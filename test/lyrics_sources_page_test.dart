@@ -232,16 +232,18 @@ void main() {
       await tester.tap(find.text('What is this page for?'));
       await tester.pumpAndSettle();
       expect(
-        find.textContaining('Tap the retry button (!) in the lyrics window'),
+        find.textContaining('Long-press the lyrics in any window mode'),
         findsWidgets,
       );
-      expect(find.textContaining('long-press the lyrics'), findsOneWidget);
+      expect(find.textContaining('Long-press the lyrics'), findsOneWidget);
       expect(
         find.textContaining('A successful retry replaces the cached lyrics'),
         findsOneWidget,
       );
       expect(
-        find.textContaining('Turning off a source keeps its cached lyrics.'),
+        find.textContaining(
+          'Turning off a source keeps its previously cached lyrics.',
+        ),
         findsOneWidget,
       );
       await tester.ensureVisible(find.text('Manage Lyrics'));
@@ -269,10 +271,10 @@ void main() {
       await tester.tap(find.text('What is this page for?'));
       await tester.pumpAndSettle();
       final steps = [
-        'Tap the retry button (!) in the lyrics window and choose another enabled source. In Mini mode, long-press the lyrics to open the retry options.',
-        'A successful retry replaces the cached lyrics for that song. If a source repeatedly gives inaccurate results, turn it off above to stop future requests.',
-        'Turning off a source keeps its cached lyrics. To remove an existing result without retrying, find the song in Manage Lyrics and delete it.',
-        'Play the song again to fetch lyrics from the remaining enabled sources.',
+        'Long-press the lyrics in any window mode to open the retry options, then choose another enabled source.',
+        'If a source repeatedly gives inaccurate, or no results, turn it off above to stop future requests there.',
+        'To remove an existing result without retrying, find the song in Manage Lyrics and delete it.',
+        'Profit!',
       ];
       double baseline(Finder finder) {
         final paragraph = tester.renderObject<RenderParagraph>(
@@ -386,8 +388,9 @@ void main() {
     );
     expect(paragraphFinder, findsOneWidget);
     final answer = tester.widget<RichText>(paragraphFinder).text.toPlainText();
-    expect(answer, contains('retry button (!)'));
-    expect(answer, contains('long-press the lyrics'));
+    expect(answer, contains('What can I do? Long-press the lyrics'));
+    expect(answer, contains('in any window mode'));
+    expect(answer, contains('Long-press the lyrics'));
     expect(answer, contains('disable it entirely in Lyrics Sources'));
     expect(answer, contains('Disabling a source keeps its cached lyrics'));
 

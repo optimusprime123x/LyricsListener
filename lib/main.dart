@@ -3156,7 +3156,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       ),
                       const TextSpan(
                         text:
-                            'Tap the retry button (!) in the lyrics window to choose a different enabled source. In Minimal mode, long-press the lyrics to open the retry options. If a source repeatedly gives inaccurate results, disable it entirely in ',
+                            'Long-press the lyrics in any window mode to open the retry options and choose a different enabled source. If a source repeatedly gives inaccurate results, disable it entirely in ',
                       ),
                       TextSpan(
                         text: 'Lyrics Sources',
