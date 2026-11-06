@@ -10,25 +10,24 @@ const _sources = [
     key: 'lyrics_source_lrclib_enabled',
     title: 'LRCLib',
     description:
-        'Open lyrics database with fast access to a large collection of synced lyrics. Accuracy varies by song.',
+        'Open database of a large number of synced lyrics, occasionally inaccurate but fast.',
   ),
   (
     key: 'lyrics_source_musixmatch_enabled',
     title: 'Musixmatch',
     description:
-        'Large collection of synced lyrics. Requests may be slower or occasionally unavailable.',
+        'Huge collection of accurately synced lyrics, however this might be slower and unstable.',
   ),
   (
     key: 'lyrics_source_lrcred_enabled',
     title: 'lrc.red',
     description:
-        'Community catalog of synced lyrics. Word-synced lyrics are displayed line by line.',
+        'Community catalogue of synced lyrics, mostly accurate but reliability varies.',
   ),
   (
     key: 'lyrics_source_others_enabled',
     title: 'Others',
-    description:
-        'Additional sources, including Apple Music, NetEase and Deezer, for a wider selection of songs.',
+    description: 'Tries Apple Music, Netease, Deezer for uncommon songs.',
   ),
 ];
 
@@ -397,7 +396,7 @@ class _LyricsSourcesPageState extends State<LyricsSourcesPage> {
                           key: 'lyrics_source_cache',
                           title: 'Cache',
                           description:
-                              'Locally saved and custom lyrics. Always checked first, even when an online source is turned off. This cannot be disabled.',
+                              'Lyrics cached locally in your storage. This is always tried first, and cannot be disabled. Custom lyrics are saved here.',
                           icon: Icons.folder_copy_rounded,
                           accent: colors.secondaryContainer,
                           onAccent: colors.onSecondaryContainer,

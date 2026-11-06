@@ -104,6 +104,22 @@ void main() {
   SwitchListTile sourceTile(WidgetTester tester, String key) =>
       tester.widget<SwitchListTile>(find.byKey(ValueKey(key)));
 
+  testWidgets('source descriptions preserve original copy and include lrc.red', (
+    tester,
+  ) async {
+    await openPage(tester);
+    for (final description in [
+      'Open database of a large number of synced lyrics, occasionally inaccurate but fast.',
+      'Huge collection of accurately synced lyrics, however this might be slower and unstable.',
+      'Community catalogue of synced lyrics, mostly accurate but reliability varies.',
+      'Tries Apple Music, Netease, Deezer for uncommon songs.',
+      'Lyrics cached locally in your storage. This is always tried first, and cannot be disabled. Custom lyrics are saved here.',
+    ]) {
+      expect(find.text(description), findsOneWidget);
+    }
+    expect(find.text('lrc.red'), findsOneWidget);
+  });
+
   testWidgets(
     'cache stays enabled; online choices auto-save and survive reopening',
     (tester) async {
